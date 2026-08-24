@@ -24,3 +24,6 @@ Thumbs.db
 # 本地草稿（IndexedDB 数据，非源码）
 草稿/
 draft/
+
+# 样例html
+样例HTML工程/
