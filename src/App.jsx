@@ -58,6 +58,21 @@ const WEIGHTS = [
   ['900', '特粗'],
 ]
 
+const BORDER_WIDTHS = ['0', '1', '2', '3', '4', '5', '6']
+const BORDER_STYLES = [
+  ['solid', '实线'],
+  ['dashed', '虚线'],
+  ['dotted', '点线'],
+  ['double', '双线'],
+  ['none', '无'],
+]
+const SHADOW_PRESETS = [
+  ['none', '无阴影'],
+  ['0 2px 8px rgba(0,0,0,.12)', '轻微'],
+  ['0 4px 20px rgba(0,0,0,.15)', '中等'],
+  ['0 8px 30px rgba(0,0,0,.25)', '较重'],
+]
+
 function download(filename, text) {
   const blob = new Blob([text], { type: 'text/html' })
   const a = document.createElement('a')
@@ -277,6 +292,12 @@ export default function App() {
       } else if (ctrl && k === 'v') {
         send({ type: 'paste' })
         e.preventDefault()
+      } else if (!ctrl && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k) && selected) {
+        const step = e.shiftKey ? 10 : 1
+        const dx = k === 'arrowleft' ? -step : (k === 'arrowright' ? step : 0)
+        const dy = k === 'arrowup' ? -step : (k === 'arrowdown' ? step : 0)
+        send({ type: 'moveBy', dx, dy })
+        e.preventDefault()
       } else if (!ctrl && (k === 'delete' || k === 'backspace')) {
         // 避免误删（仅在画布聚焦且无输入框时）；交由 iframe 处理更稳妥，这里不拦截
       } else if (!ctrl && selCount >= 2) {
@@ -293,7 +314,7 @@ export default function App() {
       window.removeEventListener('message', onMessage)
       window.removeEventListener('keydown', onKey)
     }
-  }, [selCount])
+  }, [selCount, selected])
 
   // 选择文件夹时，同步提取图片/视频素材
   const assetUrlsRef = useRef([])
@@ -461,6 +482,18 @@ export default function App() {
         >
           重置选中
         </button>
+        <button onClick={() => send({ type: 'layer', mode: 'top' })} disabled={!selected} style={btn('#374151')}>置顶</button>
+        <button onClick={() => send({ type: 'layer', mode: 'up' })} disabled={!selected} style={btn('#374151')}>上移</button>
+        <button onClick={() => send({ type: 'layer', mode: 'down' })} disabled={!selected} style={btn('#374151')}>下移</button>
+        <button onClick={() => send({ type: 'layer', mode: 'bottom' })} disabled={!selected} style={btn('#374151')}>置底</button>
+        <button onClick={() => send({ type: 'group' })} disabled={selCount < 2} style={btn(selected && selected.group ? '#0F6E56' : '#374151')}>
+          {selected && selected.group ? '已组合' : '组合'}
+        </button>
+        <button onClick={() => send({ type: 'ungroup' })} disabled={!selected} style={btn('#374151')}>取消组合</button>
+        <button onClick={() => send({ type: 'toggleLock' })} disabled={!selected} style={btn(selected && selected.locked ? '#0F6E56' : '#374151')}>
+          {selected && selected.locked ? '解锁' : '锁定'}
+        </button>
+
         <button onClick={() => send({ type: 'undo' })} disabled={!ready} title="撤销（Ctrl+Z）" style={btn('#374151')}>
           撤销
         </button>
@@ -647,7 +680,13 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
   const [font, setFont] = useState('')
   const [size, setSize] = useState('')
   const [weight, setWeight] = useState('')
+  const [borderWidth, setBorderWidth] = useState('0')
+  const [borderStyle, setBorderStyle] = useState('solid')
+  const [borderColor, setBorderColor] = useState('#000000')
+  const [borderRadius, setBorderRadius] = useState('')
+  const [boxShadow, setBoxShadow] = useState('none')
   const [text, setText] = useState('')
+  const replaceInputRef = useRef(null)
 
   // 选中变化时，用计算样式回填（让用户看到当前值）
   useEffect(() => {
@@ -659,6 +698,12 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
     setSize(stripPx(selected.fontSize))
     setWeight(selected.fontWeight === '400' || selected.fontWeight === 'normal' ? '400' : selected.fontWeight)
     setText(selected.text || '')
+    const bm = String(selected.border || '').match(/(\d+(?:\.\d+)?)px\s+(\w+)\s+(.*)/)
+    setBorderWidth(bm ? bm[1] : '0')
+    setBorderStyle(bm ? bm[2] : 'solid')
+    setBorderColor(bm ? toHex(bm[3]) || '#000000' : '#000000')
+    setBorderRadius(stripPx(selected.borderRadius))
+    setBoxShadow(selected.boxShadow && selected.boxShadow !== 'none' ? '0 4px 20px rgba(0,0,0,.15)' : 'none')
   }, [selected])
 
   // 统一应用样式：直接传入值，不使用 if(v) 过滤（解决 falsy 值被跳过的问题）
@@ -672,6 +717,11 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
     const f = over && over.font !== undefined ? over.font : font
     const s = over && over.size !== undefined ? over.size : size
     const wt = over && over.weight !== undefined ? over.weight : weight
+    const bw = over && over.borderWidth !== undefined ? over.borderWidth : borderWidth
+    const bst = over && over.borderStyle !== undefined ? over.borderStyle : borderStyle
+    const bc = over && over.borderColor !== undefined ? over.borderColor : borderColor
+    const br = over && over.borderRadius !== undefined ? over.borderRadius : borderRadius
+    const sh = over && over.boxShadow !== undefined ? over.boxShadow : boxShadow
     // 只有非空字符串才加入（空字符串 = 不修改）
     if (w !== '') styles.width = w + (isNum(w) ? 'px' : '')
     if (h !== '') styles.height = h + (isNum(h) ? 'px' : '')
@@ -680,6 +730,10 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
     if (f !== '') styles.fontFamily = f
     if (s !== '') styles.fontSize = s + (isNum(s) ? 'px' : '')
     if (wt !== '') styles.fontWeight = wt
+    if (bw !== '' && bw !== '0') styles.border = bw + 'px ' + (bst || 'solid') + ' ' + (bc || '#000000')
+    else if (bw === '0') styles.border = 'none'
+    if (br !== '') styles.borderRadius = br + (isNum(br) ? 'px' : '')
+    if (sh !== '') styles.boxShadow = sh === 'none' ? 'none' : sh
     if (Object.keys(styles).length) send({ type: 'setStyles', styles })
   }
 
@@ -716,6 +770,27 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
       <Field label="背景颜色">
         <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
       </Field>
+      <Field label="边框宽度">
+        <select style={inp} value={borderWidth} onChange={(e) => { const v = e.target.value; setBorderWidth(v); apply({ borderWidth: v }) }}>
+          {BORDER_WIDTHS.map((v) => <option key={v} value={v}>{v}px</option>)}
+        </select>
+      </Field>
+      <Field label="边框样式">
+        <select style={inp} value={borderStyle} onChange={(e) => { const v = e.target.value; setBorderStyle(v); apply({ borderStyle: v }) }}>
+          {BORDER_STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </Field>
+      <Field label="边框颜色">
+        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
+      </Field>
+      <Field label="圆角">
+        <input type="number" min="0" step="1" style={inp} value={borderRadius} onChange={(e) => { const v = e.target.value; setBorderRadius(v); apply({ borderRadius: v }) }} onBlur={apply} onKeyDown={enterApply} placeholder="如 12" />
+      </Field>
+      <Field label="阴影">
+        <select style={inp} value={boxShadow} onChange={(e) => { const v = e.target.value; setBoxShadow(v); apply({ boxShadow: v }) }}>
+          {SHADOW_PRESETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+        </select>
+      </Field>
       <Field label="字体">
         <select style={inp} value={font} onChange={(e) => { const v = e.target.value; setFont(v); apply({ font: v }) }}>
           {FONTS.map(([v, l]) => (
@@ -749,6 +824,31 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         }}
       />
 
+        {selected.tag === 'IMG' && (
+          <div style={{ marginTop: 10 }}>
+            <input
+              ref={replaceInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files && e.target.files[0]
+                if (f) {
+                  const reader = new FileReader()
+                  reader.onload = () => send({ type: 'replaceImage', url: reader.result })
+                  reader.readAsDataURL(f)
+                }
+                e.target.value = ''
+              }}
+            />
+            <button
+              onClick={() => replaceInputRef.current?.click()}
+              style={{ ...btn('#4b5563'), width: '100%', fontSize: 12 }}
+            >
+              替换图片
+            </button>
+          </div>
+        )}
       <button
         onClick={() => send({ type: 'delete' })}
         style={{ ...btn('#7f1d1d'), width: '100%', marginTop: 12 }}

@@ -23,6 +23,7 @@
   var resizeOverlay = null // 边缘/角点拖拽调整大小的手柄层
   var resizeHandles = {}
   var guideOverlay = null // 智能参考线
+  var boxSelectOverlay = null // 框选矩形
   var SNAP_DISTANCE = 6 // 智能参考线吸附阈值（px）
   var placementMode = false // 素材放置模式
   var placementData = null // { url, assetType }
@@ -65,6 +66,11 @@
       fontSize: cs.fontSize,
       fontWeight: cs.fontWeight,
       text: el.textContent,
+      locked: !!(el.getAttribute && el.getAttribute('data-zt-lock')),
+      group: (el.getAttribute && el.getAttribute('data-zt-group')) || '',
+      border: cs.border,
+      borderRadius: cs.borderRadius,
+      boxShadow: cs.boxShadow,
     }
   }
 
@@ -161,6 +167,72 @@
     if (guideOverlay) guideOverlay.innerHTML = ''
   }
 
+  function clearBoxSelect() {
+    if (boxSelectOverlay && boxSelectOverlay.parentNode) boxSelectOverlay.parentNode.removeChild(boxSelectOverlay)
+    boxSelectOverlay = null
+  }
+
+  function startBoxSelect(e, mode) {
+    var slide = slides[current]
+    if (!slide) return
+    var sx = e.clientX
+    var sy = e.clientY
+    if (boxSelectOverlay && boxSelectOverlay.parentNode) boxSelectOverlay.parentNode.removeChild(boxSelectOverlay)
+    boxSelectOverlay = document.createElement('div')
+    boxSelectOverlay.id = 'zt-box-select'
+    boxSelectOverlay.style.cssText =
+      'position:fixed;left:' + sx + 'px;top:' + sy + 'px;width:0;height:0;' +
+      'border:1px solid #2563eb;background:rgba(37,99,235,.08);' +
+      'pointer-events:none;z-index:2147483646;'
+    document.body.appendChild(boxSelectOverlay)
+
+    function move(ev) {
+      var x = Math.min(sx, ev.clientX)
+      var y = Math.min(sy, ev.clientY)
+      var w = Math.abs(ev.clientX - sx)
+      var h = Math.abs(ev.clientY - sy)
+      boxSelectOverlay.style.left = x + 'px'
+      boxSelectOverlay.style.top = y + 'px'
+      boxSelectOverlay.style.width = w + 'px'
+      boxSelectOverlay.style.height = h + 'px'
+    }
+
+    function up(ev) {
+      document.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerup', up)
+      var x = Math.min(sx, ev.clientX)
+      var y = Math.min(sy, ev.clientY)
+      var w = Math.abs(ev.clientX - sx)
+      var h = Math.abs(ev.clientY - sy)
+      var rect = { left: x, top: y, right: x + w, bottom: y + h }
+      var matched = Array.prototype.slice.call(slide.querySelectorAll('*')).filter(function (el) {
+        if (!isEditable(el)) return false
+        var r = el.getBoundingClientRect()
+        // 所有模式都要求完全落在框内
+        return r.left >= rect.left && r.right <= rect.right && r.top >= rect.top && r.bottom <= rect.bottom
+      })
+      var selected = matched
+      if (mode === 'container') {
+        // 默认：只选完全落在框内的“非叶子容器”，并且只保留最外层容器
+        selected = matched.filter(function (el) {
+          if (!el.children.length) return false
+          return !matched.some(function (other) {
+            return other !== el && other.contains(el)
+          })
+        })
+      }
+      // mode === 'layout' 时直接选中全部（叶子+容器）
+      clearBoxSelect()
+      selectThese(selected)
+      post({ type: 'changed' })
+    }
+
+    document.addEventListener('pointermove', move)
+    document.addEventListener('pointerup', up)
+    e.preventDefault()
+  }
+
+
   function showGuides(vx, hy) {
     ensureGuideOverlay()
     guideOverlay.innerHTML = ''
@@ -217,6 +289,7 @@
   function startResize(dir, primary, e) {
     var els = selectedList.slice()
     if (els.length < 1) return
+    if (isLocked(primary)) return
     var refs = getReferenceEls(slides[current])
     var rect = primary.getBoundingClientRect()
     var sx = e.clientX
@@ -352,14 +425,20 @@
   // 找到点击/拖放位置所在的内容布局容器（优先 flex/grid 容器），兜底用 slide
   function findLayoutContainer(slide, target) {
     var el = target && target.nodeType === 1 ? target : null
+    var fallback = null
     while (el && el !== document.body && el !== slide && el.parentElement) {
       var cs = getComputedStyle(el)
-      if (el !== slide && (cs.display === 'flex' || cs.display === 'grid' || cs.display === 'inline-flex' || cs.display === 'inline-grid')) {
-        return el
+      var isFlexOrGrid = el !== slide && (cs.display === 'flex' || cs.display === 'grid' || cs.display === 'inline-flex' || cs.display === 'inline-grid')
+      if (isFlexOrGrid) {
+        var isRow = (cs.display === 'flex' || cs.display === 'inline-flex')
+          ? cs.flexDirection === 'row' || cs.flexDirection === 'row-reverse'
+          : true
+        if (isRow) return el
+        if (!fallback) fallback = el
       }
       el = el.parentElement
     }
-    return slide
+    return fallback || slide
   }
 
   // 在容器内找到插入参考点：尽量插在命中元素后面
@@ -370,9 +449,43 @@
     return child ? child.nextSibling : null
   }
 
+  // 找离插入点最近的已有图片/视频（用于把它和新图放到同一个最小容器里）
+  function findClosestImage(slide, x, y) {
+    var all = Array.prototype.slice.call(slide.querySelectorAll('img, video')).filter(function (el) {
+      return isEditable(el) && el.getBoundingClientRect().width > 0
+    })
+    if (!all.length) return null
+    var best = null
+    var bestDist = Infinity
+    all.forEach(function (el) {
+      var r = el.getBoundingClientRect()
+      var dist = Math.sqrt(Math.pow(r.left + r.width / 2 - x, 2) + Math.pow(r.top + r.height / 2 - y, 2))
+      if (dist < bestDist) { bestDist = dist; best = el }
+    })
+    return best
+  }
+
+  function makeHorizontalImageContainer(container) {
+    if (!container) return
+    var cs = getComputedStyle(container)
+    if (cs.display === 'flex' || cs.display === 'inline-flex') {
+      container.style.flexDirection = 'row'
+      container.style.alignItems = 'center'
+    } else {
+      container.style.display = 'flex'
+      container.style.flexDirection = 'row'
+      container.style.alignItems = 'center'
+      container.style.gap = (cs.gap && cs.gap !== 'normal' ? cs.gap : '12px')
+    }
+  }
+
   // 插入到布局流后，用相对定位的百分比偏移把元素移动到点击/拖放点附近
   function insertIntoLayout(container, el, ref, desiredX, desiredY, center) {
     container.insertBefore(el, ref)
+    // 默认让图片/视频所在的布局变成左右结构
+    if (el.tagName === 'IMG' || el.tagName === 'VIDEO') {
+      makeHorizontalImageContainer(container)
+    }
     var cRect = container.getBoundingClientRect()
     var eRect = el.getBoundingClientRect()
     var wantX = desiredX - (center ? eRect.width / 2 : 0)
@@ -392,8 +505,17 @@
     if (!slide) { exitPlacementMode(); return }
     var el = createAssetElement(placementData.url, placementData.type)
     var target = e.target
-    var container = findLayoutContainer(slide, target)
-    var ref = findInsertRef(container, target)
+    var existingImg = findClosestImage(slide, e.clientX, e.clientY)
+    var container
+    var ref
+    if (existingImg) {
+      container = existingImg.parentElement || slide
+      makeHorizontalImageContainer(container)
+      ref = existingImg.nextSibling
+    } else {
+      container = findLayoutContainer(slide, target)
+      ref = findInsertRef(container, target)
+    }
     var cRect = container.getBoundingClientRect()
     insertIntoLayout(container, el, ref, e.clientX - cRect.left, e.clientY - cRect.top, true)
     deselectAll()
@@ -420,8 +542,17 @@
     var clientX = sr.left + x
     var clientY = sr.top + y
     var target = document.elementFromPoint(clientX, clientY)
-    var container = findLayoutContainer(slide, target)
-    var ref = findInsertRef(container, target)
+    var existingImg = findClosestImage(slide, clientX, clientY)
+    var container
+    var ref
+    if (existingImg) {
+      container = existingImg.parentElement || slide
+      makeHorizontalImageContainer(container)
+      ref = existingImg.nextSibling
+    } else {
+      container = findLayoutContainer(slide, target)
+      ref = findInsertRef(container, target)
+    }
     var cRect = container.getBoundingClientRect()
     insertIntoLayout(container, el, ref, clientX - cRect.left, clientY - cRect.top, true)
     deselectAll()
@@ -527,6 +658,130 @@
     return !!t.closest('.slide')
   }
 
+  // ---- 锁定 / 组合 / 层级 / 键盘微调 ----
+  function isLocked(el) {
+    return !!(el && el.getAttribute && el.getAttribute('data-zt-lock'))
+  }
+
+  function setLocked(locked) {
+    if (!selectedList.length) return
+    var before = selectedList.map(snapStyle)
+    selectedList.forEach(function (el) {
+      if (locked) el.setAttribute('data-zt-lock', '1')
+      else el.removeAttribute('data-zt-lock')
+    })
+    var after = selectedList.map(snapStyle)
+    pushHistory(before, after, selectedList.slice())
+    postSelection()
+    post({ type: 'changed' })
+  }
+
+  function groupSelected() {
+    if (selectedList.length < 2) return
+    var gid = 'zt-group-' + Date.now()
+    var before = selectedList.map(snapStyle)
+    selectedList.forEach(function (el) {
+      el.setAttribute('data-zt-group', gid)
+    })
+    var after = selectedList.map(snapStyle)
+    pushHistory(before, after, selectedList.slice())
+    postSelection()
+    post({ type: 'changed' })
+  }
+
+  function ungroupSelected() {
+    if (!selectedList.length) return
+    var gids = {}
+    selectedList.forEach(function (el) {
+      var g = el.getAttribute('data-zt-group')
+      if (g) gids[g] = true
+    })
+    var affected = []
+    var slide = slides[current]
+    for (var gid in gids) {
+      slide.querySelectorAll('[data-zt-group="' + gid + '"]').forEach(function (el) {
+        if (affected.indexOf(el) < 0) affected.push(el)
+      })
+    }
+    if (!affected.length) return
+    var before = affected.map(snapStyle)
+    affected.forEach(function (el) { el.removeAttribute('data-zt-group') })
+    var after = affected.map(snapStyle)
+    pushHistory(before, after, selectedList.slice())
+    postSelection()
+    post({ type: 'changed' })
+  }
+
+  function selectGroup(el) {
+    var gid = el.getAttribute && el.getAttribute('data-zt-group')
+    if (!gid) return selectOnly(el)
+    var groupEls = Array.prototype.slice.call(slides[current].querySelectorAll('[data-zt-group="' + gid + '"]'))
+      .filter(function (x) { return x.parentNode && isEditable(x) })
+    if (!groupEls.length) return selectOnly(el)
+    selectedList.forEach(function (x) { x.classList.remove('zt-selected') })
+    selectedList = groupEls
+    selectedList.forEach(function (x) { x.classList.add('zt-selected') })
+    postSelection()
+  }
+
+  function toggleGroup(el) {
+    var gid = el.getAttribute && el.getAttribute('data-zt-group')
+    if (!gid) return toggleSelect(el)
+    var groupEls = Array.prototype.slice.call(slides[current].querySelectorAll('[data-zt-group="' + gid + '"]'))
+    var allSelected = groupEls.every(function (x) { return selectedList.indexOf(x) >= 0 })
+    if (allSelected) {
+      groupEls.forEach(function (x) {
+        var i = selectedList.indexOf(x)
+        if (i >= 0) selectedList.splice(i, 1)
+        x.classList.remove('zt-selected')
+      })
+    } else {
+      groupEls.forEach(function (x) {
+        if (selectedList.indexOf(x) < 0) {
+          selectedList.push(x)
+          x.classList.add('zt-selected')
+        }
+      })
+    }
+    postSelection()
+  }
+
+  function layer(mode) {
+    if (!selectedList.length) return
+    var els = selectedList.slice()
+    var before = els.map(snapStyle)
+    els.forEach(function (el) {
+      var parent = el.parentNode
+      if (!parent) return
+      if (mode === 'top') {
+        parent.appendChild(el)
+      } else if (mode === 'bottom') {
+        parent.insertBefore(el, parent.firstChild)
+      } else if (mode === 'up') {
+        var next = el.nextElementSibling
+        if (next) parent.insertBefore(el, next.nextSibling)
+      } else if (mode === 'down') {
+        var prev = el.previousElementSibling
+        if (prev) parent.insertBefore(el, prev)
+      }
+    })
+    var after = els.map(snapStyle)
+    pushHistory(before, after, els.slice())
+    postSelection()
+    post({ type: 'changed' })
+  }
+
+  function moveSelectedBy(dx, dy) {
+    if (!selectedList.length) return
+    var before = selectedList.map(snapStyle)
+    selectedList.forEach(function (el) { translateBy(el, dx, dy) })
+    var after = selectedList.map(snapStyle)
+    pushHistory(before, after, selectedList.slice())
+    postSelection()
+    post({ type: 'changed' })
+  }
+
+
   // ---- 统一快照（含存在性标记，支持增删/样式/文字/位置）----
   function snapStyle(el) {
     return {
@@ -614,9 +869,11 @@
     var sx = e.clientX
     var sy = e.clientY
 
-    function applyMove(nx, ny) {
+    function applyMove(gdx, gdy) {
       els.forEach(function (el, i) {
         var b = bases[i]
+        var nx = b.e + gdx
+        var ny = b.f + gdy
         el.style.transform =
           'matrix(' + b.a + ',' + b.b + ',' + b.c + ',' + b.d + ',' + nx + ',' + ny + ')'
       })
@@ -634,21 +891,23 @@
         })
         refs = getReferenceEls(slides[current])
       }
-      var b0 = bases[0]
-      var nx = b0.e + dx
-      var ny = b0.f + dy
+      var gdx = dx
+      var gdy = dy
       if (gridOn) {
-        nx = Math.round(nx / GRID_SIZE) * GRID_SIZE
-        ny = Math.round(ny / GRID_SIZE) * GRID_SIZE
+        // 以主元素为基准吸附网格，其他元素保持相对间距
+        var gx = bases[0].e + gdx
+        var gy = bases[0].f + gdy
+        gdx = Math.round(gx / GRID_SIZE) * GRID_SIZE - bases[0].e
+        gdy = Math.round(gy / GRID_SIZE) * GRID_SIZE - bases[0].f
       }
-      applyMove(nx, ny)
+      applyMove(gdx, gdy)
       var primary = els[els.length - 1]
       var rect = primary.getBoundingClientRect()
       var snapX = findSnapDelta(rect, refs, 'x')
       var snapY = findSnapDelta(rect, refs, 'y')
-      if (snapX) nx += snapX.delta
-      if (snapY) ny += snapY.delta
-      if (snapX || snapY) applyMove(nx, ny)
+      if (snapX) gdx += snapX.delta
+      if (snapY) gdy += snapY.delta
+      if (snapX || snapY) applyMove(gdx, gdy)
       showGuides(snapX ? snapX.value : null, snapY ? snapY.value : null)
     }
 
@@ -798,6 +1057,9 @@
           el.style.setProperty(prop, v, 'important')
           // 同时设置 inline style 作为后备
           el.style.setProperty(k, v, 'important')
+        } else if (k === 'border' || k === 'borderRadius' || k === 'boxShadow') {
+          // 边框/圆角/阴影使用 important，避免页面 CSS 优先级更高导致不生效
+          el.style.setProperty(k, v, 'important')
         } else {
           el.style.setProperty(k, v)
         }
@@ -828,8 +1090,22 @@
     post({ type: 'changed' })
   }
 
+  // ---- 图片替换 ----
+  function replaceSelectedImage(url) {
+    if (!url || !selectedList.length) return
+    var imgs = selectedList.filter(function (el) { return el.tagName === 'IMG' && !isLocked(el) })
+    if (!imgs.length) return
+    var before = imgs.map(snapStyle)
+    imgs.forEach(function (el) { el.setAttribute('src', url) })
+    var after = imgs.map(snapStyle)
+    pushHistory(before, after, imgs.slice())
+    postSelection()
+    post({ type: 'changed' })
+  }
+
   // ---- 元素删除 ----
   function deleteSelected() {
+    selectedList = selectedList.filter(function (el) { return !isLocked(el) })
     if (!selectedList.length) return
     var before = selectedList.map(function (el) {
       return { el: el, style: el.getAttribute('style') || '', text: null, parent: el.parentNode, next: el.nextSibling, present: true }
@@ -954,23 +1230,34 @@
     if (t && t.isContentEditable) return // 文字编辑中，不触发拖动
     var multi = e.ctrlKey || e.metaKey
     if (!isEditable(t)) {
-      if (!multi) deselectAll()
+      // 框选三模式：
+      // 默认：完全包含 + 只选叶子元素
+      // Shift/Ctrl：完全包含 + 连布局容器一起选
+      // Alt：碰到就选（只选叶子元素，避免半截句子不选）
+      var boxMode = 'container'
+      if (e.shiftKey || e.ctrlKey || e.metaKey) boxMode = 'layout'
+      startBoxSelect(e, boxMode)
       return
     }
     if (multi) {
-      toggleSelect(t) // Ctrl/Cmd+点击：加入/移出多选，不触发拖动
+      if (t.getAttribute && t.getAttribute('data-zt-group')) toggleGroup(t)
+      else toggleSelect(t) // Ctrl/Cmd+点击：加入/移出多选，不触发拖动
       e.preventDefault()
       return
     }
-    if (!isSelected(t)) selectOnly(t) // 普通点击：单选（替换）
-    startDrag(selectedList.slice(), e) // 拖已选中的某个元素 → 整体一起拖
+    var insideSelected = selectedList.some(function (el) { return el !== t && el.contains(t) })
+    if (!isSelected(t) && !insideSelected) {
+      if (t.getAttribute && t.getAttribute('data-zt-group')) selectGroup(t)
+      else selectOnly(t)
+    }
+    if (!isLocked(t)) startDrag(selectedList.slice(), e) // 拖已选中的某个元素或其内部 → 整体一起拖
   }
 
   function init() {
     document.addEventListener('pointerdown', onPointerDown)
     document.addEventListener('dblclick', function (e) {
       var t = e.target
-      if (!isEditable(t)) return
+      if (!isEditable(t) || isLocked(t)) return
       startTextEdit(t)
       e.preventDefault()
     })
@@ -995,6 +1282,12 @@
         e.preventDefault()
       } else if (ctrl && k === 'v') {
         paste()
+        e.preventDefault()
+      } else if (!ctrl && ['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].indexOf(k) >= 0) {
+        var step = e.shiftKey ? 10 : 1
+        var dx = k === 'arrowleft' ? -step : (k === 'arrowright' ? step : 0)
+        var dy = k === 'arrowup' ? -step : (k === 'arrowdown' ? step : 0)
+        if (dx || dy) moveSelectedBy(dx, dy)
         e.preventDefault()
       } else if (!ctrl && (k === 'delete' || k === 'backspace')) {
         deleteSelected()
@@ -1037,6 +1330,12 @@
       else if (m.type === 'requestSerialize') serialize()
       else if (m.type === 'resetElement') resetSelected()
       else if (m.type === 'align') align(m.mode)
+      else if (m.type === 'layer') layer(m.mode)
+      else if (m.type === 'group') groupSelected()
+      else if (m.type === 'ungroup') ungroupSelected()
+      else if (m.type === 'toggleLock') setLocked(!isLocked(selectedList[selectedList.length - 1]))
+      else if (m.type === 'moveBy') moveSelectedBy(m.dx, m.dy)
+      else if (m.type === 'replaceImage') replaceSelectedImage(m.url)
       else if (m.type === 'setStyles') setStyles(m.styles || {})
       else if (m.type === 'setAspectLock') aspectRatioLocked = !!m.locked
       else if (m.type === 'enterPlacementMode') startPlacementMode(m.url, m.assetType)
@@ -1069,6 +1368,7 @@
     resizeHandles = {}
     if (guideOverlay && guideOverlay.parentNode) guideOverlay.parentNode.removeChild(guideOverlay)
     guideOverlay = null
+    clearBoxSelect()
     document.body.classList.remove('zt-grid')
     selectedList.forEach(function (el) {
       el.classList.remove('zt-selected')
