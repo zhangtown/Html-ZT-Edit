@@ -38,7 +38,7 @@
     },
     "win": {
       "target": ["portable"],
-      "sign": "electron/sign.js"
+      "signAndEditExecutable": false
     }
   }
 }
