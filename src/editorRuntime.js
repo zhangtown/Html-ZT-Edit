@@ -145,15 +145,6 @@
   // 拖拽缩放：所有选中元素同步改变相同的宽高增量
   function startResize(dir, primary, e) {
     var els = selectedList.slice()
-    // 图片缩放时，若父级是 flex 容器，一起缩放
-    var extraParents = []
-    els.forEach(function (el) {
-      if (el.tagName === 'IMG') {
-        var wrapper = layoutWrapperOf(el)
-        if (wrapper && els.indexOf(wrapper) < 0) extraParents.push(wrapper)
-      }
-    })
-    els = els.concat(extraParents)
     if (els.length < 1) return
     var rect = primary.getBoundingClientRect()
     var sx = e.clientX
@@ -499,35 +490,21 @@
   function setStyles(styles) {
     if (!selectedList.length) return
     var before = selectedList.map(snapStyle)
-    // 图片改宽高时，同步更新其父级 flex 容器
-    var extraParents = []
-    selectedList.forEach(function (el) {
-      if (el.tagName === 'IMG' && (styles.width !== undefined || styles.height !== undefined)) {
-        var wrapper = layoutWrapperOf(el)
-        if (wrapper && selectedList.indexOf(wrapper) < 0) extraParents.push(wrapper)
-      }
-    })
     selectedList.forEach(function (el) {
       for (var k in styles) {
         if (!styles.hasOwnProperty(k)) continue
         var v = styles[k]
-        if (v === '' || v == null) el.style.removeProperty(k)
-        else el.style.setProperty(k, v)
+        if (v === '' || v == null) {
+          el.style.removeProperty(k)
+        } else if (k === 'fontFamily' || k === 'fontSize' || k === 'fontWeight') {
+          // 字体相关用 !important 强制覆盖，防止页面 CSS 类的高优先级规则吞掉修改
+          el.style.setProperty(k, v, 'important')
+        } else {
+          el.style.setProperty(k, v)
+        }
       }
     })
-    // 父容器只同步宽高
-    extraParents.forEach(function (p) {
-      if (styles.width !== undefined) {
-        if (styles.width === '' || styles.width == null) p.style.removeProperty('width')
-        else p.style.setProperty('width', styles.width)
-      }
-      if (styles.height !== undefined) {
-        if (styles.height === '' || styles.height == null) p.style.removeProperty('height')
-        else p.style.setProperty('height', styles.height)
-      }
-    })
-    var allEls = selectedList.slice().concat(extraParents)
-    var after = allEls.map(snapStyle)
+    var after = selectedList.map(snapStyle)
     pushHistory(before, after, selectedList.slice())
     postSelection()
     post({ type: 'changed' })
