@@ -487,6 +487,21 @@
   }
 
   // ---- 样式修改（大小/颜色/字体）----
+  // ---- 样式修改（大小/颜色/字体）----
+  var fontStyleEl = null // 用 style 规则 + data-zt-font 属性强制覆盖字体
+
+  function ensureFontStyle() {
+    if (fontStyleEl) return
+    fontStyleEl = document.createElement('style')
+    fontStyleEl.id = 'zt-editor-fonts'
+    fontStyleEl.textContent = [
+      '[data-zt-ff] { font-family: var(--zt-ff) !important; }',
+      '[data-zt-fs]  { font-size:    var(--zt-fs)  !important; }',
+      '[data-zt-fw]  { font-weight:  var(--zt-fw)  !important; }',
+    ].join('\n')
+    document.head.appendChild(fontStyleEl)
+  }
+
   function setStyles(styles) {
     if (!selectedList.length) return
     var before = selectedList.map(snapStyle)
@@ -496,8 +511,18 @@
         var v = styles[k]
         if (v === '' || v == null) {
           el.style.removeProperty(k)
+          // 同时清除字体 data 属性
+          if (k === 'fontFamily') { el.removeAttribute('data-zt-ff'); el.style.removeProperty('--zt-ff') }
+          if (k === 'fontSize')   { el.removeAttribute('data-zt-fs'); el.style.removeProperty('--zt-fs') }
+          if (k === 'fontWeight') { el.removeAttribute('data-zt-fw'); el.style.removeProperty('--zt-fw') }
         } else if (k === 'fontFamily' || k === 'fontSize' || k === 'fontWeight') {
-          // 字体相关用 !important 强制覆盖，防止页面 CSS 类的高优先级规则吞掉修改
+          // 字体相关：用 style 规则 + data 属性 + !important 双重保证
+          ensureFontStyle()
+          var attr = { fontFamily: 'ff', fontSize: 'fs', fontWeight: 'fw' }[k]
+          var prop = { fontFamily: '--zt-ff', fontSize: '--zt-fs', fontWeight: '--zt-fw' }[k]
+          el.setAttribute('data-zt-' + attr, '1')
+          el.style.setProperty(prop, v, 'important')
+          // 同时设置 inline style 作为后备
           el.style.setProperty(k, v, 'important')
         } else {
           el.style.setProperty(k, v)
