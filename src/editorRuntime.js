@@ -192,9 +192,9 @@
         if (h < 8) h = 8
         el.style.width = w + 'px'
         el.style.height = h + 'px'
-        // 拖拽缩放时清除 max-width / max-height 约束
-        el.style.removeProperty('max-width')
-        el.style.removeProperty('max-height')
+        // 拖拽缩放时覆盖 max-width / max-height 约束
+        el.style.setProperty('max-width', 'none', 'important')
+        el.style.setProperty('max-height', 'none', 'important')
       })
       positionResizeHandles(primary)
     }
@@ -529,6 +529,10 @@
           el.style.setProperty(k, v, 'important')
         } else {
           el.style.setProperty(k, v)
+        }
+        // 设置明确宽高时，覆盖 max-width / max-height 约束（改为 none+important 强制解除）
+        if (k === 'width' || k === 'height') {
+          el.style.setProperty('max-' + k, 'none', 'important')
         }
       }
     })
