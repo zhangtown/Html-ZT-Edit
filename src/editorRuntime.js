@@ -253,24 +253,65 @@
     el.style.maxWidth = '100%'
     el.style.maxHeight = '80vh'
     el.style.display = 'block'
+    el.style.objectFit = 'contain'
+    el.style.flex = '0 1 auto'
+    el.style.margin = '8px auto'
+    // 使用相对定位，插入到原有布局流中，随页面分辨率缩放
+    el.style.position = 'relative'
     return el
+  }
+
+  // 找到点击/拖放位置所在的内容布局容器（优先 flex/grid 容器），兜底用 slide
+  function findLayoutContainer(slide, target) {
+    var el = target && target.nodeType === 1 ? target : null
+    while (el && el !== document.body && el !== slide && el.parentElement) {
+      var cs = getComputedStyle(el)
+      if (el !== slide && (cs.display === 'flex' || cs.display === 'grid' || cs.display === 'inline-flex' || cs.display === 'inline-grid')) {
+        return el
+      }
+      el = el.parentElement
+    }
+    return slide
+  }
+
+  // 在容器内找到插入参考点：尽量插在命中元素后面
+  function findInsertRef(container, target) {
+    if (container === target) return null
+    var child = target
+    while (child && child.parentElement !== container) child = child.parentElement
+    return child ? child.nextSibling : null
+  }
+
+  // 插入到布局流后，用相对定位的百分比偏移把元素移动到点击/拖放点附近
+  function insertIntoLayout(container, el, ref, desiredX, desiredY, center) {
+    container.insertBefore(el, ref)
+    var cRect = container.getBoundingClientRect()
+    var eRect = el.getBoundingClientRect()
+    var wantX = desiredX - (center ? eRect.width / 2 : 0)
+    var wantY = desiredY - (center ? eRect.height / 2 : 0)
+    var dx = wantX - (eRect.left - cRect.left)
+    var dy = wantY - (eRect.top - cRect.top)
+    if (cRect.width > 0) el.style.left = (dx / cRect.width * 100) + '%'
+    else el.style.left = dx + 'px'
+    if (cRect.height > 0) el.style.top = (dy / cRect.height * 100) + '%'
+    else el.style.top = dy + 'px'
+    // 相对定位，不脱离文档流，百分比会随布局尺寸缩放
+    el.style.position = 'relative'
   }
 
   function placeAsset(e) {
     var slide = slides[current]
     if (!slide) { exitPlacementMode(); return }
     var el = createAssetElement(placementData.url, placementData.type)
-    var slideRect = slide.getBoundingClientRect()
-    var x = e.clientX - slideRect.left - 100
-    var y = e.clientY - slideRect.top - 50
-    if (x < 0) x = 0
-    if (y < 0) y = 0
-    el.style.transform = 'translate(' + x + 'px,' + y + 'px)'
-    slide.appendChild(el)
+    var target = e.target
+    var container = findLayoutContainer(slide, target)
+    var ref = findInsertRef(container, target)
+    var cRect = container.getBoundingClientRect()
+    insertIntoLayout(container, el, ref, e.clientX - cRect.left, e.clientY - cRect.top, true)
     deselectAll()
     selectOnly(el)
     var before = [{ el: el, style: '', text: null, parent: null, next: null, present: false }]
-    var after = [{ el: el, style: el.getAttribute('style') || '', text: null, parent: slide, next: el.nextSibling, present: true }]
+    var after = [{ el: el, style: el.getAttribute('style') || '', text: null, parent: el.parentNode, next: el.nextSibling, present: true }]
     pushHistory(before, after, [el])
     placementMode = false
     placementData = null
@@ -287,12 +328,18 @@
     var slide = slides[current]
     if (!slide) return
     var el = createAssetElement(url, assetType)
-    el.style.transform = 'translate(' + x + 'px,' + y + 'px)'
-    slide.appendChild(el)
+    var sr = slide.getBoundingClientRect()
+    var clientX = sr.left + x
+    var clientY = sr.top + y
+    var target = document.elementFromPoint(clientX, clientY)
+    var container = findLayoutContainer(slide, target)
+    var ref = findInsertRef(container, target)
+    var cRect = container.getBoundingClientRect()
+    insertIntoLayout(container, el, ref, clientX - cRect.left, clientY - cRect.top, true)
     deselectAll()
     selectOnly(el)
     var before = [{ el: el, style: '', text: null, parent: null, next: null, present: false }]
-    var after = [{ el: el, style: el.getAttribute('style') || '', text: null, parent: slide, next: el.nextSibling, present: true }]
+    var after = [{ el: el, style: el.getAttribute('style') || '', text: null, parent: el.parentNode, next: el.nextSibling, present: true }]
     pushHistory(before, after, [el])
     post({ type: 'changed' })
     post({ type: 'assetPlaced' })
@@ -305,8 +352,8 @@
     var slide = slides[current]
     if (!slide) return false
     var slideRect = slide.getBoundingClientRect()
-    var baseX = e.clientX - slideRect.left - 100
-    var baseY = e.clientY - slideRect.top - 50
+    var baseX = e.clientX - slideRect.left
+    var baseY = e.clientY - slideRect.top
     if (baseX < 0) baseX = 0
     if (baseY < 0) baseY = 0
     var exts = /\.(png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|ogg|mov|avi)$/i
@@ -325,6 +372,7 @@
             post({
               type: 'fileDropped',
               name: file.name,
+              size: file.size,
               dataUrl: r.result,
               assetType: isVideo ? 'video' : 'image',
               x: posX,
@@ -798,12 +846,13 @@
     }
     var t = e.target
     if (t && t.isContentEditable) return // 文字编辑中，不触发拖动
+    var multi = e.ctrlKey || e.metaKey
     if (!isEditable(t)) {
-      if (!e.ctrlKey) deselectAll()
+      if (!multi) deselectAll()
       return
     }
-    if (e.ctrlKey) {
-      toggleSelect(t) // Ctrl+点击：加入/移出多选，不触发拖动
+    if (multi) {
+      toggleSelect(t) // Ctrl/Cmd+点击：加入/移出多选，不触发拖动
       e.preventDefault()
       return
     }
@@ -865,7 +914,7 @@
         var slide = slides[current]
         if (slide) {
           var sr = slide.getBoundingClientRect()
-          post({ type: 'assetDropPosition', x: e.clientX - sr.left - 100, y: e.clientY - sr.top - 50 })
+          post({ type: 'assetDropPosition', x: e.clientX - sr.left, y: e.clientY - sr.top })
         }
         assetDragActive = false
       }
@@ -905,8 +954,13 @@
   function exportClean() {
     var styleEl = document.getElementById('zt-editor-style')
     var scriptEl = document.getElementById('zt-editor-runtime')
+    var fontEl = document.getElementById('zt-editor-fonts')
     if (styleEl) styleEl.remove()
     if (scriptEl) scriptEl.remove()
+    if (fontEl) fontEl.remove()
+    if (resizeOverlay && resizeOverlay.parentNode) resizeOverlay.parentNode.removeChild(resizeOverlay)
+    resizeOverlay = null
+    resizeHandles = {}
     document.body.classList.remove('zt-grid')
     selectedList.forEach(function (el) {
       el.classList.remove('zt-selected')

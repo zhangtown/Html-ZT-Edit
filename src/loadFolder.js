@@ -58,3 +58,17 @@ export function resolvePath(baseDir, rel) {
   }
   return parts.join('/')
 }
+
+// 从某个 HTML 文件所在目录，计算到目标资源文件的相对路径（供导出/素材插入使用）
+export function toRelativePath(baseDir, filePath) {
+  const base = (baseDir || '').split('/').filter(Boolean)
+  const file = filePath.split('/').filter(Boolean)
+  let common = 0
+  while (common < base.length && common < file.length && base[common] === file[common]) {
+    common++
+  }
+  const upCount = base.length - common
+  const down = file.slice(common).join('/')
+  const rel = (upCount > 0 ? '../'.repeat(upCount) : '') + down
+  return rel || filePath
+}

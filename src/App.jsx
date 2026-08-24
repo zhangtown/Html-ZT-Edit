@@ -5,6 +5,7 @@ import {
   buildFileMap,
   listHtmlFiles,
   dirOf,
+  toRelativePath,
 } from './loadFolder.js'
 import { stripScripts, rewriteAssets, restoreAndWrap, stripEditorParts } from './htmlProcess.js'
 import { saveDraft, loadDraft, clearDraft } from './draftStore.js'
@@ -69,6 +70,7 @@ function download(filename, text) {
 export default function App() {
   const iframeRef = useRef(null)
   const fileMapRef = useRef(new Map())
+  const activeHtmlRef = useRef('')
   const relMapRef = useRef(new Map())
   const scriptsRef = useRef([])
   const gridOnRef = useRef(false)
@@ -92,8 +94,10 @@ export default function App() {
   const [aspectLock, setAspectLock] = useState(false)
   const [assets, setAssets] = useState([]) // [{ name, url, type }] 素材列表
   const [placingAsset, setPlacingAsset] = useState(null) // { url, name, type } | null
+  const dragDataRef = useRef(null) // 拖拽中的素材信息
 
   gridOnRef.current = gridOn
+  activeHtmlRef.current = activeHtml
 
   function send(msg) {
     iframeRef.current?.contentWindow?.postMessage(msg, '*')
@@ -306,7 +310,7 @@ export default function App() {
       const url = URL.createObjectURL(file)
       assetUrlsRef.current.push(url)
       const isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(path)
-      list.push({ name: path.split('/').pop() || path, url, type: isVideo ? 'video' : 'image' })
+      list.push({ name: path.split('/').pop() || path, path, url, type: isVideo ? 'video' : 'image' })
     }
     setAssets(list)
   }, [htmlFiles])
@@ -322,7 +326,15 @@ export default function App() {
   }
 
   // 放置素材到画布
+  function registerAssetPath(asset) {
+    // 素材来自所选文件夹时，记录 blob -> 相对路径，导出时可恢复为正常文件引用
+    if (!asset || !asset.path) return
+    const rel = toRelativePath(dirOf(activeHtmlRef.current), asset.path)
+    if (rel) relMapRef.current.set(asset.url, rel)
+  }
+
   function handlePlaceAsset(asset) {
+    registerAssetPath(asset)
     setPlacingAsset(asset)
     send({ type: 'enterPlacementMode', url: asset.url, assetType: asset.type })
   }
@@ -343,6 +355,7 @@ export default function App() {
       if (m.type === 'assetDropPosition') {
         const d = dragDataRef.current
         if (d) {
+          registerAssetPath(d)
           send({ type: 'insertAsset', url: d.url, assetType: d.type, x: m.x, y: m.y })
           dragDataRef.current = null
         }
@@ -352,6 +365,21 @@ export default function App() {
         const blob = dataUrlToBlob(m.dataUrl)
         const url = URL.createObjectURL(blob)
         assetUrlsRef.current.push(url)
+        // 如果拖入的是所选文件夹里的文件，按相对路径导出；否则用 dataUrl 内嵌，避免导出 blob
+        let droppedPath = null
+        if (m.size != null) {
+          for (const [fp, f] of fileMapRef.current) {
+            if (f.name === m.name && f.size === m.size) {
+              droppedPath = fp
+              break
+            }
+          }
+        }
+        if (droppedPath) {
+          relMapRef.current.set(url, toRelativePath(dirOf(activeHtmlRef.current), droppedPath))
+        } else if (m.dataUrl) {
+          relMapRef.current.set(url, m.dataUrl)
+        }
         send({ type: 'insertAsset', url, assetType: m.assetType, x: m.x, y: m.y })
       }
     }
@@ -392,8 +420,8 @@ export default function App() {
         <button onClick={handlePick} style={btn('#C41E24')}>
           选择文件夹
         </button>
-        {htmlFiles.length > 1 && (
-          <select
+        {htmlFiles.length > 0 && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#d1d5db' }}>HTML: <select
             value={activeHtml}
             onChange={(e) => {
               setActiveHtml(e.target.value)
@@ -406,7 +434,7 @@ export default function App() {
                 {p}
               </option>
             ))}
-          </select>
+          </select></label>
         )}
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
@@ -599,6 +627,8 @@ export default function App() {
                 placingAsset={placingAsset}
                 onPlace={handlePlaceAsset}
                 onCancel={cancelPlacement}
+                onDragStart={handleDragStart}
+                onDragEnd={handleDragEnd}
               />
             )}
           </div>
@@ -830,7 +860,9 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
 
       {localAssets.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {localAssets.map((a, i) => (
+          {localAssets.map((a, i) => {
+            const isPlacing = placingAsset && placingAsset.url === a.url && placingAsset.name === a.name
+            return (
             <div
               key={i}
               draggable={!placingAsset}
@@ -842,11 +874,12 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
               onClick={() => onPlace(a)}
               title={'拖入画布或点击放置: ' + a.name}
               style={{
-                border: '1px solid #d1d5db',
+                border: isPlacing ? '2px solid #C41E24' : '1px solid #d1d5db',
                 borderRadius: 6,
                 overflow: 'hidden',
                 cursor: placingAsset ? 'default' : 'grab',
-                background: '#f9fafb',
+                background: isPlacing ? '#fff5f5' : '#f9fafb',
+                boxShadow: isPlacing ? '0 0 0 2px rgba(196,30,36,.12)' : 'none',
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
@@ -862,7 +895,8 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
                 {a.name}
               </span>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
