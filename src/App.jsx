@@ -647,13 +647,6 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         删除选中元素（Delete）
       </button>
 
-      <button
-        onClick={() => send({ type: 'removeConstraints' })}
-        style={{ ...btn('#4b5563'), width: '100%', marginTop: 8 }}
-      >
-        解除约束（清除 max-/min- 宽高限制）
-      </button>
-
       <p style={{ color: '#9ca3af', fontSize: 12, marginTop: 12, lineHeight: 1.6 }}>
         拖动即平移（保留旋转/缩放）；Ctrl+Z 撤销、Ctrl+Shift+Z 重做。
         <br />

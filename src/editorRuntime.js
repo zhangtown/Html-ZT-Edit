@@ -657,22 +657,6 @@
     post({ type: 'changed' })
   }
 
-  // ---- 解除约束：清除选中元素的 max-/min- 宽高限制 ----
-  function removeConstraints() {
-    if (!selectedList.length) return
-    var before = selectedList.map(snapStyle)
-    selectedList.forEach(function (el) {
-      el.style.removeProperty('max-width')
-      el.style.removeProperty('max-height')
-      el.style.removeProperty('min-width')
-      el.style.removeProperty('min-height')
-    })
-    var after = selectedList.map(snapStyle)
-    pushHistory(before, after, selectedList.slice())
-    postSelection()
-    post({ type: 'changed' })
-  }
-
   // ---- 序列化（供草稿保存，保留编辑器样式/选择类，由父窗口剥离）----
   function serialize() {
     post({ type: 'serialize', html: document.documentElement.outerHTML, current: current })
@@ -754,7 +738,6 @@
       else if (m.type === 'align') align(m.mode)
       else if (m.type === 'setStyles') setStyles(m.styles || {})
       else if (m.type === 'setAspectLock') aspectRatioLocked = !!m.locked
-      else if (m.type === 'removeConstraints') removeConstraints()
       else if (m.type === 'setText') setText(m.text)
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()
