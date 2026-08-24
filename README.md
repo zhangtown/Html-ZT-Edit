@@ -103,7 +103,7 @@ npm install        # 会自动安装 electron / electron-builder
 ```bash
 npm run electron:build
 ```
-脚本会先 `vite build` 产出 `dist/`，再用 `electron-builder` 打包。完成后在 `dist-electron/` 目录下得到 **`HTML-ZT-Edit Setup x.x.x.exe`**（NSIS 安装包），双击安装后，安装目录里有 `HTML-ZT-Edit.exe` 可直接运行。
+脚本会先 `vite build` 产出 `dist/`，再用 `electron-builder` 打包。完成后在 `dist-electron/` 目录下得到 **`HTML-ZT-Edit.exe`**（portable 单文件，双击即开，无需安装，可直接拷贝给别人）。
 
 ### 3. 本地调试桌面端（开发时）
 ```bash

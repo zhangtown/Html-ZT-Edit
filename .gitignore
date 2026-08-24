@@ -13,6 +13,9 @@ dist-verify3/
 dist-fix/
 dist-tmp/
 
+# Vite 依赖优化缓存
+*.timestamp-*.mjs
+
 # 系统/编辑器
 .DS_Store
 Thumbs.db

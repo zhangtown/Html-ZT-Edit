@@ -3,10 +3,15 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "main": "electron/main.cjs",
+  "author": "zhangtown",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview --port 4173"
+    "preview": "vite preview --port 4173",
+    "electron": "electron .",
+    "electron:dev": "npm run build && electron .",
+    "electron:build": "npm run build && electron-builder --win"
   },
   "dependencies": {
     "react": "^18.3.1",
@@ -14,6 +19,24 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^5.4.11"
+    "vite": "^5.4.11",
+    "electron": "^29.4.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.htmlztedit.app",
+    "productName": "HTML-ZtEdit",
+    "copyright": "Copyright © 2026",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": ["portable"]
+    }
   }
 }

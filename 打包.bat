@@ -50,7 +50,7 @@ echo.
 
 echo [3/3] Build complete.
 echo Output folder: dist-electron
-echo Look for file: HTML-ZT-Edit Setup *.exe
+echo Look for file: HTML-ZT-Edit.exe
 
 :end
 popd
