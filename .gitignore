@@ -1,0 +1,23 @@
+# 依赖（体积大，且不随源码走）
+node_modules/
+
+# 构建产物
+dist/
+dist-*/
+dist-*
+
+# 编辑器临时构建验证目录
+dist-verify/
+dist-verify2/
+dist-verify3/
+dist-fix/
+dist-tmp/
+
+# 系统/编辑器
+.DS_Store
+Thumbs.db
+*.log
+
+# 本地草稿（IndexedDB 数据，非源码）
+草稿/
+draft/
