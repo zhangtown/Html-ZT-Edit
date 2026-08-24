@@ -22,6 +22,8 @@
   var aspectRatioLocked = false // 属性面板「锁定纵横比」开关
   var resizeOverlay = null // 边缘/角点拖拽调整大小的手柄层
   var resizeHandles = {}
+  var guideOverlay = null // 智能参考线
+  var SNAP_DISTANCE = 6 // 智能参考线吸附阈值（px）
   var placementMode = false // 素材放置模式
   var placementData = null // { url, assetType }
 
@@ -144,10 +146,78 @@
     positionResizeHandles(selectedList[selectedList.length - 1])
   }
 
+  // ---- 智能参考线（类似 PPT / PS 的延长线吸附）----
+  function ensureGuideOverlay() {
+    if (guideOverlay) return
+    guideOverlay = document.createElement('div')
+    guideOverlay.id = 'zt-guide-overlay'
+    guideOverlay.style.cssText =
+      'position:fixed;top:0;left:0;width:100%;height:100%;' +
+      'pointer-events:none;z-index:2147483646;'
+    document.body.appendChild(guideOverlay)
+  }
+
+  function clearGuides() {
+    if (guideOverlay) guideOverlay.innerHTML = ''
+  }
+
+  function showGuides(vx, hy) {
+    ensureGuideOverlay()
+    guideOverlay.innerHTML = ''
+    if (vx != null) {
+      var v = document.createElement('div')
+      v.style.cssText =
+        'position:absolute;top:0;left:' + vx + 'px;width:1px;height:100%;' +
+        'background:#C41E24;pointer-events:none;'
+      guideOverlay.appendChild(v)
+    }
+    if (hy != null) {
+      var h = document.createElement('div')
+      h.style.cssText =
+        'position:absolute;left:0;top:' + hy + 'px;width:100%;height:1px;' +
+        'background:#C41E24;pointer-events:none;'
+      guideOverlay.appendChild(h)
+    }
+  }
+
+  function getReferenceEls(slide) {
+    var all = Array.prototype.slice.call(slide.querySelectorAll('*'))
+    return all.filter(function (el) {
+      if (!isEditable(el)) return false
+      if (selectedList.indexOf(el) >= 0) return false
+      var r = el.getBoundingClientRect()
+      return r.width > 0 && r.height > 0
+    })
+  }
+
+  function findSnapDelta(rect, refs, axis) {
+    var myVals = axis === 'x'
+      ? [rect.left, rect.left + rect.width / 2, rect.right]
+      : [rect.top, rect.top + rect.height / 2, rect.bottom]
+    var found = null
+    refs.forEach(function (ref) {
+      var r = ref.getBoundingClientRect()
+      var refVals = axis === 'x'
+        ? [r.left, r.left + r.width / 2, r.right]
+        : [r.top, r.top + r.height / 2, r.bottom]
+      myVals.forEach(function (mv) {
+        refVals.forEach(function (rv) {
+          var delta = rv - mv
+          var dist = Math.abs(delta)
+          if (dist <= SNAP_DISTANCE && (!found || dist < found.dist)) {
+            found = { delta: delta, value: rv, dist: dist }
+          }
+        })
+      })
+    })
+    return found
+  }
+
   // 拖拽缩放：所有选中元素同步改变相同的宽高增量
   function startResize(dir, primary, e) {
     var els = selectedList.slice()
     if (els.length < 1) return
+    var refs = getReferenceEls(slides[current])
     var rect = primary.getBoundingClientRect()
     var sx = e.clientX
     var sy = e.clientY
@@ -162,6 +232,21 @@
       return { w: r.width, h: r.height }
     })
 
+    function applySizes(w, h) {
+      var dw = w - startW
+      var dh = h - startH
+      els.forEach(function (el, i) {
+        var tw = init[i].w + dw
+        var th = init[i].h + dh
+        if (tw < 8) tw = 8
+        if (th < 8) th = 8
+        el.style.width = tw + 'px'
+        el.style.height = th + 'px'
+        el.style.setProperty('max-width', 'none', 'important')
+        el.style.setProperty('max-height', 'none', 'important')
+      })
+    }
+
     function move(ev) {
       var dx = ev.clientX - sx
       var dy = ev.clientY - sy
@@ -174,7 +259,6 @@
 
       var lock = aspectRatioLocked || ev.shiftKey
       if (lock && isCorner) {
-        // 角点 + 锁定纵横比：以主方向为准
         if (Math.abs(dx) > Math.abs(dy)) {
           newH = newW / ratio
         } else {
@@ -184,24 +268,28 @@
       if (newW < 8) newW = 8
       if (newH < 8) newH = 8
 
-      var dw = newW - startW
-      var dh = newH - startH
-      els.forEach(function (el, i) {
-        // 对每个选中元素应用相同的增量
-        var w = init[i].w + dw
-        var h = init[i].h + dh
-        if (w < 8) w = 8
-        if (h < 8) h = 8
-        el.style.width = w + 'px'
-        el.style.height = h + 'px'
-        // 拖拽缩放时覆盖 max-width / max-height 约束
-        el.style.setProperty('max-width', 'none', 'important')
-        el.style.setProperty('max-height', 'none', 'important')
-      })
+      applySizes(newW, newH)
+      // 缩放时也提供智能参考线
+      var pr = primary.getBoundingClientRect()
+      var snapX = findSnapDelta(pr, refs, 'x')
+      var snapY = findSnapDelta(pr, refs, 'y')
+      if (snapX) {
+        if (dir.indexOf('e') >= 0) newW += snapX.delta
+        else if (dir.indexOf('w') >= 0) newW -= snapX.delta
+        if (newW < 8) newW = 8
+      }
+      if (snapY) {
+        if (dir.indexOf('s') >= 0) newH += snapY.delta
+        else if (dir.indexOf('n') >= 0) newH -= snapY.delta
+        if (newH < 8) newH = 8
+      }
+      if (snapX || snapY) applySizes(newW, newH)
+      showGuides(snapX ? snapX.value : null, snapY ? snapY.value : null)
       positionResizeHandles(primary)
     }
 
     function up() {
+      clearGuides()
       var after = els.map(snapStyle)
       pushHistory(before, after, els.slice())
       postSelection()
@@ -419,6 +507,7 @@
   }
 
   function deselectAll() {
+    clearGuides()
     selectedList.forEach(function (el) {
       el.classList.remove('zt-selected')
     })
@@ -516,13 +605,22 @@
     return t && t !== 'none' ? new DOMMatrixReadOnly(t) : new DOMMatrixReadOnly()
   }
 
-  // ---- 拖动（支持整体多选拖动）----
+  // ---- 拖动（支持整体多选拖动，带智能参考线吸附）----
   function startDrag(els, e) {
     var dragging = false
     var before = null
     var bases = null
+    var refs = []
     var sx = e.clientX
     var sy = e.clientY
+
+    function applyMove(nx, ny) {
+      els.forEach(function (el, i) {
+        var b = bases[i]
+        el.style.transform =
+          'matrix(' + b.a + ',' + b.b + ',' + b.c + ',' + b.d + ',' + nx + ',' + ny + ')'
+      })
+    }
 
     function move(ev) {
       var dx = ev.clientX - sx
@@ -534,21 +632,28 @@
         bases = els.map(function (el) {
           return safeMatrix(getComputedStyle(el).transform)
         })
+        refs = getReferenceEls(slides[current])
       }
-      els.forEach(function (el, i) {
-        var b = bases[i]
-        var nx = b.e + dx
-        var ny = b.f + dy
-        if (gridOn) {
-          nx = Math.round(nx / GRID_SIZE) * GRID_SIZE
-          ny = Math.round(ny / GRID_SIZE) * GRID_SIZE
-        }
-        el.style.transform =
-          'matrix(' + b.a + ',' + b.b + ',' + b.c + ',' + b.d + ',' + nx + ',' + ny + ')'
-      })
+      var b0 = bases[0]
+      var nx = b0.e + dx
+      var ny = b0.f + dy
+      if (gridOn) {
+        nx = Math.round(nx / GRID_SIZE) * GRID_SIZE
+        ny = Math.round(ny / GRID_SIZE) * GRID_SIZE
+      }
+      applyMove(nx, ny)
+      var primary = els[els.length - 1]
+      var rect = primary.getBoundingClientRect()
+      var snapX = findSnapDelta(rect, refs, 'x')
+      var snapY = findSnapDelta(rect, refs, 'y')
+      if (snapX) nx += snapX.delta
+      if (snapY) ny += snapY.delta
+      if (snapX || snapY) applyMove(nx, ny)
+      showGuides(snapX ? snapX.value : null, snapY ? snapY.value : null)
     }
 
     function up() {
+      clearGuides()
       if (dragging) {
         var after = els.map(snapStyle)
         pushHistory(before, after, els)
@@ -563,6 +668,7 @@
     document.addEventListener('pointerup', up)
     e.preventDefault()
   }
+
 
   // ---- 对齐与分布 ----
   function align(mode) {
@@ -961,6 +1067,8 @@
     if (resizeOverlay && resizeOverlay.parentNode) resizeOverlay.parentNode.removeChild(resizeOverlay)
     resizeOverlay = null
     resizeHandles = {}
+    if (guideOverlay && guideOverlay.parentNode) guideOverlay.parentNode.removeChild(guideOverlay)
+    guideOverlay = null
     document.body.classList.remove('zt-grid')
     selectedList.forEach(function (el) {
       el.classList.remove('zt-selected')
