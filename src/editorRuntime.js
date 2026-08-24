@@ -22,7 +22,6 @@
   var aspectRatioLocked = false // 属性面板「锁定纵横比」开关
   var resizeOverlay = null // 边缘/角点拖拽调整大小的手柄层
   var resizeHandles = {}
-  var resizeTarget = null // 当前正在拖拽缩放的元素
 
   function post(msg) {
     window.parent.postMessage(msg, '*')
@@ -146,6 +145,15 @@
   // 拖拽缩放：所有选中元素同步改变相同的宽高增量
   function startResize(dir, primary, e) {
     var els = selectedList.slice()
+    // 图片缩放时，若父级是 flex 容器，一起缩放
+    var extraParents = []
+    els.forEach(function (el) {
+      if (el.tagName === 'IMG') {
+        var wrapper = layoutWrapperOf(el)
+        if (wrapper && els.indexOf(wrapper) < 0) extraParents.push(wrapper)
+      }
+    })
+    els = els.concat(extraParents)
     if (els.length < 1) return
     var rect = primary.getBoundingClientRect()
     var sx = e.clientX
@@ -225,12 +233,6 @@
       if (x !== el) x.classList.remove('zt-selected')
     })
     selectedList = [el]
-    // 图片选中时，若其父级是 flex 布局容器，一并选中（便于同时调整宽高）
-    var wrapper = layoutWrapperOf(el)
-    if (wrapper && !isSelected(wrapper)) {
-      selectedList.unshift(wrapper)
-      wrapper.classList.add('zt-selected')
-    }
     el.classList.add('zt-selected')
     postSelection()
   }
@@ -497,6 +499,14 @@
   function setStyles(styles) {
     if (!selectedList.length) return
     var before = selectedList.map(snapStyle)
+    // 图片改宽高时，同步更新其父级 flex 容器
+    var extraParents = []
+    selectedList.forEach(function (el) {
+      if (el.tagName === 'IMG' && (styles.width !== undefined || styles.height !== undefined)) {
+        var wrapper = layoutWrapperOf(el)
+        if (wrapper && selectedList.indexOf(wrapper) < 0) extraParents.push(wrapper)
+      }
+    })
     selectedList.forEach(function (el) {
       for (var k in styles) {
         if (!styles.hasOwnProperty(k)) continue
@@ -505,7 +515,19 @@
         else el.style.setProperty(k, v)
       }
     })
-    var after = selectedList.map(snapStyle)
+    // 父容器只同步宽高
+    extraParents.forEach(function (p) {
+      if (styles.width !== undefined) {
+        if (styles.width === '' || styles.width == null) p.style.removeProperty('width')
+        else p.style.setProperty('width', styles.width)
+      }
+      if (styles.height !== undefined) {
+        if (styles.height === '' || styles.height == null) p.style.removeProperty('height')
+        else p.style.setProperty('height', styles.height)
+      }
+    })
+    var allEls = selectedList.slice().concat(extraParents)
+    var after = allEls.map(snapStyle)
     pushHistory(before, after, selectedList.slice())
     postSelection()
     post({ type: 'changed' })
