@@ -88,8 +88,10 @@ export default function App() {
   const [selected, setSelected] = useState(null)
   const [selCount, setSelCount] = useState(0)
   const [restored, setRestored] = useState(false)
-  const [tab, setTab] = useState('prop') // prop | align | info
+  const [tab, setTab] = useState('prop') // prop | align | assets | info
   const [aspectLock, setAspectLock] = useState(false)
+  const [assets, setAssets] = useState([]) // [{ name, url, type }] 素材列表
+  const [placingAsset, setPlacingAsset] = useState(null) // { url, name, type } | null
 
   gridOnRef.current = gridOn
 
@@ -289,6 +291,49 @@ export default function App() {
     }
   }, [selCount])
 
+  // 选择文件夹时，同步提取图片/视频素材
+  const assetUrlsRef = useRef([])
+  useEffect(() => {
+    // 清理旧 blob URL
+    assetUrlsRef.current.forEach((u) => URL.revokeObjectURL(u))
+    assetUrlsRef.current = []
+    const fm = fileMapRef.current
+    if (!fm.size) { setAssets([]); return }
+    const list = []
+    const exts = /\.(png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|ogg|mov|avi)$/i
+    for (const [path, file] of fm) {
+      if (!exts.test(path)) continue
+      const url = URL.createObjectURL(file)
+      assetUrlsRef.current.push(url)
+      const isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(path)
+      list.push({ name: path.split('/').pop() || path, url, type: isVideo ? 'video' : 'image' })
+    }
+    setAssets(list)
+  }, [htmlFiles])
+
+  // 放置素材到画布
+  function handlePlaceAsset(asset) {
+    setPlacingAsset(asset)
+    send({ type: 'enterPlacementMode', url: asset.url, assetType: asset.type })
+  }
+
+  function cancelPlacement() {
+    setPlacingAsset(null)
+    send({ type: 'exitPlacementMode' })
+  }
+
+  // 素材放置完成/取消
+  useEffect(() => {
+    function onMessage(e) {
+      const m = e.data || {}
+      if (m.type === 'assetPlaced' || m.type === 'placementCancelled') {
+        setPlacingAsset(null)
+      }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [])
+
   // 锁定纵横比变化时同步到 iframe
   useEffect(() => {
     send({ type: 'setAspectLock', locked: aspectLock })
@@ -429,6 +474,7 @@ export default function App() {
             {[
               ['prop', '属性'],
               ['align', '对齐'],
+              ['assets', '素材'],
               ['info', '信息'],
             ].map(([k, label]) => (
               <button
@@ -521,6 +567,14 @@ export default function App() {
                 <Row k="文字色" v={selected.color || '—'} />
                 <Row k="背景色" v={selected.backgroundColor || '—'} />
               </div>
+            )}
+            {tab === 'assets' && (
+              <AssetsPanel
+                assets={assets}
+                placingAsset={placingAsset}
+                onPlace={handlePlaceAsset}
+                onCancel={cancelPlacement}
+              />
             )}
           </div>
         </div>
@@ -670,6 +724,65 @@ function Row({ k, v }) {
     <div style={{ display: 'flex', gap: 8 }}>
       <span style={{ color: '#9ca3af', minWidth: 52 }}>{k}</span>
       <span style={{ wordBreak: 'break-all' }}>{v}</span>
+    </div>
+  )
+}
+
+// 素材面板：显示选中文件夹中的图片/视频，点击后放入画布
+function AssetsPanel({ assets, placingAsset, onPlace, onCancel }) {
+  return (
+    <div>
+      <p style={{ color: '#C41E24', fontWeight: 600, fontSize: 13, margin: '0 0 10px' }}>
+        素材库（{assets.length} 个）
+      </p>
+      {assets.length === 0 && (
+        <p style={{ color: '#9ca3af', fontSize: 13, lineHeight: 1.7 }}>
+          请先选择文件夹，其中的图片/视频会自动显示在这里。
+          <br /><br />
+          点击素材即可进入「放置模式」，再点击画布中的位置即可插入。
+        </p>
+      )}
+      {assets.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {assets.map((a, i) => (
+            <button
+              key={i}
+              onClick={() => onPlace(a)}
+              disabled={!!placingAsset}
+              title={'点击放入画布: ' + a.name}
+              style={{
+                border: '1px solid #d1d5db',
+                borderRadius: 6,
+                overflow: 'hidden',
+                cursor: placingAsset ? 'default' : 'pointer',
+                background: '#f9fafb',
+                padding: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+              }}
+            >
+              {a.type === 'video' ? (
+                <video src={a.url} style={{ width: '100%', height: 80, objectFit: 'cover' }} />
+              ) : (
+                <img src={a.url} style={{ width: '100%', height: 80, objectFit: 'cover' }} />
+              )}
+              <span style={{ fontSize: 11, color: '#6b7280', padding: '3px 4px', wordBreak: 'break-all', lineHeight: 1.3 }}>
+                {a.name}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {placingAsset && (
+        <div style={{ marginTop: 12, padding: 10, background: '#fef3c7', borderRadius: 6, fontSize: 13, color: '#92400e' }}>
+          📌 正在放置：<b>{placingAsset.name}</b>
+          <br />
+          点击画布中要放置的位置，或按 <b>Esc</b> 取消。
+          <br />
+          <button onClick={onCancel} style={{ marginTop: 6, ...btn('#6b7280') }}>取消放置</button>
+        </div>
+      )}
     </div>
   )
 }

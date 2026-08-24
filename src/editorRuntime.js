@@ -22,6 +22,8 @@
   var aspectRatioLocked = false // 属性面板「锁定纵横比」开关
   var resizeOverlay = null // 边缘/角点拖拽调整大小的手柄层
   var resizeHandles = {}
+  var placementMode = false // 素材放置模式
+  var placementData = null // { url, assetType }
 
   function post(msg) {
     window.parent.postMessage(msg, '*')
@@ -220,6 +222,54 @@
     var cs = getComputedStyle(p)
     if (cs.display === 'flex' || cs.display === 'inline-flex') return p
     return null
+  }
+
+  // ---- 素材放置模式 ----
+  function startPlacementMode(url, assetType) {
+    placementMode = true
+    placementData = { url: url, type: assetType }
+    document.body.style.cursor = 'crosshair'
+  }
+
+  function exitPlacementMode() {
+    placementMode = false
+    placementData = null
+    document.body.style.cursor = ''
+    post({ type: 'placementCancelled' })
+  }
+
+  function placeAsset(e) {
+    var slide = slides[current]
+    if (!slide) { exitPlacementMode(); return }
+    var el
+    if (placementData.type === 'video') {
+      el = document.createElement('video')
+      el.controls = true
+    } else {
+      el = document.createElement('img')
+    }
+    el.src = placementData.url
+    el.style.cssText = 'max-width:100%;max-height:80vh;display:block;'
+    // 居中放置于点击位置
+    var slideRect = slide.getBoundingClientRect()
+    var x = e.clientX - slideRect.left - 100
+    var y = e.clientY - slideRect.top - 50
+    if (x < 0) x = 0
+    if (y < 0) y = 0
+    el.style.transform = 'translate(' + x + 'px,' + y + 'px)'
+    slide.appendChild(el)
+    // 将 blob URL 映射到原始文件名（用于导出时替换）
+    // 新素材没有相对路径，导出时保留 blob URL 由父窗口处理
+    deselectAll()
+    selectOnly(el)
+    var before = [{ el: el, style: '', text: null, parent: null, next: null, present: false }]
+    var after = [{ el: el, style: el.getAttribute('style') || '', text: null, parent: slide, next: el.nextSibling, present: true }]
+    pushHistory(before, after, [el])
+    placementMode = false
+    placementData = null
+    document.body.style.cursor = ''
+    post({ type: 'changed' })
+    post({ type: 'assetPlaced' })
   }
 
   function selectOnly(el) {
@@ -670,6 +720,11 @@
   }
 
   function onPointerDown(e) {
+    // 放置模式：点击画布即插入素材
+    if (placementMode) {
+      placeAsset(e)
+      return
+    }
     if (textEditing) {
       if (e.target === textEditing) return // 在文字内选择光标，不触发拖动
       textEditing.blur() // 点其它地方：先提交文字编辑
@@ -698,6 +753,12 @@
       e.preventDefault()
     })
     document.addEventListener('keydown', function (e) {
+      // 放置模式按 Esc 取消
+      if (placementMode && e.key === 'Escape') {
+        exitPlacementMode()
+        e.preventDefault()
+        return
+      }
       if (textEditing) return
       var ctrl = e.ctrlKey || e.metaKey
       var k = e.key.toLowerCase()
@@ -738,6 +799,8 @@
       else if (m.type === 'align') align(m.mode)
       else if (m.type === 'setStyles') setStyles(m.styles || {})
       else if (m.type === 'setAspectLock') aspectRatioLocked = !!m.locked
+      else if (m.type === 'enterPlacementMode') startPlacementMode(m.url, m.assetType)
+      else if (m.type === 'exitPlacementMode') exitPlacementMode()
       else if (m.type === 'setText') setText(m.text)
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()
