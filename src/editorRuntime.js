@@ -245,11 +245,11 @@
       el.controls = true
     } else {
       el = document.createElement('img')
-      // 图片自动添加倒角+阴影
-      el.style.borderRadius = '12px'
-      el.style.boxShadow = '0 4px 20px rgba(0,0,0,0.15)'
     }
     el.src = url
+    // 图片和视频均添加倒角+阴影
+    el.style.borderRadius = '12px'
+    el.style.boxShadow = '0 4px 20px rgba(0,0,0,0.15)'
     el.style.maxWidth = '100%'
     el.style.maxHeight = '80vh'
     el.style.display = 'block'
