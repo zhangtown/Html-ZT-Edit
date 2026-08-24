@@ -35,7 +35,7 @@
 
 ```
 HTML-ZtEdit/
-├── 打包.bat            # 一键打包（Windows 双击即可：安装依赖 + 构建 dist）
+├── 打包.bat            # 一键打包 Windows 桌面 exe（双击：装依赖 + Electron 打包，已内置国内镜像）
 ├── index.html          # 应用入口
 ├── vite.config.js      # Vite 配置（base 设为相对路径，便于分发）
 ├── package.json
@@ -65,17 +65,55 @@ npm run dev
 
 用浏览器打开 `http://localhost:5173` 即可。
 
-## 一键打包（生产构建）
+## 一键打包（Windows 桌面程序）
 
-Windows 用户直接**双击项目根目录的 `打包.bat`** 即可，它会自动完成「安装依赖 + 构建」。
-Linux / macOS 或喜欢命令行的用户：
+直接**双击项目根目录的 `打包.bat`** 即可，它会自动完成三步：
+
+1. 设置国内镜像（`npm` 源 + `Electron` 二进制镜像 + 辅助二进制镜像），避免公司代理下从 GitHub 下载卡死；
+2. `npm install` 安装依赖；
+3. `npm run electron:build` 打包成 `dist-electron/HTML-ZT-Edit Setup *.exe`。
+
+> 这些镜像与「跳过证书校验」环境变量只在本次 bat 运行内生效，不会修改你全局的 npm 配置。
+
+`dist/` 为 web 构建产物（可部署静态站点）；`dist-electron/` 为桌面安装包。
+
+Linux / macOS 或喜欢命令行的用户，手动执行：
 
 ```bash
+export npm_config_registry=https://registry.npmmirror.com
+export ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/
+export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binary/
+export NODE_TLS_REJECT_UNAUTHORIZED=0
 npm install
-npm run build       # 产出在 dist/ 目录
+npm run electron:build
 ```
 
-`dist/` 即为可部署的静态站点。
+---
+
+## 打包为 Windows 桌面程序（Electron）
+
+如果你希望**不装 Node、不启服务器、双击就能用**，可以把本项目打包成一个独立的 Windows 可执行程序（`.exe`）。采用 Electron：内置浏览器内核，离线可用，可拷贝给任何人。
+
+### 1. 安装桌面端依赖（首次）
+```bash
+npm install        # 会自动安装 electron / electron-builder
+```
+
+### 2. 打包成 exe
+```bash
+npm run electron:build
+```
+脚本会先 `vite build` 产出 `dist/`，再用 `electron-builder` 打包。完成后在 `dist-electron/` 目录下得到 **`HTML-ZT-Edit Setup x.x.x.exe`**（NSIS 安装包），双击安装后，安装目录里有 `HTML-ZT-Edit.exe` 可直接运行。
+
+### 3. 本地调试桌面端（开发时）
+```bash
+npm run electron:dev     # 先构建 dist，再启动 Electron 窗口加载本地服务
+```
+
+### 原理
+`electron/main.cjs` 用 Node 内置 `http` 把 `dist/` 作为本地静态服务托管（随机空闲端口），再由 `BrowserWindow` 加载 `http://127.0.0.1:<port>/`。这样完全规避了 `file://` 下 ES 模块 / blob URL / iframe 的兼容问题，且沿用你浏览器里的全部能力（`webkitdirectory` 选文件夹、`IndexedDB` 草稿、`blob` 资源等）。
+
+> 提示：打包体积约 100MB+（含 Chromium 内核），首次 `npm install` 需下载 Electron 运行时，请耐心等待。
 
 ---
 
