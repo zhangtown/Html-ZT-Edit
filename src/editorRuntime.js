@@ -192,6 +192,9 @@
         if (h < 8) h = 8
         el.style.width = w + 'px'
         el.style.height = h + 'px'
+        // 拖拽缩放时清除 max-width / max-height 约束
+        el.style.removeProperty('max-width')
+        el.style.removeProperty('max-height')
       })
       positionResizeHandles(primary)
     }
