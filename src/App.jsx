@@ -245,6 +245,17 @@ export default function App() {
       }
     }
     function onKey(e) {
+      // 焦点在输入框 / 文本域 / 下拉框 / 可编辑元素内时，不拦截快捷键（否则属性面板无法正常输入）
+      const t = e.target
+      const tag = t && t.tagName
+      if (
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        (t && t.isContentEditable === true)
+      ) {
+        return
+      }
       const ctrl = e.ctrlKey || e.metaKey
       const k = e.key.toLowerCase()
       if (ctrl && !e.shiftKey && k === 'z') {
@@ -535,16 +546,33 @@ function PropPanel({ selected, send, selCount }) {
     setText(selected.text || '')
   }, [selected])
 
-  function apply() {
+  // 统一应用样式：支持传入 over 覆盖本次值（解决 setState 异步导致 setTimeout 读到旧闭包的问题）
+  function apply(over) {
     const styles = {}
-    if (width) styles.width = width + (isNum(width) ? 'px' : '')
-    if (height) styles.height = height + (isNum(height) ? 'px' : '')
-    if (color) styles.color = color
-    if (bg) styles.backgroundColor = bg
-    if (font) styles.fontFamily = font
-    if (size) styles.fontSize = size + (isNum(size) ? 'px' : '')
-    if (weight) styles.fontWeight = weight
+    const w = over && over.width !== undefined ? over.width : width
+    const h = over && over.height !== undefined ? over.height : height
+    const c = over && over.color !== undefined ? over.color : color
+    const b = over && over.bg !== undefined ? over.bg : bg
+    const f = over && over.font !== undefined ? over.font : font
+    const s = over && over.size !== undefined ? over.size : size
+    const wt = over && over.weight !== undefined ? over.weight : weight
+    if (w) styles.width = w + (isNum(w) ? 'px' : '')
+    if (h) styles.height = h + (isNum(h) ? 'px' : '')
+    if (c) styles.color = c
+    if (b) styles.backgroundColor = b
+    if (f) styles.fontFamily = f
+    if (s) styles.fontSize = s + (isNum(s) ? 'px' : '')
+    if (wt) styles.fontWeight = wt
     if (Object.keys(styles).length) send({ type: 'setStyles', styles })
+  }
+
+  // 回车立即应用并移出焦点（属性面板的单行输入框回车即保存）
+  function enterApply(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      apply()
+      e.currentTarget.blur()
+    }
   }
 
   return (
@@ -554,29 +582,29 @@ function PropPanel({ selected, send, selCount }) {
       </p>
 
       <Field label="宽度">
-        <input style={inp} value={width} onChange={(e) => setWidth(e.target.value)} onBlur={apply} placeholder="如 200 或 50%" />
+        <input style={inp} value={width} onChange={(e) => setWidth(e.target.value)} onBlur={apply} onKeyDown={enterApply} placeholder="如 200 或 50%" />
       </Field>
       <Field label="高度">
-        <input style={inp} value={height} onChange={(e) => setHeight(e.target.value)} onBlur={apply} placeholder="如 100 或 auto" />
+        <input style={inp} value={height} onChange={(e) => setHeight(e.target.value)} onBlur={apply} onKeyDown={enterApply} placeholder="如 100 或 auto" />
       </Field>
       <Field label="文字颜色">
-        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); }} onBlur={apply} />
+        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
       </Field>
       <Field label="背景颜色">
-        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); }} onBlur={apply} />
+        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
       </Field>
       <Field label="字体">
-        <select style={inp} value={font} onChange={(e) => { setFont(e.target.value); setTimeout(apply, 0) }}>
+        <select style={inp} value={font} onChange={(e) => { const v = e.target.value; setFont(v); apply({ font: v }) }}>
           {FONTS.map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
       </Field>
       <Field label="字号">
-        <input style={inp} value={size} onChange={(e) => setSize(e.target.value)} onBlur={apply} placeholder="如 16 或 1.2em" />
+        <input style={inp} value={size} onChange={(e) => setSize(e.target.value)} onBlur={apply} onKeyDown={enterApply} placeholder="如 16 或 1.2em" />
       </Field>
       <Field label="字重">
-        <select style={inp} value={weight} onChange={(e) => { setWeight(e.target.value); setTimeout(apply, 0) }}>
+        <select style={inp} value={weight} onChange={(e) => { const v = e.target.value; setWeight(v); apply({ weight: v }) }}>
           {WEIGHTS.map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
@@ -589,6 +617,13 @@ function PropPanel({ selected, send, selCount }) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => send({ type: 'setText', text })}
+        onKeyDown={(e) => {
+          // 多行文本：Ctrl+Enter 提交，普通 Enter 换行
+          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+            e.preventDefault()
+            send({ type: 'setText', text })
+          }
+        }}
       />
 
       <button
