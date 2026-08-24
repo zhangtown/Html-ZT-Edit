@@ -11,6 +11,7 @@
     "build": "vite build",
     "preview": "vite preview --port 4173",
     "electron": "electron .",
+    "dev:electron": "node electron/dev-runner.cjs",
     "electron:dev": "npm run build && electron .",
     "electron:build": "npm run build && electron-builder --win"
   },

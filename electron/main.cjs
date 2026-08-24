@@ -65,7 +65,7 @@ function createServer(distDir) {
   })
 }
 
-function createWindow(port) {
+function createWindow(url) {
   const win = new BrowserWindow({
     width: 1366,
     height: 860,
@@ -80,13 +80,20 @@ function createWindow(port) {
     },
   })
 
-  win.loadURL(`http://127.0.0.1:${port}/`)
+  win.loadURL(url)
   // 调试时取消下一行注释可按 F12 打开开发者工具
   // win.webContents.openDevTools()
   return win
 }
 
 app.whenReady().then(() => {
+  // 开发调试模式：通过 VITE_DEV_SERVER_URL 直接加载 Vite dev server（HMR 热更新）
+  const devUrl = process.env.VITE_DEV_SERVER_URL
+  if (devUrl) {
+    createWindow(devUrl)
+    return
+  }
+
   const distDir = getDistDir()
   if (!fs.existsSync(distDir)) {
     console.error('未找到 dist 目录，请先执行 npm run build')
@@ -97,7 +104,7 @@ app.whenReady().then(() => {
   // 使用随机空闲端口，避免端口冲突
   server.listen(0, '127.0.0.1', () => {
     const port = server.address().port
-    createWindow(port)
+    createWindow(`http://127.0.0.1:${port}/`)
   })
 })
 
