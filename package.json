@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "description": "A visual editor for hand-written HTML pages (drag/resize/align, multi-select, grid, draft autosave).",
   "main": "electron/main.cjs",
   "author": "zhangtown",
   "scripts": {
