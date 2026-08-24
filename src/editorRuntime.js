@@ -238,19 +238,28 @@
     post({ type: 'placementCancelled' })
   }
 
-  function placeAsset(e) {
-    var slide = slides[current]
-    if (!slide) { exitPlacementMode(); return }
+  function createAssetElement(url, assetType) {
     var el
-    if (placementData.type === 'video') {
+    if (assetType === 'video') {
       el = document.createElement('video')
       el.controls = true
     } else {
       el = document.createElement('img')
+      // 图片自动添加倒角+阴影
+      el.style.borderRadius = '12px'
+      el.style.boxShadow = '0 4px 20px rgba(0,0,0,0.15)'
     }
-    el.src = placementData.url
-    el.style.cssText = 'max-width:100%;max-height:80vh;display:block;'
-    // 居中放置于点击位置
+    el.src = url
+    el.style.maxWidth = '100%'
+    el.style.maxHeight = '80vh'
+    el.style.display = 'block'
+    return el
+  }
+
+  function placeAsset(e) {
+    var slide = slides[current]
+    if (!slide) { exitPlacementMode(); return }
+    var el = createAssetElement(placementData.url, placementData.type)
     var slideRect = slide.getBoundingClientRect()
     var x = e.clientX - slideRect.left - 100
     var y = e.clientY - slideRect.top - 50
@@ -258,8 +267,6 @@
     if (y < 0) y = 0
     el.style.transform = 'translate(' + x + 'px,' + y + 'px)'
     slide.appendChild(el)
-    // 将 blob URL 映射到原始文件名（用于导出时替换）
-    // 新素材没有相对路径，导出时保留 blob URL 由父窗口处理
     deselectAll()
     selectOnly(el)
     var before = [{ el: el, style: '', text: null, parent: null, next: null, present: false }]
@@ -270,6 +277,66 @@
     document.body.style.cursor = ''
     post({ type: 'changed' })
     post({ type: 'assetPlaced' })
+  }
+
+  // 拖拽素材到画布（从素材面板拖入，或文件拖入）
+  var assetDragActive = false // 面板拖拽进行中
+  var fileDropPending = [] // 暂存拖入的文件（等待父窗口响应）
+
+  function insertAssetAt(url, assetType, x, y) {
+    var slide = slides[current]
+    if (!slide) return
+    var el = createAssetElement(url, assetType)
+    el.style.transform = 'translate(' + x + 'px,' + y + 'px)'
+    slide.appendChild(el)
+    deselectAll()
+    selectOnly(el)
+    var before = [{ el: el, style: '', text: null, parent: null, next: null, present: false }]
+    var after = [{ el: el, style: el.getAttribute('style') || '', text: null, parent: slide, next: el.nextSibling, present: true }]
+    pushHistory(before, after, [el])
+    post({ type: 'changed' })
+    post({ type: 'assetPlaced' })
+  }
+
+  // 处理文件拖入画布（从系统文件管理器拖入）
+  function handleFileDrop(e) {
+    var files = e.dataTransfer.files
+    if (!files || !files.length) return false
+    var slide = slides[current]
+    if (!slide) return false
+    var slideRect = slide.getBoundingClientRect()
+    var baseX = e.clientX - slideRect.left - 100
+    var baseY = e.clientY - slideRect.top - 50
+    if (baseX < 0) baseX = 0
+    if (baseY < 0) baseY = 0
+    var exts = /\.(png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|ogg|mov|avi)$/i
+    var reader = new FileReader()
+    var idx = 0
+    function readNext() {
+      while (idx < files.length) {
+        var f = files[idx]
+        idx++
+        if (!exts.test(f.name)) continue
+        var isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(f.name)
+        ;(function (file, posX, posY) {
+          var r = new FileReader()
+          r.onload = function () {
+            // 发送 dataUrl 给父窗口，由父窗口创建 blob URL 并插入
+            post({
+              type: 'fileDropped',
+              name: file.name,
+              dataUrl: r.result,
+              assetType: isVideo ? 'video' : 'image',
+              x: posX,
+              y: posY,
+            })
+          }
+          r.readAsDataURL(file)
+        })(f, baseX + (idx - 1) * 30, baseY + (idx - 1) * 30)
+      }
+    }
+    readNext()
+    return true
   }
 
   function selectOnly(el) {
@@ -785,6 +852,24 @@
         }
       }
     })
+    // 拖拽放置素材 / 文件
+    document.addEventListener('dragover', function (e) { e.preventDefault() })
+    document.addEventListener('drop', function (e) {
+      e.preventDefault()
+      // 系统文件拖入（从文件管理器）
+      if (e.dataTransfer.files && e.dataTransfer.files.length) {
+        if (handleFileDrop(e)) return
+      }
+      // 素材面板拖入：获取坐标，通知父窗口
+      if (assetDragActive) {
+        var slide = slides[current]
+        if (slide) {
+          var sr = slide.getBoundingClientRect()
+          post({ type: 'assetDropPosition', x: e.clientX - sr.left - 100, y: e.clientY - sr.top - 50 })
+        }
+        assetDragActive = false
+      }
+    })
     window.addEventListener('message', function (e) {
       var m = e.data || {}
       if (m.type === 'goto') show(m.index)
@@ -801,6 +886,9 @@
       else if (m.type === 'setAspectLock') aspectRatioLocked = !!m.locked
       else if (m.type === 'enterPlacementMode') startPlacementMode(m.url, m.assetType)
       else if (m.type === 'exitPlacementMode') exitPlacementMode()
+      else if (m.type === 'insertAsset') insertAssetAt(m.url, m.assetType, m.x, m.y)
+      else if (m.type === 'assetDragStarted') assetDragActive = true
+      else if (m.type === 'assetDragEnded') assetDragActive = false
       else if (m.type === 'setText') setText(m.text)
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()

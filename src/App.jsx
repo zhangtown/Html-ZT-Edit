@@ -311,6 +311,16 @@ export default function App() {
     setAssets(list)
   }, [htmlFiles])
 
+  // 拖拽素材到画布
+  function handleDragStart(asset) {
+    dragDataRef.current = asset
+    send({ type: 'assetDragStarted' })
+  }
+  function handleDragEnd() {
+    dragDataRef.current = null
+    send({ type: 'assetDragEnded' })
+  }
+
   // 放置素材到画布
   function handlePlaceAsset(asset) {
     setPlacingAsset(asset)
@@ -328,6 +338,21 @@ export default function App() {
       const m = e.data || {}
       if (m.type === 'assetPlaced' || m.type === 'placementCancelled') {
         setPlacingAsset(null)
+      }
+      // 拖拽放置：iframe 告知坐标，我方回传素材信息
+      if (m.type === 'assetDropPosition') {
+        const d = dragDataRef.current
+        if (d) {
+          send({ type: 'insertAsset', url: d.url, assetType: d.type, x: m.x, y: m.y })
+          dragDataRef.current = null
+        }
+      }
+      // 文件拖入画布：iframe 传来 dataUrl，创建 blob URL 并插入
+      if (m.type === 'fileDropped') {
+        const blob = dataUrlToBlob(m.dataUrl)
+        const url = URL.createObjectURL(blob)
+        assetUrlsRef.current.push(url)
+        send({ type: 'insertAsset', url, assetType: m.assetType, x: m.x, y: m.y })
       }
     }
     window.addEventListener('message', onMessage)
@@ -728,38 +753,104 @@ function Row({ k, v }) {
   )
 }
 
-// 素材面板：显示选中文件夹中的图片/视频，点击后放入画布
-function AssetsPanel({ assets, placingAsset, onPlace, onCancel }) {
+// 素材面板：显示选中文件夹中的图片/视频，点击/拖入后放入画布
+function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onDragEnd }) {
+  const fileInputRef = useRef(null)
+  const [dragOver, setDragOver] = useState(false)
+  const [localAssets, setLocalAssets] = useState(assets)
+
+  // 同步外部 assets
+  useEffect(() => { setLocalAssets(assets) }, [assets])
+
+  // 处理文件上传（选择或拖入）
+  function handleFiles(files) {
+    const newAssets = []
+    const exts = /\.(png|jpg|jpeg|gif|webp|bmp|svg|mp4|webm|ogg|mov|avi)$/i
+    for (const file of files) {
+      if (!exts.test(file.name)) continue
+      const url = URL.createObjectURL(file)
+      const isVideo = /\.(mp4|webm|ogg|mov|avi)$/i.test(file.name)
+      newAssets.push({ name: file.name, url, type: isVideo ? 'video' : 'image' })
+    }
+    if (newAssets.length) setLocalAssets((prev) => [...prev, ...newAssets])
+  }
+
   return (
-    <div>
-      <p style={{ color: '#C41E24', fontWeight: 600, fontSize: 13, margin: '0 0 10px' }}>
-        素材库（{assets.length} 个）
+    <div
+      onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={(e) => { setDragOver(false) }}
+      onDrop={(e) => {
+        e.preventDefault(); setDragOver(false)
+        if (e.dataTransfer.files && e.dataTransfer.files.length) {
+          handleFiles(e.dataTransfer.files)
+        }
+      }}
+      style={{
+        minHeight: 120,
+        background: dragOver ? '#fef3c7' : 'transparent',
+        border: dragOver ? '2px dashed #C41E24' : 'none',
+        borderRadius: 6,
+        padding: dragOver ? 12 : 0,
+        transition: 'all .15s',
+      }}
+    >
+      <p style={{ color: '#C41E24', fontWeight: 600, fontSize: 13, margin: '0 0 8px' }}>
+        素材库（{localAssets.length} 个）
       </p>
-      {assets.length === 0 && (
+
+      {/* 上传按钮 */}
+      <div style={{ marginBottom: 10 }}>
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          accept="image/*,video/*"
+          style={{ display: 'none' }}
+          onChange={(e) => {
+            if (e.target.files.length) handleFiles(e.target.files)
+            e.target.value = ''
+          }}
+        />
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          style={{ ...btn('#4b5563'), width: '100%', fontSize: 12 }}
+        >
+          + 上传图片/视频
+        </button>
+        <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>
+          或拖拽文件到此处，也可直接拖入画布
+        </p>
+      </div>
+
+      {localAssets.length === 0 && (
         <p style={{ color: '#9ca3af', fontSize: 13, lineHeight: 1.7 }}>
-          请先选择文件夹，其中的图片/视频会自动显示在这里。
-          <br /><br />
-          点击素材即可进入「放置模式」，再点击画布中的位置即可插入。
+          选择文件夹后，其中的图片/视频会自动显示。
         </p>
       )}
-      {assets.length > 0 && (
+
+      {localAssets.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-          {assets.map((a, i) => (
-            <button
+          {localAssets.map((a, i) => (
+            <div
               key={i}
+              draggable={!placingAsset}
+              onDragStart={(e) => {
+                e.dataTransfer.setData('text/plain', JSON.stringify({ url: a.url, type: a.type }))
+                onDragStart(a)
+              }}
+              onDragEnd={() => onDragEnd()}
               onClick={() => onPlace(a)}
-              disabled={!!placingAsset}
-              title={'点击放入画布: ' + a.name}
+              title={'拖入画布或点击放置: ' + a.name}
               style={{
                 border: '1px solid #d1d5db',
                 borderRadius: 6,
                 overflow: 'hidden',
-                cursor: placingAsset ? 'default' : 'pointer',
+                cursor: placingAsset ? 'default' : 'grab',
                 background: '#f9fafb',
-                padding: 0,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
+                userSelect: 'none',
               }}
             >
               {a.type === 'video' ? (
@@ -770,10 +861,11 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel }) {
               <span style={{ fontSize: 11, color: '#6b7280', padding: '3px 4px', wordBreak: 'break-all', lineHeight: 1.3 }}>
                 {a.name}
               </span>
-            </button>
+            </div>
           ))}
         </div>
       )}
+
       {placingAsset && (
         <div style={{ marginTop: 12, padding: 10, background: '#fef3c7', borderRadius: 6, fontSize: 13, color: '#92400e' }}>
           📌 正在放置：<b>{placingAsset.name}</b>
@@ -781,6 +873,12 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel }) {
           点击画布中要放置的位置，或按 <b>Esc</b> 取消。
           <br />
           <button onClick={onCancel} style={{ marginTop: 6, ...btn('#6b7280') }}>取消放置</button>
+        </div>
+      )}
+
+      {dragOver && (
+        <div style={{ textAlign: 'center', color: '#C41E24', fontSize: 13, padding: 20 }}>
+          📁 释放文件以上传
         </div>
       )}
     </div>
@@ -835,4 +933,14 @@ function getAspectRatio(sel) {
   const h = parseFloat(sel.height)
   if (w > 0 && h > 0) return w / h
   return null
+}
+
+// dataUrl → Blob（用于处理 iframe 拖入的文件）
+function dataUrlToBlob(dataUrl) {
+  const parts = dataUrl.split(',')
+  const mime = parts[0].match(/:(.*?);/)[1]
+  const bytes = atob(parts[1])
+  const arr = new Uint8Array(bytes.length)
+  for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
+  return new Blob([arr], { type: mime })
 }
