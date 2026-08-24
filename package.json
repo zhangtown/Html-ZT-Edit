@@ -37,7 +37,8 @@
       "output": "dist-electron"
     },
     "win": {
-      "target": ["portable"]
+      "target": ["portable"],
+      "sign": "electron/sign.js"
     }
   }
 }
