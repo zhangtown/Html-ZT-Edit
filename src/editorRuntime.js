@@ -19,6 +19,10 @@
   var redoStack = []
   var clipboard = [] // 复制缓冲区：元素 outerHTML 数组
   var textEditing = null // 正在文字编辑的元素
+  var aspectRatioLocked = false // 属性面板「锁定纵横比」开关
+  var resizeOverlay = null // 边缘/角点拖拽调整大小的手柄层
+  var resizeHandles = {}
+  var resizeTarget = null // 当前正在拖拽缩放的元素
 
   function post(msg) {
     window.parent.postMessage(msg, '*')
@@ -64,6 +68,156 @@
   function postSelection() {
     var primary = selectedList.length ? getInfo(selectedList[selectedList.length - 1]) : null
     post({ type: 'selection', count: selectedList.length, primary: primary })
+    updateResizeHandles()
+  }
+
+  // ---- 边缘/角点拖拽调整大小（手柄层） ----
+  function getCursorForDir(dir) {
+    var c = {
+      nw: 'nw-resize', n: 'n-resize', ne: 'ne-resize',
+      e: 'e-resize', se: 'se-resize', s: 's-resize',
+      sw: 'sw-resize', w: 'w-resize',
+    }
+    return c[dir] || 'default'
+  }
+
+  function ensureResizeOverlay() {
+    if (resizeOverlay) return
+    resizeOverlay = document.createElement('div')
+    resizeOverlay.id = 'zt-resize-overlay'
+    resizeOverlay.style.cssText =
+      'position:fixed;top:0;left:0;width:100%;height:100%;' +
+      'pointer-events:none;z-index:2147483647;'
+    document.body.appendChild(resizeOverlay)
+    var dirs = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w']
+    dirs.forEach(function (dir) {
+      var h = document.createElement('div')
+      h.dataset.dir = dir
+      h.style.cssText =
+        'position:absolute;width:12px;height:12px;background:#C41E24;' +
+        'border:1.5px solid #fff;box-sizing:border-box;' +
+        'pointer-events:auto;cursor:' + getCursorForDir(dir) + ';z-index:1;'
+      h.addEventListener('pointerdown', function (ev) {
+        ev.stopPropagation()
+        ev.preventDefault()
+        var primary = selectedList.length ? selectedList[selectedList.length - 1] : null
+        if (!primary) return
+        startResize(dir, primary, ev)
+      })
+      resizeOverlay.appendChild(h)
+      resizeHandles[dir] = h
+    })
+  }
+
+  function positionResizeHandles(el) {
+    if (!el) {
+      if (resizeOverlay) resizeOverlay.style.display = 'none'
+      return
+    }
+    ensureResizeOverlay()
+    var r = el.getBoundingClientRect()
+    var s = 6 // 手柄半边长
+    var pos = {
+      nw: [r.left - s, r.top - s],
+      n: [r.left + r.width / 2 - s, r.top - s],
+      ne: [r.right - s, r.top - s],
+      e: [r.right - s, r.top + r.height / 2 - s],
+      se: [r.right - s, r.bottom - s],
+      s: [r.left + r.width / 2 - s, r.bottom - s],
+      sw: [r.left - s, r.bottom - s],
+      w: [r.left - s, r.top + r.height / 2 - s],
+    }
+    for (var dir in pos) {
+      resizeHandles[dir].style.left = pos[dir][0] + 'px'
+      resizeHandles[dir].style.top = pos[dir][1] + 'px'
+    }
+    resizeOverlay.style.display = 'block'
+  }
+
+  function updateResizeHandles() {
+    if (!selectedList.length) {
+      if (resizeOverlay) resizeOverlay.style.display = 'none'
+      return
+    }
+    // 手柄显示在主选元素上（多选时最后一个）
+    positionResizeHandles(selectedList[selectedList.length - 1])
+  }
+
+  // 拖拽缩放：所有选中元素同步改变相同的宽高增量
+  function startResize(dir, primary, e) {
+    var els = selectedList.slice()
+    if (els.length < 1) return
+    var rect = primary.getBoundingClientRect()
+    var sx = e.clientX
+    var sy = e.clientY
+    var startW = rect.width
+    var startH = rect.height
+    var ratio = startW / startH
+    var isCorner = dir.length === 2
+    var before = els.map(snapStyle)
+    // 记录每个选中元素的初始宽高
+    var init = els.map(function (el) {
+      var r = el.getBoundingClientRect()
+      return { w: r.width, h: r.height }
+    })
+
+    function move(ev) {
+      var dx = ev.clientX - sx
+      var dy = ev.clientY - sy
+      var newW = startW
+      var newH = startH
+      if (dir.indexOf('e') >= 0) newW = startW + dx
+      if (dir.indexOf('w') >= 0) newW = startW - dx
+      if (dir.indexOf('s') >= 0) newH = startH + dy
+      if (dir.indexOf('n') >= 0) newH = startH - dy
+
+      var lock = aspectRatioLocked || ev.shiftKey
+      if (lock && isCorner) {
+        // 角点 + 锁定纵横比：以主方向为准
+        if (Math.abs(dx) > Math.abs(dy)) {
+          newH = newW / ratio
+        } else {
+          newW = newH * ratio
+        }
+      }
+      if (newW < 8) newW = 8
+      if (newH < 8) newH = 8
+
+      var dw = newW - startW
+      var dh = newH - startH
+      els.forEach(function (el, i) {
+        // 对每个选中元素应用相同的增量
+        var w = init[i].w + dw
+        var h = init[i].h + dh
+        if (w < 8) w = 8
+        if (h < 8) h = 8
+        el.style.width = w + 'px'
+        el.style.height = h + 'px'
+      })
+      positionResizeHandles(primary)
+    }
+
+    function up() {
+      var after = els.map(snapStyle)
+      pushHistory(before, after, els.slice())
+      postSelection()
+      post({ type: 'changed' })
+      document.removeEventListener('pointermove', move)
+      document.removeEventListener('pointerup', up)
+    }
+
+    document.addEventListener('pointermove', move)
+    document.addEventListener('pointerup', up)
+  }
+
+  // 图片 + 布局容器联动：img 的直接父级若是 flex 容器，选中时一并带上
+  function layoutWrapperOf(el) {
+    if (!el || el.tagName !== 'IMG') return null
+    var p = el.parentElement
+    if (!p || p.tagName !== 'DIV') return null
+    var cs = getComputedStyle(p)
+    if (cs.display === 'flex' || cs.display === 'inline-flex') return p
+    return null
   }
 
   function selectOnly(el) {
@@ -71,6 +225,12 @@
       if (x !== el) x.classList.remove('zt-selected')
     })
     selectedList = [el]
+    // 图片选中时，若其父级是 flex 布局容器，一并选中（便于同时调整宽高）
+    var wrapper = layoutWrapperOf(el)
+    if (wrapper && !isSelected(wrapper)) {
+      selectedList.unshift(wrapper)
+      wrapper.classList.add('zt-selected')
+    }
     el.classList.add('zt-selected')
     postSelection()
   }
@@ -546,6 +706,7 @@
       else if (m.type === 'resetElement') resetSelected()
       else if (m.type === 'align') align(m.mode)
       else if (m.type === 'setStyles') setStyles(m.styles || {})
+      else if (m.type === 'setAspectLock') aspectRatioLocked = !!m.locked
       else if (m.type === 'setText') setText(m.text)
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()

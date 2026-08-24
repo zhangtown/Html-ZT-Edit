@@ -89,6 +89,7 @@ export default function App() {
   const [selCount, setSelCount] = useState(0)
   const [restored, setRestored] = useState(false)
   const [tab, setTab] = useState('prop') // prop | align | info
+  const [aspectLock, setAspectLock] = useState(false)
 
   gridOnRef.current = gridOn
 
@@ -288,6 +289,11 @@ export default function App() {
     }
   }, [selCount])
 
+  // 锁定纵横比变化时同步到 iframe
+  useEffect(() => {
+    send({ type: 'setAspectLock', locked: aspectLock })
+  }, [aspectLock])
+
   // 首次挂载：尝试从草稿恢复
   useEffect(() => {
     ;(async () => {
@@ -461,7 +467,7 @@ export default function App() {
             )}
 
             {selected && tab === 'prop' && (
-              <PropPanel selected={selected} send={send} selCount={selCount} />
+              <PropPanel selected={selected} send={send} selCount={selCount} aspectLock={aspectLock} setAspectLock={setAspectLock} />
             )}
 
             {selected && tab === 'align' && (
@@ -524,7 +530,7 @@ export default function App() {
 }
 
 // 属性面板（大小 / 颜色 / 字体 / 文本），随选中元素同步回显
-function PropPanel({ selected, send, selCount }) {
+function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
   const [width, setWidth] = useState('')
   const [height, setHeight] = useState('')
   const [color, setColor] = useState('')
@@ -546,7 +552,8 @@ function PropPanel({ selected, send, selCount }) {
     setText(selected.text || '')
   }, [selected])
 
-  // 统一应用样式：支持传入 over 覆盖本次值（解决 setState 异步导致 setTimeout 读到旧闭包的问题）
+  // 统一应用样式：直接传入值，不使用 if(v) 过滤（解决 falsy 值被跳过的问题）
+  // 空字符串表示不修改该属性，空对象表示不发送
   function apply(over) {
     const styles = {}
     const w = over && over.width !== undefined ? over.width : width
@@ -556,13 +563,14 @@ function PropPanel({ selected, send, selCount }) {
     const f = over && over.font !== undefined ? over.font : font
     const s = over && over.size !== undefined ? over.size : size
     const wt = over && over.weight !== undefined ? over.weight : weight
-    if (w) styles.width = w + (isNum(w) ? 'px' : '')
-    if (h) styles.height = h + (isNum(h) ? 'px' : '')
-    if (c) styles.color = c
-    if (b) styles.backgroundColor = b
-    if (f) styles.fontFamily = f
-    if (s) styles.fontSize = s + (isNum(s) ? 'px' : '')
-    if (wt) styles.fontWeight = wt
+    // 只有非空字符串才加入（空字符串 = 不修改）
+    if (w !== '') styles.width = w + (isNum(w) ? 'px' : '')
+    if (h !== '') styles.height = h + (isNum(h) ? 'px' : '')
+    if (c !== '') styles.color = c
+    if (b !== '') styles.backgroundColor = b
+    if (f !== '') styles.fontFamily = f
+    if (s !== '') styles.fontSize = s + (isNum(s) ? 'px' : '')
+    if (wt !== '') styles.fontWeight = wt
     if (Object.keys(styles).length) send({ type: 'setStyles', styles })
   }
 
@@ -582,10 +590,16 @@ function PropPanel({ selected, send, selCount }) {
       </p>
 
       <Field label="宽度">
-        <input style={inp} value={width} onChange={(e) => setWidth(e.target.value)} onBlur={apply} onKeyDown={enterApply} placeholder="如 200 或 50%" />
+        <input style={inp} value={width} onChange={(e) => { setWidth(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setHeight(String(Math.round(parseFloat(e.target.value) / r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="如 200 或 50%" />
       </Field>
       <Field label="高度">
-        <input style={inp} value={height} onChange={(e) => setHeight(e.target.value)} onBlur={apply} onKeyDown={enterApply} placeholder="如 100 或 auto" />
+        <input style={inp} value={height} onChange={(e) => { setHeight(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setWidth(String(Math.round(parseFloat(e.target.value) * r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="如 100 或 auto" />
+      </Field>
+      <Field label="锁定纵横比">
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#374151' }}>
+          <input type="checkbox" checked={aspectLock} onChange={(e) => setAspectLock(e.target.checked)} />
+          宽高联动（改宽自动算高，改高自动算宽）
+        </label>
       </Field>
       <Field label="文字颜色">
         <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
@@ -699,4 +713,13 @@ function toHex(c) {
     return '#' + h(p[0]) + h(p[1]) + h(p[2])
   }
   return ''
+}
+
+// 从 selected 信息中提取宽高比（用于锁定纵横比）
+function getAspectRatio(sel) {
+  if (!sel) return null
+  const w = parseFloat(sel.width)
+  const h = parseFloat(sel.height)
+  if (w > 0 && h > 0) return w / h
+  return null
 }
