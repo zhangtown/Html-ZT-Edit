@@ -1,0 +1,1068 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>文科为什么这么弱？不是没本事，是屁股坐歪了</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box}
+        :root{
+            --bg:#F5F2EB;--ink:#1a1a1a;--red:#C41E24;--gray:#666;--line:#d4d0c8;
+            --dark-red:#8B3A3A;--seal:#C23B22
+        }
+        html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans SC',sans-serif;background:var(--bg)}
+        .slide-container{position:relative;width:100%;height:100%}
+        .slide{
+            position:absolute;top:0;left:0;width:100%;height:100%;
+            display:flex;flex-direction:column;justify-content:center;align-items:center;
+            padding:40px 48px;opacity:0;visibility:hidden;
+            transition:opacity .8s ease-in-out,transform .8s ease-in-out,visibility .8s ease;
+            transform:translateX(30px) scale(.97);overflow:hidden;
+        }
+        .slide.active{opacity:1;visibility:visible;transform:translateX(0) scale(1)}
+        .slide-dark{background:linear-gradient(180deg,#1a1a1a 0%,#0d0d0d 100%)}
+        .slide-dark .slide-content,.slide-dark .slide-title{color:#fff}
+        /* 背景图页：素材16/15/13/14 背景 + 弱遮罩保证白字可读 */
+        .slide-photo-bg-3{background:linear-gradient(rgba(10,10,12,.6),rgba(10,10,12,.7)),url('素材16-背景4.jpg') center/cover no-repeat;background-color:#111}
+        .slide-photo-bg-7{background:linear-gradient(rgba(10,10,12,.5),rgba(10,10,12,.6)),url('素材15-背景3.jpg') center/cover no-repeat;background-color:#111}
+        .slide-photo-bg-10{background:linear-gradient(rgba(10,10,12,.84),rgba(10,10,12,.9)),url('素材13-背景1.jpg') center/cover no-repeat;background-color:#111}
+        .slide-photo-bg-11{background:linear-gradient(rgba(10,10,12,.58),rgba(10,10,12,.68)),url('素材14-背景2.jpg') center/cover no-repeat;background-color:#111}
+        .slide-cover{background:linear-gradient(rgba(8,8,10,.65),rgba(8,8,10,.75)),url('素材17-背景5.jpg') center/cover no-repeat;background-color:#111}
+        .slide-cover::before{content:'';position:absolute;bottom:0;left:0;width:100%;height:40%;background:radial-gradient(ellipse at 50% 100%,rgba(196,30,36,.15) 0%,transparent 70%)}
+        .slide-content{position:relative;z-index:2;max-width:1280px;width:100%}
+        .slide-title{font-family:'Noto Serif SC',serif;font-size:3.2rem;font-weight:900;color:var(--red);line-height:1.2;margin-bottom:18px;letter-spacing:.05em}
+        .slide-subtitle{font-size:1.7rem;color:var(--ink);line-height:1.8;margin-bottom:16px}
+        .slide-dark .slide-subtitle{color:rgba(255,255,255,.8)}
+        .slide-body{font-size:1.35rem;color:var(--gray);line-height:1.8}
+        .slide-dark .slide-body{color:rgba(255,255,255,.6)}
+
+        /* === COVER：双微信素材主视觉 === */
+        .wx-img{position:absolute;z-index:3;border-radius:16px;overflow:hidden;
+            border:2px solid rgba(196,30,36,.65);
+            box-shadow:0 0 55px rgba(196,30,36,.45),0 14px 44px rgba(0,0,0,.65)}
+        .wx-img img{width:100%;height:100%;object-fit:cover;display:block}
+        .wx-left{left:6%;top:16%;height:56%;aspect-ratio:719/918;animation:wxInL 1s cubic-bezier(.22,.9,.32,1.08) .5s backwards}
+        .wx-right{right:6%;top:14%;height:58%;aspect-ratio:1197/2253;animation:wxInR 1s cubic-bezier(.22,.9,.32,1.08) 1s backwards}
+        @keyframes wxInL{0%{opacity:0;transform:translateX(-40vw) rotate(-8deg) scale(1.18)}70%{opacity:1}100%{opacity:1;transform:translateX(0) rotate(-2.5deg) scale(1)}}
+        @keyframes wxInR{0%{opacity:0;transform:translateX(40vw) rotate(8deg) scale(1.18)}70%{opacity:1}100%{opacity:1;transform:translateX(0) rotate(2.5deg) scale(1)}}
+
+        /* 背景弱化拼贴（第三批淡入） */
+        .collage-faint{position:absolute;inset:0;z-index:1}
+        .collage-faint img{position:absolute;object-fit:cover;border-radius:8px;opacity:0;
+            filter:grayscale(.75) brightness(.5);animation:faintIn 1.2s ease 3.4s forwards}
+        .collage-faint .f1{width:11%;left:24%;top:5%;transform:rotate(5deg)}
+        .collage-faint .f2{width:10%;right:25%;top:4%;transform:rotate(-5deg)}
+        .collage-faint .f3{width:11%;left:25%;bottom:6%;transform:rotate(-4deg)}
+        .collage-faint .f4{width:11%;right:26%;bottom:5%;transform:rotate(4deg)}
+        .collage-faint .f5{width:8%;left:14%;top:42%;transform:rotate(3deg)}
+        .collage-faint .f6{width:9%;right:15%;top:45%;transform:rotate(-3deg)}
+        .collage-faint .f7{width:8%;left:42%;top:2%;transform:rotate(2deg)}
+        .collage-faint .f8{width:8%;right:44%;bottom:3%;transform:rotate(-2deg)}
+        .collage-faint .f9{width:9%;left:37%;bottom:12%;transform:rotate(6deg)}
+        @keyframes faintIn{from{opacity:0;transform:scale(1.2)}to{opacity:.16}}
+
+        /* 封面文字 */
+        .cover-main{font-size:4.2rem;font-weight:900;color:#fff;text-align:center;letter-spacing:.08em;line-height:1.3;
+            font-family:'Noto Serif SC',serif;text-shadow:0 4px 24px rgba(0,0,0,.9),0 0 70px rgba(196,30,36,.55);
+            position:relative;z-index:4;max-width:36vw;margin:0 auto;
+            animation:coverUp .9s ease 2.2s backwards}
+        .cover-sub{font-size:1.5rem;color:rgba(255,255,255,.82);text-align:center;line-height:2;max-width:860px;margin:16px auto 0;
+            position:relative;z-index:4;animation:coverUp .9s ease 2.6s backwards}
+        .cover-tag{position:relative;z-index:4;display:inline-block;margin:24px auto 0;padding:10px 26px;
+            background:rgba(196,30,36,.22);border:1px solid rgba(196,30,36,.7);border-radius:30px;
+            color:#ff8a80;font-size:1.15rem;letter-spacing:.08em;font-weight:600;
+            animation:coverUp .9s ease 3s backwards}
+        @keyframes coverUp{from{opacity:0;transform:translateY(26px)}to{opacity:1;transform:translateY(0)}}
+
+        /* 立场页证据图对（S10：澎湖海战撤档 + 洪承畴纪念馆 水平并列） */
+        .wx-pair{display:flex;gap:22px;align-items:flex-start;justify-content:center}
+        .wx-pair img{height:48vh;border-radius:16px;overflow:hidden;object-fit:cover;
+            border:2px solid rgba(196,30,36,.6);box-shadow:0 0 45px rgba(196,30,36,.4)}
+        .wx-mini{width:300px;flex-shrink:0;border-radius:16px;overflow:hidden;
+            border:2px solid rgba(196,30,36,.6);box-shadow:0 0 45px rgba(196,30,36,.4)}
+        .wx-mini img{width:100%;display:block}
+
+        /* === 素材分段水平并列（超长图切段） === */
+        .slice-row{display:flex;gap:12px;align-items:flex-start;justify-content:center;width:100%}
+        .slice-row img{display:block;height:56vh;width:auto;border-radius:12px;box-shadow:0 10px 32px rgba(0,0,0,.32);background:#ddd}
+        .slice-note{margin-top:12px;font-size:1.05rem;color:var(--dark-red);letter-spacing:.08em;font-weight:600;text-align:center}
+
+        /* === PROGRESS === */
+        .progress-bar{position:fixed;top:0;left:0;height:4px;background:linear-gradient(90deg,#C41E24,#ff6b6b);transition:width .3s ease;z-index:1002}
+
+        /* === HEADER === */
+        .header-left{position:fixed;top:28px;left:42px;z-index:1000;display:flex;align-items:center;gap:12px}
+        .header-line{width:4px;height:28px;background:var(--red);border-radius:2px}
+        .header-title{font-size:1.15rem;font-weight:600;color:var(--ink);letter-spacing:.05em;font-family:'Noto Serif SC',serif;opacity:.85}
+
+        .header-right{position:fixed;top:22px;right:42px;z-index:1000;display:flex;align-items:center;gap:14px;background:rgba(255,255,255,.92);padding:12px 22px;border-radius:40px;box-shadow:0 2px 12px rgba(0,0,0,.08);backdrop-filter:blur(10px);max-width:560px}
+        .header-avatar{width:52px;height:52px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid var(--red)}
+        .header-avatar img{width:100%;height:100%;object-fit:cover;display:block}
+        .header-nickname{font-size:1.2rem;font-weight:700;color:var(--ink);font-family:'Noto Serif SC',serif}
+        .header-desc{font-size:.85rem;color:var(--gray)}
+
+        /* === SUBTITLE === */
+        .subtitle-zone{position:fixed;left:0;bottom:0;width:100%;z-index:1000;pointer-events:none;padding-bottom:34px}
+        .subtitle-inner{max-width:86%;margin:0 auto;text-align:center}
+        .subtitle-item{font-family:'Noto Serif SC',serif;font-size:3.8rem;font-weight:700;color:#fff;line-height:1.4;text-shadow:0 2px 6px rgba(0,0,0,.9),0 0 18px rgba(0,0,0,.75),0 0 40px rgba(0,0,0,.5),0 0 60px rgba(196,30,36,.25);transition:all .35s cubic-bezier(.25,.46,.45,.94)}
+        .subtitle-item.is-changing{opacity:0;transform:translateY(10px) scale(.96)}
+
+        /* === LEFT-RIGHT === */
+        .lr-row{display:flex;gap:36px;align-items:center;width:100%;max-width:1400px}
+        .lr-left,.lr-right{flex:1;min-width:0}
+        .lr-left{display:flex;flex-direction:column;gap:16px}
+        .lr-right{display:flex;flex-direction:column;align-items:center;gap:12px}
+
+        /* === IMAGES === */
+        .mat-img{max-width:100%;max-height:56vh;object-fit:contain;border-radius:12px;box-shadow:0 10px 40px rgba(0,0,0,.35)}
+        .img-row{display:flex;gap:12px;justify-content:center}
+        .img-row img{max-height:30vh;object-fit:contain;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.15)}
+
+        /* === FOCUS === */
+        .focus-group .focus-item{transition:all .6s ease;position:relative}
+        .focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
+        .focus-group.dim-others .focus-item.zoom-focus{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}
+        .focus-group.dim-others .focus-item-text{opacity:.35}
+        .focus-group.dim-others .focus-item-text.zoom-focus{opacity:1;transform:scale(1.06);color:var(--red);font-weight:700}
+        .focus-item.zoom-focus:not(.focus-group .focus-item){position:relative;z-index:2;transform:scale(1.035);box-shadow:0 0 42px rgba(196,30,36,.38),0 8px 24px rgba(0,0,0,.15);border-color:var(--red)}
+
+        /* === CARDS === */
+        .ink-card{background:var(--ink);color:var(--bg);padding:20px 28px;border-radius:8px;line-height:1.7;font-size:1.15rem}
+        .cream-card{background:#FAF6F0;border:1px solid #D4C9B8;border-radius:12px;padding:20px 28px;line-height:1.7;box-shadow:0 4px 16px rgba(0,0,0,.04)}
+        .red-card{background:var(--dark-red);color:#fff;padding:22px 30px;border-radius:10px;text-align:center;line-height:1.7}
+        .seal-stamp{display:inline-block;background:var(--seal);color:#fff;padding:6px 22px;transform:rotate(-2deg);font-weight:700;font-size:1rem;border-radius:3px}
+        .seal-badge{display:inline-block;border:2px solid var(--seal);padding:6px 18px;font-weight:700;color:var(--seal);font-size:1rem}
+
+        /* === FLOW === */
+        .flow-chart{display:flex;align-items:center;justify-content:center;gap:14px;flex-wrap:wrap;margin:12px 0}
+        .flow-node{background:var(--red);color:#fff;padding:14px 22px;border-radius:10px;text-align:center;transition:all .5s ease}
+        .flow-node .ft{font-weight:700;font-size:1.3rem}
+        .flow-node .fd{font-size:1.05rem;opacity:.85;margin-top:3px}
+        .flow-arrow{font-size:1.8rem;color:var(--red);font-weight:700}
+
+        /* === TIMELINE === */
+        .tl-row{display:flex;gap:22px;flex-wrap:wrap;justify-content:center;padding:6px 0}
+        .tl-node{min-width:130px;text-align:center;padding:10px 14px;border-radius:10px;background:#FAF6F0;border:1px solid #D4C9B8;font-size:.95rem;flex-shrink:0;transition:all .5s ease}
+        .tl-node .td{font-weight:700;color:var(--dark-red);font-size:.95rem}
+        .tl-node .tn{color:var(--ink);font-size:.95rem;margin-top:2px;line-height:1.3}
+        .tl-node.hl{background:var(--dark-red);color:#fff}
+        .tl-node.hl .td,.tl-node.hl .tn{color:#fff}
+
+        /* === MEDIA GRID === */
+        .media-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;font-size:1.05rem}
+        .media-grid .mi{background:rgba(30,30,40,.06);padding:14px 16px;border-radius:6px;border:1px solid #D4C9B8;text-align:center;color:var(--ink);transition:all .5s ease}
+
+        /* === DARK TEXT === */
+        .dark-big{font-size:7rem;font-weight:900;color:var(--red);font-family:'Noto Serif SC',serif;margin:30px 0;text-align:center}
+        .dark-heading{font-size:2.9rem;font-family:'Noto Serif SC',serif;color:#fff;line-height:1.5;text-align:center}
+        .dark-heading em{color:var(--red);font-style:normal}
+
+        /* === HERO === */
+        .hero-card{background:#FAF6F0;border-radius:36px;padding:44px;max-width:1100px;width:100%;display:flex;gap:34px;box-shadow:0 4px 20px rgba(0,0,0,.04)}
+    </style>
+</head>
+<body>
+
+<div class="slide-container">
+
+    <!-- ===== S0: COVER（双微信素材开场） ===== -->
+    <div class="slide slide-cover active" id="s0">
+        <div class="collage-faint">
+            <img class="f1" src="素材1-文化出版业的荒唐.jpg"><img class="f2" src="素材2-民族企业家要自信.png">
+            <img class="f3" src="素材3-专家学者的险恶用心.jpg"><img class="f4" src="素材4-认知战的长期下风.jpg">
+            <img class="f5" src="素材19-LV唯一胜绩.jpg"><img class="f6" src="素材8-让敌人编教科书是一个历史发明.jpg">
+            <img class="f7" src="素材10-媒体人屁股不能歪了.jpg"><img class="f8" src="素材11-7.22事件.jpg">
+            <img class="f9" src="素材5-传媒口的软骨病.jpg">
+        </div>
+        <div class="wx-img wx-left"><img src="素材12-微信翻译立场问题.jpg"></div>
+        <div class="wx-img wx-right"><img src="素材9-微信翻译的历史立场.jpg"></div>
+        <div class="cover-main">文科为什么这么弱？<br><span style="color:#ff5252">不是没本事，是屁股坐歪了</span></div>
+        <div class="cover-sub">讲故事的人 · 讲历史的人 · 站错边的人</div>
+        <div class="cover-tag"># 微信翻译 · 清朝变明朝 · 立场比谁都鲜明 #</div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.000" data-zt-subtitle-end="0.929">先看个截图。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="1.309" data-zt-subtitle-end="3.271">微信翻译，台湾繁体模式，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="3.651" data-zt-subtitle-end="5.606">&quot;清朝畜生&quot;被翻成&quot;明朝畜生&quot;。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="5.986" data-zt-subtitle-end="7.762">这波属实给我整不会了——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="8.142" data-zt-subtitle-end="10.601">一个翻译软件，立场比谁都鲜明？</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="10.981" data-zt-subtitle-end="12.382">大家好，我是小踏。</div>
+  </div>
+</div>
+
+    <!-- ===== S1: 点题 ===== -->
+    <div class="slide" id="s1" style="background:#F5F0E8;">
+        <div class="lr-row">
+            <div class="lr-left">
+                <div style="display:flex;align-items:center;gap:26px">
+                    <div class="seal-stamp" style="font-size:1.3rem;padding:10px 26px">立场<br>问题</div>
+                    <div>
+                        <div style="font-family:'Noto Serif SC',serif;font-size:3rem;font-weight:900;color:var(--red);line-height:1.3">文科，处处是弱势</div>
+                    </div>
+                </div>
+                <div class="slide-subtitle" style="font-size:1.45rem;margin-top:6px">学界、传媒、法律、教育——<br>是文科没用，还是<span style="color:var(--red);font-weight:700">立场出了问题</span>？</div>
+                <div class="tl-row focus-group" id="fg-s1" style="margin-top:8px">
+                    <div class="tl-node focus-item" data-focus="15.57"><div class="td">学界</div><div class="tn">辨伪被打压</div></div>
+                    <div class="tl-node focus-item" data-focus="16.8"><div class="td">传媒界</div><div class="tn">引进不查底细</div></div>
+                    <div class="tl-node focus-item" data-focus="17.4"><div class="td">法律界</div><div class="tn">崇洋判案</div></div>
+                    <div class="tl-node focus-item" data-focus="18.24"><div class="td">教育界</div><div class="tn">毒教材还在</div></div>
+                </div>
+                <div class="cream-card focus-item" data-focus="22.52" style="font-size:1.3rem">
+                    直接说结论：不是文科没用，<br>是<span style="color:var(--red);font-weight:700">跪着的人，讲不出站着的故事</span>。
+                </div>
+            </div>
+            <div class="lr-right">
+                <img class="mat-img focus-item" data-focus="13.5" src="素材5-传媒口的软骨病new.jpg" style="max-height:56vh">
+                <div class="slice-note">传媒口的软骨病</div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.002" data-zt-subtitle-end="2.429">今天聊个问题：为什么我们的文科，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.809" data-zt-subtitle-end="5.097">在学界、传媒、法律、教育，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="5.477" data-zt-subtitle-end="6.548">处处是弱势？</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="6.928" data-zt-subtitle-end="9.378">是文科没用，还是立场出了问题？</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="9.758" data-zt-subtitle-end="11.866">直接说结论：不是文科没用，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="12.246" data-zt-subtitle-end="14.689">是跪着的人，讲不出站着的故事。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="15.069" data-zt-subtitle-end="17.256">是讲故事的人，屁股坐歪了。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="17.636" data-zt-subtitle-end="18.471">先看学界。</div>
+  </div>
+</div>
+
+    <!-- ===== S2: 学界 ===== -->
+    <div class="slide" id="s2" style="background:#F5F2EB;">
+        <div class="lr-row">
+            <div class="lr-left">
+                <div class="slide-title" style="font-size:2.8rem">学界：正当研究被打压</div>
+                <div style="font-size:1.4rem;line-height:1.8;color:var(--ink)">
+                    西史辨伪，是<span style="color:var(--red);font-weight:700">正当的历史研究</span><br>用实践抠出来的经验，戳穿西式叙事的错漏
+                </div>
+                <div class="flow-chart focus-group" id="fg-s2" style="flex-direction:column;align-items:stretch;gap:9px;margin-top:6px">
+                    <div class="flow-node focus-item" data-focus="39.85"><div class="ft">① 扣帽子</div><div class="fd">"伪史论"</div></div>
+                    <div class="flow-node focus-item" data-focus="41.81" style="background:#8B0000"><div class="ft">② 杜撰假事件</div><div class="fd">投诉陕西文旅 · 要求拆唐代建筑</div></div>
+                    <div class="flow-node focus-item" data-focus="46.26" style="background:#8B0000"><div class="ft">③ 媒体转载 · 大V开骂</div><div class="fd">全网发酵</div></div>
+                    <div class="flow-node focus-item" data-focus="48.37" style="background:var(--ink)"><div class="ft">④ 辟谣</div><div class="fd">陕西文旅厅：压根没接过这电话</div></div>
+                </div>
+            </div>
+            <div class="lr-right">
+                <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:40px">
+                    <img class="mat-img focus-item" data-focus="31.61" src="素材20-西史辩伪-上.jpg" style="width:min(36vw,560px)">
+                    <img class="mat-img focus-item" data-focus="36.25" src="素材20-西史辩伪-下.jpg" style="width:min(36vw,560px)">
+                    <div class="slice-note">西史辨伪 · 上下两图</div>
+                </div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="1.211" data-zt-subtitle-end="3.591">西史辨伪，是正当的历史研究——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="3.971" data-zt-subtitle-end="5.474">用实践抠出来的经验，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="5.854" data-zt-subtitle-end="7.496">戳穿西式叙事的错漏。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="7.876" data-zt-subtitle-end="9.067">可有人要打压：</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="9.447" data-zt-subtitle-end="11.029">先扣&quot;伪史论&quot;的帽子，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="11.409" data-zt-subtitle-end="15.483">再杜撰&quot;投诉陕西文旅、要求拆唐代建筑&quot;的假事件，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="15.863" data-zt-subtitle-end="17.588">媒体转载、大V开骂。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="17.968" data-zt-subtitle-end="20.918">结果陕西文旅厅说，压根没接过这电话——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="21.298" data-zt-subtitle-end="22.281">再看文艺界。</div>
+  </div>
+</div>
+
+    <!-- ===== S3: 文艺界 ===== -->
+    <div class="slide slide-dark slide-photo-bg-3" id="s3" style="flex-direction:column;justify-content:center;">
+        <div class="slide-content" style="max-width:1180px">
+            <div class="slide-title" style="color:#fff;font-size:3rem;text-align:center">文艺界：<span style="color:var(--red)">给暴行颁奖</span></div>
+            <div style="display:flex;gap:28px;margin-top:28px;justify-content:center">
+                <div class="red-card focus-item" data-focus="53.06" style="flex:1;max-width:520px;text-align:left;font-size:1.35rem">
+                    <div style="font-size:1.6rem;font-weight:900;margin-bottom:12px">🎬 杀人犯主演的电影</div>
+                    <div style="line-height:1.8">拿了国际影后。<br>欧美自己都不敢这么玩——<br>这不是文艺，<span style="color:#ff8a80;font-weight:900">是给暴行颁奖</span>。</div>
+                    <div class="seal-stamp" style="margin-top:16px">颁奖不问人品</div>
+                </div>
+                <div class="cream-card focus-item" data-focus="62.95" style="flex:1;max-width:520px;text-align:left;font-size:1.35rem">
+                    <div style="font-size:1.6rem;font-weight:900;color:var(--red);margin-bottom:12px">🎥 《四渡》</div>
+                    <div style="line-height:1.8;color:var(--ink)">导演被采访的时候讲到，四渡是<br>
+                    <span style="font-size:1.9rem;font-weight:700;color:var(--dark-red)">"渡人、渡己、渡苍生、渡天下"</span><br>
+                    四个"渡"字比偈子还玄——<br>这解读，<span style="font-weight:700">荒谬不荒谬？</span></div>
+                    <div class="seal-badge" style="margin-top:16px">英雄战史 · 讲成佛经</div>
+                </div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="1.361" data-zt-subtitle-end="3.789">杀人犯主演的电影拿了国际影后，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="4.169" data-zt-subtitle-end="5.777">欧美自己都不敢这么玩，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="6.157" data-zt-subtitle-end="8.202">这不是文艺，是给暴行颁奖。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="8.582" data-zt-subtitle-end="10.872">再说《四渡》——导演接受采访，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="11.252" data-zt-subtitle-end="14.694">把四渡讲成&quot;渡人、渡己、渡苍生、渡天下&quot;。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="15.074" data-zt-subtitle-end="17.031">先辈拿命换来的四渡赤水，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="17.411" data-zt-subtitle-end="18.570">被他渡出了禅意。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="18.950" data-zt-subtitle-end="20.736">这解读，荒谬不荒谬？</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="21.116" data-zt-subtitle-end="22.189">再看传媒界。</div>
+  </div>
+</div>
+
+    <!-- ===== S4: 传媒界 ===== -->
+    <div class="slide" id="s4" style="background:#F5F0E8;">
+        <div class="lr-row">
+            <div class="lr-left">
+                <div class="slide-title" style="font-size:2.8rem">传媒界：引进人才，不查底细</div>
+                <div class="cream-card focus-item" data-focus="74.27" style="padding:18px 26px;font-size:1.35rem">
+                    <span style="font-weight:700">敦煌</span>引进一位<span style="font-weight:700">"国际传播人才"</span><br>——<span style="color:var(--red);font-weight:700">背景查过吗？</span>
+                </div>
+                <div class="cream-card focus-item" data-focus="78.29" style="padding:18px 26px;font-size:1.35rem">
+                    人家在<span style="font-weight:700">台湾防卫联盟</span>实习过——<br>宗旨是<span style="color:var(--red);font-weight:700">阻止中国统一</span>。
+                </div>
+                <div class="cream-card focus-item" data-focus="84.75" style="padding:18px 26px;font-size:1.35rem">
+                    不查底细就引进，眼见事情闹大了，<span style="font-weight:700">离职跑路草草收场</span>。
+                </div>
+                <div class="ink-card focus-item" data-focus="86.5" style="margin-top:6px;font-size:1.2rem">
+                    你是<span style="color:#ff8a80;font-weight:700">传播中国</span>，还是人家在<span style="color:#ff8a80;font-weight:700">收集你</span>？
+                </div>
+            </div>
+            <div class="lr-right">
+                <img class="mat-img focus-item" data-focus="74.27" src="素材10-媒体人屁股不能歪了.jpg" style="max-height:64vh">
+                <div class="slice-note">媒体人 · 屁股不能歪</div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="1.449" data-zt-subtitle-end="3.688">敦煌引进一位&quot;国际传播人才&quot;，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="4.068" data-zt-subtitle-end="5.089">背景查过吗？</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="5.469" data-zt-subtitle-end="7.494">人家在台湾防卫联盟实习过——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="7.874" data-zt-subtitle-end="9.528">宗旨是阻止中国统一。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="9.908" data-zt-subtitle-end="11.545">引进的时候不查底细，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="11.925" data-zt-subtitle-end="15.053">闹大了，人跑了，这事就这么不了了之了。</div>
+  </div>
+</div>
+
+    <!-- ===== S5: 法律界 ===== -->
+    <div class="slide" id="s5" style="background:#F5F2EB;">
+        <div style="display:flex;align-items:center;justify-content:center;gap:44px;width:100%">
+            <div style="flex:0 0 840px;max-width:840px">
+                <div class="slide-title" style="font-size:2.8rem">法律界：国外败诉，<span style="color:var(--red)">来中国赢了</span></div>
+                <div style="font-size:1.7rem;color:var(--ink);margin:8px 0">LV 告茉莉奶白，判赔 <span style="color:var(--red);font-weight:900;font-size:2.4rem">1030万</span></div>
+                <div class="media-grid focus-group" id="fg-s5" style="max-width:720px;margin:14px 0;grid-template-columns:repeat(2,1fr)">
+                    <div class="mi focus-item" data-focus="95.23"><div style="font-weight:700">🇪🇺 欧盟</div><div style="color:#ff8a80">败诉</div></div>
+                    <div class="mi focus-item" data-focus="96.0"><div style="font-weight:700">🇺🇸 美国</div><div style="color:#ff8a80">败诉</div></div>
+                    <div class="mi focus-item" data-focus="96.8"><div style="font-weight:700">🇯🇵 日本</div><div style="color:#ff8a80">败诉</div></div>
+                    <div class="mi focus-item" data-focus="97.6"><div style="font-weight:700">🇫🇷 法国</div><div style="color:#ff8a80">败诉</div></div>
+                </div>
+                <div class="dark-heading" style="font-size:1.7rem;color:var(--dark-red);text-align:left">国外挨个碰壁 → 来中国，<span style="color:var(--red);font-weight:900">赢了</span></div>
+                <div class="red-card focus-item" data-focus="101.71" style="max-width:640px;margin:14px 0 0;font-size:1.4rem">
+                    怎么一碰洋品牌，<span style="font-weight:900">腰就直不起来？</span>
+                </div>
+            </div>
+            <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:48px">
+                <img class="mat-img focus-item" data-focus="99.5" src="素材19-LV唯一胜绩.jpg" style="max-height:58vh">
+                <div class="slice-note">LV 的唯一胜绩，是在中国</div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.003" data-zt-subtitle-end="0.991">再看法律界。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="1.371" data-zt-subtitle-end="3.239">LV告国产茶饮茉莉奶白，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="3.619" data-zt-subtitle-end="5.136">判赔1030万。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="5.516" data-zt-subtitle-end="6.601">最讽刺的是啥？</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="6.981" data-zt-subtitle-end="9.390">欧盟、美国、日本、法国</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="9.770" data-zt-subtitle-end="10.809">挨个判它败诉——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="11.189" data-zt-subtitle-end="13.075">国外碰壁，来中国赢了。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="13.455" data-zt-subtitle-end="15.982">怎么一碰洋品牌，腰就直不起来？</div>
+  </div>
+</div>
+
+    <!-- ===== S6: 教育界 ===== -->
+    <div class="slide" id="s6" style="background:#F5F0E8;">
+        <div class="lr-row">
+            <div class="lr-left">
+                <div class="slide-title" style="font-size:2.8rem">教育界：毒教材，问题还在</div>
+                <div class="cream-card focus-item" data-focus="109.36" style="padding:18px 26px;font-size:1.35rem">
+                    前几年炸过，教科书中<span style="color:var(--red);font-weight:700">丑化中国人</span><br>歪眼、斜嘴、眯眯眼
+                </div>
+                <div class="cream-card focus-item" data-focus="113.91" style="padding:18px 26px;font-size:1.35rem">
+                    民众监督下修改后明显正常了——
+                </div>
+                <div class="ink-card focus-item" data-focus="117.02" style="font-size:1.25rem">
+                    然而到了今天，一位父亲翻开女儿的书——<br><span style="color:#ff8a80;font-weight:900">问题还在！</span>
+                </div>
+            </div>
+            <div class="lr-right">
+                <div class="slice-row focus-item" data-focus="109.36">
+                    <img src="素材8-让敌人编教科书是一个历史发明-段1.jpg" style="height:48vh">
+                    <img src="素材8-让敌人编教科书是一个历史发明-段2.jpg" style="height:48vh">
+                </div>
+                <div class="slice-note">让敌人编教科书，是一个历史发明 · 分段展示</div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.002" data-zt-subtitle-end="1.008">再看教育界。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="1.388" data-zt-subtitle-end="2.520">毒教材还记得吧？</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.900" data-zt-subtitle-end="4.367">2022年炸过一次—。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="4.747" data-zt-subtitle-end="6.621">教材插图丑化中国人，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="7.001" data-zt-subtitle-end="8.915">歪眼、斜嘴、眯眯眼，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="9.295" data-zt-subtitle-end="12.028">民众监督下改了，改完明显正常了。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="12.408" data-zt-subtitle-end="15.194">然而到了今天，一位父亲翻开女儿的书——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="15.574" data-zt-subtitle-end="16.359">问题还在！</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="16.739" data-zt-subtitle-end="18.959">病根在哪？病根在立场。</div>
+  </div>
+</div>
+
+    <!-- ===== S7: 病根（暗黑·大字） ===== -->
+    <div class="slide slide-dark slide-photo-bg-7" id="s7">
+        <div class="slide-content" style="text-align:center">
+            <div class="dark-heading" style="font-size:2.6rem;color:rgba(255,255,255,.7)">绕了这么多圈子，回到开头那个问题</div>
+            <div class="dark-big" style="font-size:6rem">病根在哪？<br><span style="color:#ff5252">病根在立场</span></div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.599" data-zt-subtitle-end="4.857">文科干的从来不是咬文嚼字，</div>
+  </div>
+</div>
+
+    <!-- ===== S8: 文科重要性 ===== -->
+    <div class="slide" id="s8" style="background:#F5F2EB;">
+        <div class="lr-row" style="max-width:none;gap:22px">
+            <div class="lr-left" style="flex:0 0 24%;gap:22px">
+                <div class="slide-title" style="font-size:3.2rem">文科干的不是咬文嚼字</div>
+                <div class="ink-card focus-item" data-focus="123.95" style="font-size:1.4rem;padding:26px 30px">
+                    是用<span style="color:#ff8a80">叙事</span>塑造群体潜意识，<br>建立一整个社会的<span style="color:#ff8a80">基本共识</span>。
+                </div>
+                <div class="cream-card" style="font-size:1.4rem;padding:26px 30px">
+                    历史永远有<span style="font-weight:700">叙事视角</span>——<br>你站在哪一边，就决定你怎么讲。
+                </div>
+            </div>
+            <div class="lr-right">
+                <div class="slice-row focus-item" data-focus="129.2" style="width:100%;gap:14px;align-items:flex-start">
+                    <img src="素材7-媒体的叙事角度问题-段1.jpg" style="flex:1 1 0;min-width:0;height:auto;width:auto">
+                    <img src="素材7-媒体的叙事角度问题-段2.jpg" style="flex:1 1 0;min-width:0;height:auto;width:auto">
+                    <img src="素材7-媒体的叙事角度问题-段3.jpg" style="flex:1 1 0;min-width:0;height:auto;width:auto">
+                    <img src="素材7-媒体的叙事角度问题-段4.jpg" style="flex:1 1 0;min-width:0;height:auto;width:auto">
+                </div>
+                <div class="slice-note">媒体的叙事角度问题 · 长文分段展示</div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.637" data-zt-subtitle-end="4.852">是用叙事塑造群体潜意识，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="5.232" data-zt-subtitle-end="7.222">建立一整个社会的基本共识。</div>
+  </div>
+</div>
+
+    <!-- ===== S9: 史观对比 ===== -->
+    <div class="slide" id="s9" style="background:#F5F0E8;">
+        <div class="slide-content" style="max-width:1240px">
+            <div class="slide-title" style="font-size:2.8rem;text-align:center">同一个人，两种史观，两个故事</div>
+            <div style="display:flex;gap:28px;justify-content:center;margin-top:24px">
+                <div class="red-card focus-item" data-focus="133.48" style="flex:1;max-width:520px;text-align:left;font-size:1.35rem">
+                    <div class="seal-stamp" style="margin-bottom:14px">人民史观</div>
+                    <div style="font-size:1.5rem;font-weight:900;margin:10px 0">岳飞 = 民族英雄</div>
+                    <div style="line-height:1.8">一听见风波亭，心肝脾肺一起疼——<br>这是代入，这是<span style="font-weight:900">立场</span>。</div>
+                </div>
+                <div style="align-self:center;font-size:3rem;font-weight:900;color:var(--red)">vs</div>
+                <div class="cream-card focus-item" data-focus="142.11" style="flex:1;max-width:520px;text-align:left;font-size:1.35rem">
+                    <div class="seal-badge" style="margin-bottom:14px">所谓"团结史观"</div>
+                    <div style="font-size:1.5rem;font-weight:900;color:var(--dark-red);margin:10px 0">岳飞 = 阻碍国家统一</div>
+                    <div style="line-height:1.8;color:var(--ink)">澎湖海战的施琅，<br>反倒成了<span style="font-weight:900">大英雄</span>。</div>
+                </div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.002" data-zt-subtitle-end="1.553">历史永远有叙事视角——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="1.933" data-zt-subtitle-end="3.942">讲岳飞，人民史观视角下，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="4.322" data-zt-subtitle-end="5.461">他是民族英雄，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="5.841" data-zt-subtitle-end="8.272">一听见风波亭，心肝脾肺一起疼——</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="8.652" data-zt-subtitle-end="10.183">这是代入，这是立场。</div>
+  </div>
+</div>
+
+    <!-- ===== S10: 立场金句（暗黑·配微信翻译证据） ===== -->
+    <div class="slide slide-dark slide-photo-bg-10" id="s10">
+        <div class="slide-content" style="text-align:center">
+            <div class="dark-heading" style="font-size:2.6rem">同一件事，主语是<em>"我"</em>还是<em>"他"</em></div>
+            <div class="dark-heading" style="font-size:2.6rem;margin-top:12px">讲出来就是<em>两个故事</em></div>
+            <div style="display:flex;align-items:center;justify-content:center;gap:40px;margin:30px 0">
+                <div class="wx-pair">
+                    <img src="素材18-澎湖海战撤档.jpg">
+                    <img src="素材18-洪承畴纪念馆.jpg">
+                </div>
+                <div class="dark-big" style="font-size:4.6rem;margin:0">这就是立场</div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.003" data-zt-subtitle-end="1.739">换套所谓的&quot;团结史观&quot;，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.119" data-zt-subtitle-end="3.976">岳飞就是阻碍国家统一，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="4.356" data-zt-subtitle-end="5.854">施琅就成了大英雄。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="6.234" data-zt-subtitle-end="8.593">同一件事，主语是&quot;我&quot;还是&quot;他&quot;，</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="8.973" data-zt-subtitle-end="11.489">讲出来就是两个故事，这就是立场。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="11.869" data-zt-subtitle-end="13.501">今天所有不对劲的地方，</div>
+  </div>
+</div>
+
+    <!-- ===== S11: 升华（暗黑） ===== -->
+    <div class="slide slide-dark slide-photo-bg-11" id="s11">
+        <div class="slide-content" style="text-align:center">
+            <div class="dark-heading" style="font-size:2.9rem">今天所有不对劲的地方</div>
+            <div class="dark-big" style="font-size:5.8rem">说到底，是讲故事的人<br><span style="color:#ff5252">站错了边</span></div>
+            <div class="slide-body" style="margin-top:18px;font-size:1.4rem">那些不对劲，从来不是巧合</div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.011" data-zt-subtitle-end="4.377">说到底，是讲故事的人站错了边。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="4.757" data-zt-subtitle-end="6.752">好了，这期视频就聊到这儿。</div>
+  </div>
+</div>
+
+    <!-- ===== S12: HERO 结尾（一键三连动画） ===== -->
+    <div class="slide" id="s12" style="background:#F5F0E8;">
+        <div class="hero-card" style="max-width:1120px;padding:48px 56px">
+            <div style="flex:1">
+                <div style="font-family:'Noto Serif SC',serif;font-size:2.9rem;font-weight:900;color:var(--ink);line-height:1.2;margin-bottom:20px">这期视频<br>就聊到这儿</div>
+                <div style="font-family:'Noto Serif SC',serif;font-size:1.25rem;color:var(--dark-red);margin-bottom:24px;letter-spacing:.1em">—— 文科 · 立场 · 叙事 ——</div>
+                <div style="font-size:1.25rem;color:var(--ink);line-height:1.9;max-width:480px;margin-bottom:24px">
+                    不是文科无用，<br>是跪着的人，讲不出站着的故事。<br>下次有人再说"文科无用"——把这期转给他。
+                </div>
+                <div style="display:flex;gap:12px;flex-wrap:wrap">
+                    <div style="background:#F5F0E8;padding:10px 20px;border-radius:20px;font-size:1rem">📚 文科价值</div>
+                    <div style="background:#F5F0E8;padding:10px 20px;border-radius:20px;font-size:1rem">⚖️ 立场问题</div>
+                    <div style="background:#F5F0E8;padding:10px 20px;border-radius:20px;font-size:1rem">🎙️ 叙事视角</div>
+                </div>
+            </div>
+            <div style="flex-shrink:0;max-width:370px;width:100%;display:flex;flex-direction:column;gap:16px">
+                <div style="background:#FAF6F0;border-radius:24px;border:1px solid #D4C9B8;padding:22px;box-shadow:0 4px 16px rgba(0,0,0,.04)">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+                        <div style="width:46px;height:46px;border-radius:50%;overflow:hidden;flex-shrink:0;border:2px solid var(--red)">
+                            <img src="头像.jpg" style="width:100%;height:100%;object-fit:cover;display:block">
+                        </div>
+                        <span style="font-size:1rem;font-weight:600;color:var(--ink)">小踏 · 文科观察</span>
+                    </div>
+                    <div style="background:#F5F0E8;border-radius:16px;padding:12px;border:1px solid #EDE6D8">
+                        <video src="素材-一键三连动画.mp4" preload="auto" muted autoplay loop playsinline style="width:100%;border-radius:12px;display:block"></video>
+                    </div>
+                    <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px">
+                        <span style="font-size:.95rem;color:#6B6B6B">一键三连</span>
+                        <div style="background:var(--dark-red);border-radius:20px;padding:10px 20px;display:flex;align-items:center;gap:8px">
+                            <span style="font-size:1rem;color:#fff">❤️</span>
+                            <span style="font-size:.95rem;color:#FAF6F0;font-weight:700">三连</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="red-card" style="text-align:center;padding:16px 24px">
+                    <div style="font-family:'Noto Serif SC',serif;font-size:1.6rem;font-weight:900">我是小踏</div>
+                    <div style="font-size:1rem;opacity:.85">喜欢的朋友点点关注</div>
+                </div>
+            </div>
+        </div>
+    
+  <!-- 字幕（编辑器绑定用） -->
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.372" data-zt-subtitle-end="3.133">我是小踏。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="3.513" data-zt-subtitle-end="6.430">喜欢的朋友点点关注，一键三连支持一下。</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="6.810" data-zt-subtitle-end="8.137">咱们下期视频再见。</div>
+  </div>
+</div>
+
+</div>
+
+<!-- Audio -->
+<audio id="bgAudio" src="B站口播文案-文科的弱势是立场问题吗.mp3" preload="metadata"></audio>
+
+<!-- Progress -->
+<div class="progress-bar" id="progressBar"></div>
+
+<!-- Header -->
+<div class="header-left"><div class="header-line"></div><div class="header-title">文科为什么这么弱？</div></div>
+<div class="header-right">
+    <div class="header-avatar"><img src="头像.jpg"></div>
+    <div><div class="header-nickname">小踏</div><div class="header-desc">文科观察 · 立场问题 · 叙事视角</div></div>
+</div>
+
+<!-- Subtitle -->
+<div class="subtitle-zone"><div class="subtitle-inner"><div class="subtitle-item" id="subtitleCurrent"></div></div></div>
+
+<script>
+const subtitles = [
+ {
+  "startSec": 0.0,
+  "endSec": 0.929,
+  "text": "先看个截图。"
+ },
+ {
+  "startSec": 1.309,
+  "endSec": 3.271,
+  "text": "微信翻译，台湾繁体模式，"
+ },
+ {
+  "startSec": 3.651,
+  "endSec": 5.606,
+  "text": "\"清朝畜生\"被翻成\"明朝畜生\"。"
+ },
+ {
+  "startSec": 5.986,
+  "endSec": 7.7620000000000005,
+  "text": "这波属实给我整不会了——"
+ },
+ {
+  "startSec": 8.142,
+  "endSec": 10.600999999999999,
+  "text": "一个翻译软件，立场比谁都鲜明？"
+ },
+ {
+  "startSec": 10.981,
+  "endSec": 12.382,
+  "text": "大家好，我是小踏。"
+ },
+ {
+  "startSec": 12.762,
+  "endSec": 15.189,
+  "text": "今天聊个问题：为什么我们的文科，"
+ },
+ {
+  "startSec": 15.568999999999999,
+  "endSec": 17.857,
+  "text": "在学界、传媒、法律、教育，"
+ },
+ {
+  "startSec": 18.237,
+  "endSec": 19.308,
+  "text": "处处是弱势？"
+ },
+ {
+  "startSec": 19.688,
+  "endSec": 22.138,
+  "text": "是文科没用，还是立场出了问题？"
+ },
+ {
+  "startSec": 22.518,
+  "endSec": 24.626,
+  "text": "直接说结论：不是文科没用，"
+ },
+ {
+  "startSec": 25.006,
+  "endSec": 27.449,
+  "text": "是跪着的人，讲不出站着的故事。"
+ },
+ {
+  "startSec": 27.829,
+  "endSec": 30.016,
+  "text": "是讲故事的人，屁股坐歪了。"
+ },
+ {
+  "startSec": 30.396,
+  "endSec": 31.231,
+  "text": "先看学界。"
+ },
+ {
+  "startSec": 31.611,
+  "endSec": 33.991,
+  "text": "西史辨伪，是正当的历史研究——"
+ },
+ {
+  "startSec": 34.371,
+  "endSec": 35.874,
+  "text": "用实践抠出来的经验，"
+ },
+ {
+  "startSec": 36.254,
+  "endSec": 37.896,
+  "text": "戳穿西式叙事的错漏。"
+ },
+ {
+  "startSec": 38.276,
+  "endSec": 39.467,
+  "text": "可有人要打压："
+ },
+ {
+  "startSec": 39.847,
+  "endSec": 41.429,
+  "text": "先扣\"伪史论\"的帽子，"
+ },
+ {
+  "startSec": 41.809,
+  "endSec": 45.883,
+  "text": "再杜撰\"投诉陕西文旅、要求拆唐代建筑\"的假事件，"
+ },
+ {
+  "startSec": 46.263,
+  "endSec": 47.988,
+  "text": "媒体转载、大V开骂。"
+ },
+ {
+  "startSec": 48.368,
+  "endSec": 51.318,
+  "text": "结果陕西文旅厅说，压根没接过这电话——"
+ },
+ {
+  "startSec": 51.698,
+  "endSec": 52.681,
+  "text": "再看文艺界。"
+ },
+ {
+  "startSec": 53.061,
+  "endSec": 55.489,
+  "text": "杀人犯主演的电影拿了国际影后，"
+ },
+ {
+  "startSec": 55.869,
+  "endSec": 57.477,
+  "text": "欧美自己都不敢这么玩，"
+ },
+ {
+  "startSec": 57.857,
+  "endSec": 59.902,
+  "text": "这不是文艺，是给暴行颁奖。"
+ },
+ {
+  "startSec": 60.282,
+  "endSec": 62.572,
+  "text": "再说《四渡》——导演接受采访，"
+ },
+ {
+  "startSec": 62.952,
+  "endSec": 66.394,
+  "text": "把四渡讲成\"渡人、渡己、渡苍生、渡天下\"。"
+ },
+ {
+  "startSec": 66.774,
+  "endSec": 68.731,
+  "text": "先辈拿命换来的四渡赤水，"
+ },
+ {
+  "startSec": 69.111,
+  "endSec": 70.27,
+  "text": "被他渡出了禅意。"
+ },
+ {
+  "startSec": 70.65,
+  "endSec": 72.436,
+  "text": "这解读，荒谬不荒谬？"
+ },
+ {
+  "startSec": 72.816,
+  "endSec": 73.889,
+  "text": "再看传媒界。"
+ },
+ {
+  "startSec": 74.269,
+  "endSec": 76.508,
+  "text": "敦煌引进一位\"国际传播人才\"，"
+ },
+ {
+  "startSec": 76.888,
+  "endSec": 77.909,
+  "text": "背景查过吗？"
+ },
+ {
+  "startSec": 78.289,
+  "endSec": 80.314,
+  "text": "人家在台湾防卫联盟实习过——"
+ },
+ {
+  "startSec": 80.694,
+  "endSec": 82.348,
+  "text": "宗旨是阻止中国统一。"
+ },
+ {
+  "startSec": 82.728,
+  "endSec": 84.365,
+  "text": "引进的时候不查底细，"
+ },
+ {
+  "startSec": 84.745,
+  "endSec": 87.873,
+  "text": "闹大了，人跑了，这事就这么不了了之了。"
+ },
+ {
+  "startSec": 88.253,
+  "endSec": 89.241,
+  "text": "再看法律界。"
+ },
+ {
+  "startSec": 89.621,
+  "endSec": 91.489,
+  "text": "LV告国产茶饮茉莉奶白，"
+ },
+ {
+  "startSec": 91.869,
+  "endSec": 93.386,
+  "text": "判赔1030万。"
+ },
+ {
+  "startSec": 93.766,
+  "endSec": 94.851,
+  "text": "最讽刺的是啥？"
+ },
+ {
+  "startSec": 95.231,
+  "endSec": 97.64,
+  "text": "欧盟、美国、日本、法国"
+ },
+ {
+  "startSec": 98.02,
+  "endSec": 99.059,
+  "text": "挨个判它败诉——"
+ },
+ {
+  "startSec": 99.439,
+  "endSec": 101.325,
+  "text": "国外碰壁，来中国赢了。"
+ },
+ {
+  "startSec": 101.705,
+  "endSec": 104.232,
+  "text": "怎么一碰洋品牌，腰就直不起来？"
+ },
+ {
+  "startSec": 104.612,
+  "endSec": 105.618,
+  "text": "再看教育界。"
+ },
+ {
+  "startSec": 105.998,
+  "endSec": 107.13,
+  "text": "毒教材还记得吧？"
+ },
+ {
+  "startSec": 107.51,
+  "endSec": 108.977,
+  "text": "2022年炸过一次—。"
+ },
+ {
+  "startSec": 109.357,
+  "endSec": 111.231,
+  "text": "教材插图丑化中国人，"
+ },
+ {
+  "startSec": 111.611,
+  "endSec": 113.525,
+  "text": "歪眼、斜嘴、眯眯眼，"
+ },
+ {
+  "startSec": 113.905,
+  "endSec": 116.638,
+  "text": "民众监督下改了，改完明显正常了。"
+ },
+ {
+  "startSec": 117.018,
+  "endSec": 119.804,
+  "text": "然而到了今天，一位父亲翻开女儿的书——"
+ },
+ {
+  "startSec": 120.184,
+  "endSec": 120.969,
+  "text": "问题还在！"
+ },
+ {
+  "startSec": 121.349,
+  "endSec": 123.569,
+  "text": "病根在哪？病根在立场。"
+ },
+ {
+  "startSec": 123.949,
+  "endSec": 126.207,
+  "text": "文科干的从来不是咬文嚼字，"
+ },
+ {
+  "startSec": 126.587,
+  "endSec": 128.802,
+  "text": "是用叙事塑造群体潜意识，"
+ },
+ {
+  "startSec": 129.182,
+  "endSec": 131.172,
+  "text": "建立一整个社会的基本共识。"
+ },
+ {
+  "startSec": 131.552,
+  "endSec": 133.103,
+  "text": "历史永远有叙事视角——"
+ },
+ {
+  "startSec": 133.483,
+  "endSec": 135.492,
+  "text": "讲岳飞，人民史观视角下，"
+ },
+ {
+  "startSec": 135.872,
+  "endSec": 137.011,
+  "text": "他是民族英雄，"
+ },
+ {
+  "startSec": 137.391,
+  "endSec": 139.822,
+  "text": "一听见风波亭，心肝脾肺一起疼——"
+ },
+ {
+  "startSec": 140.202,
+  "endSec": 141.733,
+  "text": "这是代入，这是立场。"
+ },
+ {
+  "startSec": 142.113,
+  "endSec": 143.849,
+  "text": "换套所谓的\"团结史观\"，"
+ },
+ {
+  "startSec": 144.229,
+  "endSec": 146.086,
+  "text": "岳飞就是阻碍国家统一，"
+ },
+ {
+  "startSec": 146.466,
+  "endSec": 147.964,
+  "text": "施琅就成了大英雄。"
+ },
+ {
+  "startSec": 148.344,
+  "endSec": 150.703,
+  "text": "同一件事，主语是\"我\"还是\"他\"，"
+ },
+ {
+  "startSec": 151.083,
+  "endSec": 153.599,
+  "text": "讲出来就是两个故事，这就是立场。"
+ },
+ {
+  "startSec": 153.979,
+  "endSec": 155.611,
+  "text": "今天所有不对劲的地方，"
+ },
+ {
+  "startSec": 155.991,
+  "endSec": 158.357,
+  "text": "说到底，是讲故事的人站错了边。"
+ },
+ {
+  "startSec": 158.737,
+  "endSec": 160.732,
+  "text": "好了，这期视频就聊到这儿。"
+ },
+ {
+  "startSec": 161.112,
+  "endSec": 161.873,
+  "text": "我是小踏。"
+ },
+ {
+  "startSec": 162.253,
+  "endSec": 165.17,
+  "text": "喜欢的朋友点点关注，一键三连支持一下。"
+ },
+ {
+  "startSec": 165.55,
+  "endSec": 166.877,
+  "text": "咱们下期视频再见。"
+ }
+];
+
+const slideTimings=[
+{slide:0,start:0.0,end:12.76},
+{slide:1,start:12.76,end:30.4},
+{slide:2,start:30.4,end:51.7},
+{slide:3,start:51.7,end:72.82},
+{slide:4,start:72.82,end:88.25},
+{slide:5,start:88.25,end:104.61},
+{slide:6,start:104.61,end:121.35},
+{slide:7,start:121.35,end:123.95},
+{slide:8,start:123.95,end:131.55},
+{slide:9,start:131.55,end:142.11},
+{slide:10,start:142.11,end:153.98},
+{slide:11,start:153.98,end:158.74},
+{slide:12,start:158.74,end:166.88}
+];
+
+const audio=document.getElementById('bgAudio');
+const slides=document.querySelectorAll('.slide');
+const subtitleEl=document.getElementById('subtitleCurrent');
+const progressBar=document.getElementById('progressBar');
+let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0;
+
+function showSlide(idx,seekAudio){
+    slides.forEach((s,i)=>{s.classList.remove('active');if(i===idx)s.classList.add('active')});
+    currentSlide=idx;
+    document.querySelectorAll('.focus-group').forEach(g=>g.classList.remove('dim-others'));
+    document.querySelectorAll('.focus-item').forEach(el=>{el.classList.remove('zoom-focus');delete el.dataset.done});
+    /* 尾页三连动画：切到 S12 播放，离开暂停（参考技能模板） */
+    var v=document.querySelector('#s12 video');
+    if(v){if(idx===12)v.play();else v.pause()}
+    if(seekAudio&&isPlaying){
+        var st=slideTimings.find(t=>t.slide===idx);
+        if(st)audio.currentTime=st.start;
+    }
+}
+
+function updateSubtitle(time){
+    let ns=-1;
+    for(let i=0;i<subtitles.length;i++){if(time>=subtitles[i].startSec&&time<subtitles[i].endSec){ns=i;break}}
+    if(ns!==currentSubtitle&&ns!==-1){
+        subtitleEl.classList.add('is-changing');
+        setTimeout(()=>{subtitleEl.textContent=subtitles[ns].text;subtitleEl.classList.remove('is-changing')},350);
+        currentSubtitle=ns;
+    }
+}
+
+function updateSlide(time){
+    if(Date.now()<manualOverrideUntil)return;
+    for(let i=slideTimings.length-1;i>=0;i--){
+        if(time>=slideTimings[i].start){if(currentSlide!==slideTimings[i].slide)showSlide(slideTimings[i].slide);break}
+    }
+}
+
+function loop(){
+    if(!isPlaying)return;
+    const t=audio.currentTime;
+    updateSlide(t);updateSubtitle(t);
+    var cur=document.querySelector('.slide.active');
+    if(cur){
+        cur.querySelectorAll('[data-focus]').forEach(function(el){
+            var trigger=parseFloat(el.getAttribute('data-focus'));
+            if(t>=trigger && !el.dataset.done && !el.classList.contains('zoom-focus')){
+                el.dataset.done="1";
+                var group=el.closest('.focus-group');
+                if(group){
+                    group.classList.add('dim-others');
+                    group.querySelectorAll('.zoom-focus').forEach(e=>e.classList.remove('zoom-focus'));
+                    el.classList.add('zoom-focus');
+                    clearTimeout(group._t);
+                    group._t=setTimeout(()=>{group.classList.remove('dim-others');el.classList.remove('zoom-focus');},800);
+                }else{
+                    el.classList.add('zoom-focus');
+                    setTimeout(()=>el.classList.remove('zoom-focus'),800);
+                }
+            }
+        });
+    }
+    if(audio.duration)progressBar.style.width=(t/audio.duration*100)+'%';
+    requestAnimationFrame(loop);
+}
+
+function startPlayback(){if(isPlaying)return;audio.play().then(()=>{isPlaying=true;loop()}).catch(e=>{})}
+
+document.addEventListener('keydown',e=>{
+    if(e.key==='ArrowRight'){e.preventDefault();if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}
+    else if(e.key==='ArrowLeft'){e.preventDefault();if(currentSlide>0){showSlide(currentSlide-1,true);manualOverrideUntil=Date.now()+3000}}
+    else if(e.key===' '){e.preventDefault();if(!isPlaying)startPlayback()}
+});
+
+document.addEventListener('click',e=>{
+    if(!isPlaying){startPlayback();return}
+    const x=e.clientX/window.innerWidth;
+    if(x>0.5){if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}
+    else{if(currentSlide>0){showSlide(currentSlide-1,true);manualOverrideUntil=Date.now()+3000}}
+});
+
+window.addEventListener('load',()=>{setTimeout(startPlayback,300)});
+</script>
+</body>
+</html>
