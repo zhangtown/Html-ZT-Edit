@@ -544,14 +544,14 @@ export default function App() {
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
 
-        <button onClick={() => send({ type: 'prev' })} disabled={!ready} style={btn('#374151')}>
-          ← 上一页
+        <button onClick={() => send({ type: 'undo' })} disabled={!ready} title="撤销（Ctrl+Z）" style={btn('#374151')}>
+          撤销
         </button>
-        <span style={{ fontSize: 13, minWidth: 64, textAlign: 'center' }}>
-          {total ? `${current + 1} / ${total}` : '— / —'}
-        </span>
-        <button onClick={() => send({ type: 'next' })} disabled={!ready} style={btn('#374151')}>
-          下一页 →
+        <button onClick={() => send({ type: 'redo' })} disabled={!ready} title="重做（Ctrl+Shift+Z）" style={btn('#374151')}>
+          重做
+        </button>
+        <button onClick={() => send({ type: 'delete' })} disabled={!selected} title="删除选中（Delete）" style={btn('#7f1d1d')}>
+          删除
         </button>
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
@@ -566,10 +566,36 @@ export default function App() {
         >
           重置选中
         </button>
+        
+        <span style={{ width: 1, height: 22, background: '#374151' }} />
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#d1d5db' }}>
+          对齐:
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value) { send({ type: 'align', mode: e.target.value }); e.target.value = '' }
+            }}
+            disabled={selCount < 2}
+            title="多选元素后选择对齐方式"
+            style={{ ...btn(selCount < 2 ? '#374151' : '#0F6E56'), minWidth: 120 }}
+          >
+            <option value="">选择对齐</option>
+            {ALIGNS.map(([mode, label]) => (
+              <option key={mode} value={mode}>{label}（{mode}）</option>
+            ))}
+          </select>
+        </label>
+
+        <span style={{ width: 1, height: 22, background: '#374151' }} />
+
         <button onClick={() => send({ type: 'layer', mode: 'top' })} disabled={!selected} style={btn('#374151')}>置顶</button>
         <button onClick={() => send({ type: 'layer', mode: 'up' })} disabled={!selected} style={btn('#374151')}>上移</button>
         <button onClick={() => send({ type: 'layer', mode: 'down' })} disabled={!selected} style={btn('#374151')}>下移</button>
         <button onClick={() => send({ type: 'layer', mode: 'bottom' })} disabled={!selected} style={btn('#374151')}>置底</button>
+
+        <span style={{ width: 1, height: 22, background: '#374151' }} />
+
         <button onClick={() => send({ type: 'group' })} disabled={selCount < 2} style={btn(selected && selected.group ? '#0F6E56' : '#374151')}>
           {selected && selected.group ? '已组合' : '组合'}
         </button>
@@ -578,15 +604,8 @@ export default function App() {
           {selected && selected.locked ? '解锁' : '锁定'}
         </button>
 
-        <button onClick={() => send({ type: 'undo' })} disabled={!ready} title="撤销（Ctrl+Z）" style={btn('#374151')}>
-          撤销
-        </button>
-        <button onClick={() => send({ type: 'redo' })} disabled={!ready} title="重做（Ctrl+Shift+Z）" style={btn('#374151')}>
-          重做
-        </button>
-        <button onClick={() => send({ type: 'delete' })} disabled={!selected} title="删除选中（Delete）" style={btn('#7f1d1d')}>
-          删除
-        </button>
+        <span style={{ width: 1, height: 22, background: '#374151' }} />
+
         <button onClick={handleExport} disabled={!ready} style={btn('#2563eb')}>
           导出 HTML
         </button>
@@ -1137,28 +1156,27 @@ function AnimPanel({ selected, send }) {
   const [duration, setDuration] = useState('')
   const [delay, setDelay] = useState('')
   const [returnSec, setReturnSec] = useState('')
-  const [easing, setEasing] = useState('')
 
   useEffect(() => {
     setEffect(selected.animEffect || '')
     setDuration(selected.animDuration || '')
     setDelay(selected.animDelay || '')
     setReturnSec(selected.animReturn || '')
-    setEasing(selected.animEasing || '')
   }, [selected])
 
-  function applyAnim() {
-    send({ type: 'setAnimation', props: {
-      animEffect: effect,
-      animDuration: duration,
-      animDelay: delay,
-      animReturn: returnSec,
-      animEasing: easing,
-    }})
+  function applyAnimAndPreview(overrides) {
+    var props = {
+      animEffect: overrides && overrides.animEffect != null ? overrides.animEffect : effect,
+      animDuration: overrides && overrides.animDuration != null ? overrides.animDuration : duration,
+      animDelay: overrides && overrides.animDelay != null ? overrides.animDelay : delay,
+      animReturn: overrides && overrides.animReturn != null ? overrides.animReturn : returnSec,
+    }
+    send({ type: 'setAnimation', props: props })
+    setTimeout(function () { send({ type: 'previewAnim' }) }, 30)
   }
 
   function clearAnim() {
-    setEffect(''); setDuration(''); setDelay(''); setReturnSec(''); setEasing('')
+    setEffect(''); setDuration(''); setDelay(''); setReturnSec('')
     send({ type: 'setAnimation', props: {
       animEffect: '', animDuration: '', animDelay: '', animReturn: '', animEasing: '',
     }})
@@ -1172,18 +1190,15 @@ function AnimPanel({ selected, send }) {
     var v = parseFloat(cur) || 0
     v = Math.round((v + delta) * 10) / 10
     if (v < 0) v = 0
-    if (key === 'duration') setDuration(String(v))
-    else if (key === 'delay') setDelay(String(v))
-    else if (key === 'return') setReturnSec(String(v))
-    setTimeout(function () {
-      send({ type: 'setAnimation', props: {
-        animEffect: effect,
-        animDuration: key === 'duration' ? String(v) : duration,
-        animDelay: key === 'delay' ? String(v) : delay,
-        animReturn: key === 'return' ? String(v) : returnSec,
-        animEasing: easing,
-      }})
-    }, 0)
+    var nv = String(v)
+    if (key === 'duration') setDuration(nv)
+    else if (key === 'delay') setDelay(nv)
+    else if (key === 'return') setReturnSec(nv)
+    var ov = {}
+    if (key === 'duration') ov.animDuration = nv
+    else if (key === 'delay') ov.animDelay = nv
+    else if (key === 'return') ov.animReturn = nv
+    applyAnimAndPreview(ov)
   }
 
   function NudgeField({ label, value, onUp, onDown }) {
@@ -1206,38 +1221,22 @@ function AnimPanel({ selected, send }) {
         元素动画
       </p>
       <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 10px', lineHeight: 1.5 }}>
-        选择动画效果，字幕出现时绑定的元素自动播放。
+        选择动画效果，字幕出现时绑定的元素自动播放。切换效果即自动预览。
       </p>
 
       <Field label="动画效果">
-        <select style={inp} value={effect} onChange={(e) => { setEffect(e.target.value); setTimeout(function() { send({ type: 'setAnimation', props: { animEffect: e.target.value, animDuration: duration, animDelay: delay, animReturn: returnSec, animEasing: easing } }) }, 0) }}>
+        <select style={inp} value={effect} onChange={(e) => { setEffect(e.target.value); applyAnimAndPreview({ animEffect: e.target.value }) }}>
           {ANIM_EFFECTS.map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
       </Field>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-        <NudgeField label="时长" value={duration} onUp={function() { nudge('duration', 0.5) }} onDown={function() { nudge('duration', -0.5) }} />
-        <NudgeField label="延迟" value={delay} onUp={function() { nudge('delay', 0.5) }} onDown={function() { nudge('delay', -0.5) }} />
-        <NudgeField label="恢复时长" value={returnSec} onUp={function() { nudge('return', 0.5) }} onDown={function() { nudge('return', -0.5) }} />
-      </div>
-
-      <Field label="缓动函数">
-        <select style={inp} value={easing} onChange={(e) => { setEasing(e.target.value); applyAnim() }}>
-          <option value="">（不修改）</option>
-          <option value="ease">ease</option>
-          <option value="ease-in">ease-in</option>
-          <option value="ease-out">ease-out</option>
-          <option value="ease-in-out">ease-in-out</option>
-          <option value="linear">linear</option>
-        </select>
-      </Field>
+      <NudgeField label="时长" value={duration} onUp={function() { nudge('duration', 0.5) }} onDown={function() { nudge('duration', -0.5) }} />
+      <NudgeField label="延迟" value={delay} onUp={function() { nudge('delay', 0.5) }} onDown={function() { nudge('delay', -0.5) }} />
+      <NudgeField label="恢复时长" value={returnSec} onUp={function() { nudge('return', 0.5) }} onDown={function() { nudge('return', -0.5) }} />
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button onClick={() => send({ type: 'previewAnim' })} style={{ ...btn('#2563eb'), flex: 1 }}>
-          ▶ 预览动画
-        </button>
         <button onClick={clearAnim} style={{ ...btn('#6b7280'), flex: 1 }}>
           清除动画
         </button>
@@ -1245,7 +1244,6 @@ function AnimPanel({ selected, send }) {
     </div>
   )
 }
-
 const inp = {
   width: '100%',
   boxSizing: 'border-box',

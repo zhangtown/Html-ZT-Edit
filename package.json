@@ -21,9 +21,9 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
-    "vite": "^5.4.11",
     "electron": "^29.4.0",
-    "electron-builder": "^24.13.3"
+    "electron-builder": "^24.13.3",
+    "vite": "^5.4.11"
   },
   "build": {
     "appId": "com.htmlztedit.app",
@@ -38,7 +38,9 @@
       "output": "dist-electron"
     },
     "win": {
-      "target": ["portable"],
+      "target": [
+        "portable"
+      ],
       "signAndEditExecutable": false
     }
   }
