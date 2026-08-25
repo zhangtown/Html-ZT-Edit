@@ -412,6 +412,9 @@ export default function App() {
         setSubBindingMode(true)
         setBindingTarget(null)
       }
+      if (m.type === 'bindingNotSupported') {
+        alert('当前页字幕来自页面脚本中的 subtitles 数组，不支持绑定。\n如需绑定，请在 HTML 中给字幕元素添加 data-zt-role="subtitle" 属性。')
+      }
       if (m.type === 'bindingTarget') {
         setBindingTarget({ selector: m.selector, tag: m.tag, text: (m.text || '').slice(0, 30) })
       }
@@ -1253,7 +1256,7 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
   const maxTime = subtitles.length > 0
     ? Math.max.apply(null, subtitles.map(function (s) { return s.end || 5 }))
     : 10
-  const timelineWidth = 100 // %
+  const isGlobal = subtitles.length > 0 && subtitles[0].source === 'global'
 
   return (
     <div
@@ -1301,9 +1304,9 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
             </button>
             <button
               onClick={onBind}
-              disabled={selectedSubIdx < 0}
-              style={timelineBtn(selectedSubIdx >= 0 ? '#C41E24' : '#374151')}
-              title="字幕绑定到画面元素"
+              disabled={selectedSubIdx < 0 || isGlobal}
+              style={timelineBtn(selectedSubIdx >= 0 && !isGlobal ? '#C41E24' : '#374151')}
+              title={isGlobal ? '全局字幕不支持绑定' : '字幕绑定到画面元素'}
             >
               🔗 绑定
             </button>
@@ -1340,7 +1343,7 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
         >
           {subtitles.length === 0 && (
             <span style={{ fontSize: 11, color: '#4b5563', paddingLeft: 8 }}>
-              当前页没有字幕（标记 data-zt-role="subtitle" 的元素）
+              当前页没有字幕（需 data-zt-role="subtitle" 元素，或页面脚本中的 subtitles/slideTimings 数组）
             </span>
           )}
           {subtitles.map(function (sub, i) {
@@ -1358,7 +1361,7 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
                   left: left + '%',
                   width: width + '%',
                   height: isSelected ? 28 : 22,
-                  background: isSelected ? '#C41E24' : (isBound ? '#0F6E56' : '#4b5563'),
+                  background: isSelected ? '#C41E24' : (isBound ? '#0F6E56' : (sub.source === 'global' ? '#b45309' : '#4b5563')),
                   borderRadius: 3,
                   cursor: 'pointer',
                   display: 'flex',
@@ -1390,8 +1393,10 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
         {subBindingMode
           ? '绑定模式：点击画布中的元素选择目标，点击「确认」完成绑定（可 Ctrl+Z 撤销）'
           : (subtitles.length > 0
-            ? '点击时间轴上的字幕块选中，可移动到上/下一页或绑定到画面元素'
-            : '在 HTML 中给字幕元素添加 data-zt-role="subtitle" 属性即可出现在时间轴中')
+            ? (isGlobal
+              ? '字幕来自页面脚本的 subtitles/slideTimings 数组（橙色块）。移动字幕会调整 slideTimings 时间边界；绑定仅支持 data-zt-role="subtitle" 的 DOM 字幕。'
+              : '点击时间轴上的字幕块选中，可移动到上/下一页或绑定到画面元素')
+            : '在 HTML 中给字幕元素添加 data-zt-role="subtitle" 属性，或确保页面脚本中有 subtitles/slideTimings 数组')
         }
       </div>
     </div>

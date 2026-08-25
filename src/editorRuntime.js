@@ -1159,47 +1159,132 @@
       .filter(function (el) { return el.parentNode && isEditable(el) })
   }
 
+  // 从页面脚本中读取全局 subtitles/slideTimings（用 Function 在全局作用域 eval）
+  var globalEval = new Function('name', 'try { return eval(name) } catch (e) { return undefined }')
+
   function getSubtitlesData() {
     var els = getSubtitleElements()
-    return els.map(function (el, i) {
-      return {
-        index: i,
-        text: el.textContent.slice(0, 30),
-        start: parseFloat(el.getAttribute('data-zt-subtitle-start')) || 0,
-        end: parseFloat(el.getAttribute('data-zt-subtitle-end')) || 5,
-        boundTo: el.getAttribute('data-zt-bound-to') || '',
+    if (els.length) {
+      return els.map(function (el, i) {
+        return {
+          index: i,
+          text: el.textContent.slice(0, 30),
+          start: parseFloat(el.getAttribute('data-zt-subtitle-start')) || 0,
+          end: parseFloat(el.getAttribute('data-zt-subtitle-end')) || 5,
+          boundTo: el.getAttribute('data-zt-bound-to') || '',
+          source: 'dom',
+        }
+      })
+    }
+    // 回退：读取页面脚本中的全局 subtitles 数组
+    var subs = globalEval('subtitles')
+    var tms = globalEval('slideTimings')
+    if (subs && tms && subs.length && tms.length) {
+      var timing = null
+      for (var i = 0; i < tms.length; i++) {
+        if (tms[i].slide === current) { timing = tms[i]; break }
       }
-    })
+      if (timing) {
+        var result = []
+        var idx = 0
+        for (var j = 0; j < subs.length; j++) {
+          var s = subs[j]
+          if (s.startSec >= timing.start && s.startSec < timing.end) {
+            result.push({
+              index: idx,
+              text: (s.text || '').slice(0, 30),
+              start: s.startSec - timing.start,
+              end: (s.endSec || s.startSec + 3) - timing.start,
+              boundTo: '',
+              source: 'global',
+              globalIndex: j, // 原数组索引，用于移动
+            })
+            idx++
+          }
+        }
+        return result
+      }
+    }
+    return []
   }
 
   function moveSubtitleToPage(direction, subtitleIndex) {
-    var slide = slides[current]
-    if (!slide) return
-    var subtitles = getSubtitleElements()
-    if (!subtitles.length || subtitleIndex < 0 || subtitleIndex >= subtitles.length) return
-    var targetIndex = direction === 'prev' ? current - 1 : current + 1
-    if (targetIndex < 0 || targetIndex >= slides.length) return
-    var targetSlide = slides[targetIndex]
-    var elsToMove = direction === 'prev'
-      ? subtitles.slice(0, subtitleIndex + 1) // 选中字幕 + 之前 → 到上一页
-      : subtitles.slice(subtitleIndex)         // 选中字幕 + 之后 → 到下一页
-    if (!elsToMove.length) return
-    var before = elsToMove.map(snapStyle)
-    elsToMove.forEach(function (el) {
-      slide.removeChild(el)
-      targetSlide.appendChild(el)
-    })
-    var after = elsToMove.map(snapStyle)
-    pushHistory(before, after, elsToMove.slice())
-    deselectAll()
-    postSelection()
+    var els = getSubtitleElements()
+    if (els.length) {
+      // DOM 字幕：移动元素到上/下一页
+      var slide = slides[current]
+      if (!slide) return
+      if (subtitleIndex < 0 || subtitleIndex >= els.length) return
+      var targetIndex = direction === 'prev' ? current - 1 : current + 1
+      if (targetIndex < 0 || targetIndex >= slides.length) return
+      var targetSlide = slides[targetIndex]
+      var elsToMove = direction === 'prev'
+        ? els.slice(0, subtitleIndex + 1) // 选中字幕 + 之前 → 到上一页
+        : els.slice(subtitleIndex)         // 选中字幕 + 之后 → 到下一页
+      if (!elsToMove.length) return
+      var before = elsToMove.map(snapStyle)
+      elsToMove.forEach(function (el) {
+        slide.removeChild(el)
+        targetSlide.appendChild(el)
+      })
+      var after = elsToMove.map(snapStyle)
+      pushHistory(before, after, elsToMove.slice())
+      deselectAll()
+      postSelection()
+      post({ type: 'changed' })
+      post({ type: 'subtitlesMoved', subtitles: getSubtitlesData() })
+      return
+    }
+    // 全局字幕：调整 slideTimings 边界
+    var tms = globalEval('slideTimings')
+    if (!tms) return
+    var data = getSubtitlesData()
+    var selected = data[subtitleIndex]
+    if (!selected || selected.source !== 'global') return
+    var curT = null, adjT = null
+    for (var i = 0; i < tms.length; i++) {
+      if (tms[i].slide === current) curT = tms[i]
+      if (direction === 'prev' && tms[i].slide === current - 1) adjT = tms[i]
+      if (direction === 'next' && tms[i].slide === current + 1) adjT = tms[i]
+    }
+    if (!curT || !adjT) return
+    var absStart = curT.start + selected.start
+    var absEnd = curT.start + selected.end
+    if (direction === 'prev') {
+      // 选中字幕 + 之前 → 上一页：边界设在选中字幕结束时间
+      adjT.end = absEnd
+      curT.start = absEnd
+    } else {
+      // 选中字幕 + 之后 → 下一页：边界设在选中字幕开始时间
+      curT.end = absStart
+      adjT.start = absStart
+    }
+    // 同步更新 <script> 标签文本（草稿保存 outerHTML 时保留修改）
+    updateSlideTimingsInScript(tms)
     post({ type: 'changed' })
     post({ type: 'subtitlesMoved', subtitles: getSubtitlesData() })
   }
 
+  function updateSlideTimingsInScript(tms) {
+    var scripts = document.querySelectorAll('script:not(#zt-editor-runtime)')
+    for (var i = 0; i < scripts.length; i++) {
+      var s = scripts[i]
+      if (s.textContent && s.textContent.indexOf('slideTimings') >= 0) {
+        var serialized = 'const slideTimings=' + JSON.stringify(tms) + ';'
+        s.textContent = s.textContent.replace(/const\s+slideTimings\s*=\s*[\s\S]*?;/, serialized)
+        return
+      }
+    }
+  }
+
   function startBinding(subtitleIndex) {
-    var subtitles = getSubtitleElements()
-    if (!subtitles.length || subtitleIndex < 0 || subtitleIndex >= subtitles.length) return
+    var els = getSubtitleElements()
+    if (!els.length) {
+      // 全局字幕不支持绑定（非 DOM 元素）
+      post({ type: 'bindingNotSupported' })
+      return
+    }
+    if (subtitleIndex < 0 || subtitleIndex >= els.length) return
     bindingMode = { subtitleIndex: subtitleIndex }
     document.body.style.cursor = 'crosshair'
     post({ type: 'bindingModeStarted' })
