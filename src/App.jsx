@@ -17,6 +17,9 @@ const STYLE_TAG =
   '.zt-selected{outline:2px solid #C41E24!important;outline-offset:1px;}' +
   '.zt-bound-mark{outline:2px dashed #0F6E56!important;outline-offset:2px;}' +
   '.zt-bound-highlight{outline:3px solid #C41E24!important;outline-offset:2px;box-shadow:0 0 16px rgba(196,30,36,.5)!important;}' +
+  '.focus-group .focus-item{position:relative}' +
+  '.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}' +
+  '.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}' +
   'body.zt-grid::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:2147483647;' +
   'background-image:linear-gradient(to right,rgba(0,0,0,.08) 1px,transparent 1px),' +
   'linear-gradient(to bottom,rgba(0,0,0,.08) 1px,transparent 1px);' +
@@ -85,6 +88,7 @@ const ANIM_EFFECTS = [
   ['fly-bottom', '飞入下方'],
   ['bounce', '弹跳'],
   ['rotate', '旋转'],
+  ['focus-zoom', '聚焦放大（强调）'],
   ['', '（无动画）'],
 ]
 

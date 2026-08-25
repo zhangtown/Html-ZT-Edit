@@ -67,6 +67,8 @@ export function stripEditorParts(html) {
 
 // 导出：把 iframe 回传的 html 中的 blob URL 恢复为原始相对引用，
 // 并把脚本片段还原回 body，最后包裹成完整文档
+const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n'
+
 export function restoreAndWrap(iframeHtml, relMap, scripts) {
   let html = iframeHtml
   for (const [blob, rel] of relMap.entries()) {
@@ -85,6 +87,9 @@ export function restoreAndWrap(iframeHtml, relMap, scripts) {
   if (newScript) {
     body.insertAdjacentHTML('beforeend', '<script>' + newScript + '</scr' + 'ipt>')
   }
+  // 注入聚焦强调效果所需 CSS（确保导出后 focus-group 联动可用）
+  var headEl = doc.head || doc.documentElement
+  headEl.insertAdjacentHTML('beforeend', '<style>' + FOCUS_CSS + '</style>')
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML
 }
 
@@ -184,18 +189,17 @@ function loop(){
       var boundSel=subEl.getAttribute('data-zt-bound-to');
       if(!boundSel)return;
       var boundEl=document.querySelector(boundSel);
-      if(!boundEl||boundEl.dataset.animDone)return;
+      if(!boundEl)return;
+      var effect=boundEl.getAttribute('data-zt-anim-effect')||'';
       var subStart=parseFloat(subEl.getAttribute('data-zt-subtitle-start'));
       var slideStart=slideTimings[currentSlide]?slideTimings[currentSlide].start:0;
       var absStart=(subStart||0)+slideStart;
-      if(t>=absStart&&t<absStart+0.5){
-        boundEl.dataset.animDone='1';
-        var effect=boundEl.getAttribute('data-zt-anim-effect');
-        var duration=boundEl.getAttribute('data-zt-anim-duration');
-        var delay=boundEl.getAttribute('data-zt-anim-delay');
-        var returnSec=boundEl.getAttribute('data-zt-anim-return');
-        var easing=boundEl.getAttribute('data-zt-anim-easing');
-        playAnimation(boundEl,effect,duration,delay,returnSec,easing)
+      if(effect.indexOf('focus-')===0){
+        if(boundEl.dataset.focusDone)return;
+        if(t>=absStart){boundEl.dataset.focusDone='1';var grp=boundEl.closest('.focus-group');if(grp)grp.classList.add('dim-others');boundEl.classList.add('zt-focus-active')}
+      }else{
+        if(boundEl.dataset.animDone)return;
+        if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';var duration=boundEl.getAttribute('data-zt-anim-duration');var delay=boundEl.getAttribute('data-zt-anim-delay');var returnSec=boundEl.getAttribute('data-zt-anim-return');var easing=boundEl.getAttribute('data-zt-anim-easing');playAnimation(boundEl,effect,duration,delay,returnSec,easing)}
       }
     })
   }
@@ -206,7 +210,7 @@ function loop(){
 function startPlayback(){if(isPlaying)return;audio.play().then(function(){isPlaying=true;loop()}).catch(function(){})}
 
 // 手动翻页时清除动画状态
-var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el)delete el.dataset.animDone}})})}
+var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
 
 document.addEventListener('keydown',function(e){
   if(e.key==='ArrowRight'){e.preventDefault();if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}

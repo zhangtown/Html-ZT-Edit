@@ -1140,6 +1140,17 @@
     if (!selectedList.length) return
     selectedList.forEach(function (el) {
       var effect = el.getAttribute('data-zt-anim-effect') || 'zoom-in'
+      // 聚焦强调类效果：通过 CSS 类切换实现（放大高亮 + 同组变暗），不用关键帧动画
+      if (effect.indexOf('focus-') === 0) {
+        var grp = el.closest('.focus-group')
+        if (grp) grp.classList.add('dim-others')
+        el.classList.add('zt-focus-active')
+        setTimeout(function () {
+          el.classList.remove('zt-focus-active')
+          if (grp) grp.classList.remove('dim-others')
+        }, 1200)
+        return
+      }
       var duration = parseFloat(el.getAttribute('data-zt-anim-duration')) || 1
       var delay = parseFloat(el.getAttribute('data-zt-anim-delay')) || 0
       var returnSec = parseFloat(el.getAttribute('data-zt-anim-return')) || 0
