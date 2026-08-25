@@ -15,6 +15,8 @@ const STYLE_TAG =
   '<style id="zt-editor-style">' +
   '*{animation:none!important;transition:none!important;}' + // 编辑态冻结 CSS 动画/过渡，避免播放干扰拖拽；导出/草稿时随之移除
   '.zt-selected{outline:2px solid #C41E24!important;outline-offset:1px;}' +
+  '.zt-bound-mark{outline:2px dashed #0F6E56!important;outline-offset:2px;}' +
+  '.zt-bound-highlight{outline:3px solid #C41E24!important;outline-offset:2px;box-shadow:0 0 16px rgba(196,30,36,.5)!important;}' +
   'body.zt-grid::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:2147483647;' +
   'background-image:linear-gradient(to right,rgba(0,0,0,.08) 1px,transparent 1px),' +
   'linear-gradient(to bottom,rgba(0,0,0,.08) 1px,transparent 1px);' +
@@ -254,6 +256,7 @@ export default function App() {
       } else if (m.type === 'pages') {
         setTotal(m.total)
         setCurrent(m.current)
+        setSelectedSubIdx(-1)
         requestSubtitles()
       } else if (m.type === 'selection') {
         setSelCount(m.count)
@@ -357,6 +360,15 @@ export default function App() {
   function requestSubtitles() {
     send({ type: 'requestSubtitles' })
   }
+  function handleSelectSub(i) {
+    var idx = i === selectedSubIdx ? -1 : i
+    setSelectedSubIdx(idx)
+    if (idx >= 0 && subtitles[idx] && subtitles[idx].boundTo) {
+      send({ type: 'highlightBound', selector: subtitles[idx].boundTo })
+    } else {
+      send({ type: 'clearBoundHighlight' })
+    }
+  }
   function handleMoveSubtitle(dir) {
     if (selectedSubIdx < 0) return
     send({ type: 'moveSubtitle', direction: dir, subtitleIndex: selectedSubIdx })
@@ -409,6 +421,7 @@ export default function App() {
       if (m.type === 'subtitlesMoved') {
         setSubtitles(m.subtitles || [])
         setSelectedSubIdx(-1)
+        send({ type: 'clearBoundHighlight' })
       }
       if (m.type === 'bindingModeStarted') {
         setSubBindingMode(true)
@@ -424,6 +437,7 @@ export default function App() {
         setSubBindingMode(false)
         setBindingTarget(null)
         setSelectedSubIdx(-1)
+        send({ type: 'clearBoundHighlight' })
       }
       if (m.type === 'bindingCancelled') {
         setSubBindingMode(false)
@@ -731,7 +745,7 @@ export default function App() {
       <TimelinePanel
         subtitles={subtitles}
         selectedSubIdx={selectedSubIdx}
-        onSelectSub={setSelectedSubIdx}
+        onSelectSub={handleSelectSub}
         subBindingMode={subBindingMode}
         bindingTarget={bindingTarget}
         onPrevPage={handleMoveSubtitle}
