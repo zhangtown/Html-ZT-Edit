@@ -15,7 +15,7 @@ const STYLE_TAG =
   '<style id="zt-editor-style">' +
   '*{animation:none!important;transition:none!important;}' + // 编辑态冻结 CSS 动画/过渡，避免播放干扰拖拽；导出/草稿时随之移除
   '.zt-selected{outline:2px solid #C41E24!important;outline-offset:1px;}' +
-  '.zt-bound-mark{outline:2px dashed #0F6E56!important;outline-offset:2px;}' +
+  '.zt-binding-target{outline:3px dashed #0F6E56!important;outline-offset:2px;box-shadow:0 0 16px rgba(15,110,86,.35)!important;}' +
   '.zt-bound-highlight{outline:3px solid #C41E24!important;outline-offset:2px;box-shadow:0 0 16px rgba(196,30,36,.5)!important;}' +
   '.focus-group .focus-item{position:relative}' +
   '.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}' +
@@ -92,6 +92,14 @@ const ANIM_EFFECTS = [
   ['', '（无动画）'],
 ]
 
+const RESOLUTIONS = [
+  ['current', '当前屏幕'],
+  ['', '编辑器窗口大小'],
+  ['1920x1080', '1080P (1920×1080)'],
+  ['2560x1440', '2K (2560×1440)'],
+  ['3840x2160', '4K (3840×2160)'],
+]
+
 function download(filename, text) {
   const blob = new Blob([text], { type: 'text/html' })
   const a = document.createElement('a')
@@ -132,6 +140,8 @@ export default function App() {
   const [selectedSubIdx, setSelectedSubIdx] = useState(-1) // 时间轴选中字幕索引
   const [subBindingMode, setSubBindingMode] = useState(false) // 绑定模式激活
   const [bindingTarget, setBindingTarget] = useState(null) // { selector, tag, text } | null
+  const [simRes, setSimRes] = useState('current') // 模拟分辨率，如 '1920x1080'；current=自动识别当前屏幕物理分辨率
+  const [zoom, setZoom] = useState(1) // 画布缩放 0.5 ~ 1.5，0.1 步进
   const dragDataRef = useRef(null) // 拖拽中的素材信息
 
   gridOnRef.current = gridOn
@@ -291,6 +301,13 @@ export default function App() {
       } else if (m.type === 'export') {
         const finalHtml = restoreAndWrap(m.html, relMapRef.current, scriptsRef.current)
         download('edited.html', finalHtml)
+      } else if (m.type === 'zoom') {
+        // Ctrl+滚轮缩放模拟画布：50% ~ 150%，10% 步进
+        setZoom((z) => {
+          const step = m.deltaY < 0 ? 0.1 : -0.1
+          const next = Math.min(1.5, Math.max(0.5, Math.round((z + step) * 10) / 10))
+          return next
+        })
       }
     }
     function onKey(e) {
@@ -381,7 +398,8 @@ export default function App() {
     var idx = i === selectedSubIdx ? -1 : i
     setSelectedSubIdx(idx)
     if (idx >= 0 && subtitles[idx] && subtitles[idx].boundTo) {
-      send({ type: 'highlightBound', selector: subtitles[idx].boundTo })
+      // 点击字幕时，选中它绑定的画面元素，便于直接修改动画/样式
+      send({ type: 'selectBound', selector: subtitles[idx].boundTo })
     } else {
       send({ type: 'clearBoundHighlight' })
     }
@@ -512,6 +530,22 @@ export default function App() {
     // eslint-disable-next-line
   }, [])
 
+  // 识别当前屏幕：CSS 视口（浏览器实际排版尺寸）+ 物理分辨率
+  const dpr = window.devicePixelRatio || 1
+  const cssResW = window.screen.width || 0
+  const cssResH = window.screen.height || 0
+  const physicalResW = Math.round(cssResW * dpr)
+  const physicalResH = Math.round(cssResH * dpr)
+
+  const simDim =
+    simRes === 'current'
+      ? [cssResW, cssResH] // 用浏览器实际排版视口，才能匹配你在浏览器中看到的占比
+      : simRes
+        ? simRes.split('x').map(Number)
+        : null
+  const simW = simDim ? simDim[0] : null
+  const simH = simDim ? simDim[1] : null
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div
@@ -563,6 +597,29 @@ export default function App() {
         <button onClick={toggleGrid} style={btn(gridOn ? '#0F6E56' : '#374151')}>
           {gridOn ? '网格：开' : '网格：关'}
         </button>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#d1d5db' }}>
+          分辨率:
+          <select
+            value={simRes}
+            onChange={(e) => {
+              setSimRes(e.target.value)
+              setZoom(1)
+            }}
+            style={{ ...btn('#374151'), minWidth: 150 }}
+            title="模拟浏览器分辨率，查看元素与屏幕的占比"
+          >
+            {RESOLUTIONS.map(([v, l]) => (
+              <option key={v} value={v}>
+                {v === 'current' ? `当前屏幕 (CSS ${cssResW}×${cssResH} / 物理 ${physicalResW}×${physicalResH})` : l}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span style={{ fontSize: 12, color: '#d1d5db', minWidth: 60, textAlign: 'center' }}>
+          缩放 {Math.round(zoom * 100)}%
+        </span>
+
         <button
           onClick={() => send({ type: 'resetElement' })}
           disabled={!selected}
@@ -623,15 +680,50 @@ export default function App() {
       </div>
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div style={{ flex: 1, background: '#e5e7eb', position: 'relative' }}>
+        <div
+          style={{
+            flex: 1,
+            background: '#e5e7eb',
+            position: 'relative',
+            overflow: 'auto',
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'flex-start',
+            padding: 12,
+          }}
+        >
           {srcdoc ? (
-            <iframe
-              ref={iframeRef}
-              title="canvas"
-              srcDoc={srcdoc}
-              sandbox="allow-scripts allow-same-origin allow-popups"
-              style={{ width: '100%', height: '100%', border: 'none', background: '#fff' }}
-            />
+            <div
+              style={
+                simW
+                  ? {
+                      width: simW * zoom,
+                      height: simH * zoom,
+                      position: 'relative',
+                      overflow: 'hidden',
+                      boxShadow: '0 2px 16px rgba(0,0,0,.15)',
+                      flex: '0 0 auto',
+                      background: '#fff',
+                      margin: 'auto',
+                    }
+                  : { width: '100%', height: '100%', position: 'relative', overflow: 'visible' }
+              }
+            >
+              <iframe
+                ref={iframeRef}
+                title="canvas"
+                srcDoc={srcdoc}
+                sandbox="allow-scripts allow-same-origin allow-popups"
+                style={{
+                  width: simW ? simW : '100%',
+                  height: simH ? simH : '100%',
+                  border: 'none',
+                  background: '#fff',
+                  transform: `scale(${zoom})`,
+                  transformOrigin: 'top left',
+                }}
+              />
+            </div>
           ) : (
             <div
               style={{
@@ -666,8 +758,6 @@ export default function App() {
           <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb' }}>
             {[
               ['prop', '属性'],
-              ['align', '对齐'],
-              ['anim', '动画'],
               ['assets', '素材'],
               ['info', '信息'],
             ].map(([k, label]) => (
@@ -710,40 +800,6 @@ export default function App() {
               <PropPanel selected={selected} send={send} selCount={selCount} aspectLock={aspectLock} setAspectLock={setAspectLock} />
             )}
 
-            {selected && tab === 'align' && (
-              <div>
-                <p style={{ fontSize: 13, color: '#C41E24', fontWeight: 600, margin: '0 0 10px' }}>
-                  已选中 {selCount} 个元素（需 ≥2）
-                </p>
-                <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 10px' }}>
-                  对齐以所选元素为整体；分布需 ≥3 个元素。
-                </p>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                  {ALIGNS.map(([mode, label]) => (
-                    <button
-                      key={mode}
-                      onClick={() => send({ type: 'align', mode })}
-                      disabled={selCount < 2}
-                      title={label + '（' + mode + '）'}
-                      style={{
-                        ...btn(selCount < 2 ? '#d1d5db' : '#374151'),
-                        fontSize: 12,
-                        padding: '9px 6px',
-                        textAlign: 'left',
-                      }}
-                    >
-                      {label}（{mode}）
-                    </button>
-                  ))}
-                </div>
-                <p style={{ fontSize: 12, color: '#9ca3af', marginTop: 12, lineHeight: 1.6 }}>
-                  也可用快捷键：L/C/R/T/M/B/H/V/E/W/Q。
-                  <br />
-                  分布（H/V）与对齐同样支持撤销（Ctrl+Z）。
-                </p>
-              </div>
-            )}
-
             {selected && tab === 'info' && (
               <div style={{ fontSize: 13, lineHeight: 1.9 }}>
                 <p style={{ margin: '0 0 8px', color: '#C41E24', fontWeight: 600 }}>
@@ -761,9 +817,6 @@ export default function App() {
                 <Row k="文字色" v={selected.color || '—'} />
                 <Row k="背景色" v={selected.backgroundColor || '—'} />
               </div>
-            )}
-            {selected && tab === 'anim' && (
-              <AnimPanel selected={selected} send={send} />
             )}
             {tab === 'assets' && (
               <AssetsPanel
@@ -793,6 +846,8 @@ export default function App() {
         total={total}
         onGoPrev={() => send({ type: 'prev' })}
         onGoNext={() => send({ type: 'next' })}
+        selected={selected}
+        send={send}
       />
     </div>
   )
@@ -1154,8 +1209,8 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
   )
 }
 
-// 动画面板
-function AnimPanel({ selected, send }) {
+// 动画面板（inline 模式：直接嵌在底栏绑定按钮后面，非单独弹框）
+function AnimPanel({ selected, send, inline }) {
   const [effect, setEffect] = useState('')
   const [duration, setDuration] = useState('')
   const [delay, setDelay] = useState('')
@@ -1205,16 +1260,44 @@ function AnimPanel({ selected, send }) {
     applyAnimAndPreview(ov)
   }
 
-  function NudgeField({ label, value, onUp, onDown }) {
+  // 底栏 inline 样式：所有控件都在同一行，动画选择框用原生下拉菜单
+  if (inline) {
     return (
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ color: '#6b7280', marginBottom: 3, fontSize: 12 }}>{label}</div>
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button onClick={onDown} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
-          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{value || '0'}</span>
-          <button onClick={onUp} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
-        </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+        <span style={{ color: '#e5e7eb', fontWeight: 600 }}>动画</span>
+        <select
+          value={effect}
+          onChange={(e) => { setEffect(e.target.value); applyAnimAndPreview({ animEffect: e.target.value }) }}
+          style={{
+            background: '#111827',
+            color: '#fff',
+            border: '1px solid #4b5563',
+            borderRadius: 4,
+            padding: '4px 8px',
+            fontSize: 12,
+          }}
+        >
+          {ANIM_EFFECTS.map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
+
+        <span style={{ color: '#9ca3af' }}>时长</span>
+        <button onClick={function() { nudge('duration', -0.5) }} style={timelineBtn('#4b5563')}>▼</button>
+        <span style={{ color: '#fff', minWidth: 26, textAlign: 'center' }}>{duration || '0'}</span>
+        <button onClick={function() { nudge('duration', 0.5) }} style={timelineBtn('#4b5563')}>▲</button>
+
+        <span style={{ color: '#9ca3af' }}>延迟</span>
+        <button onClick={function() { nudge('delay', -0.5) }} style={timelineBtn('#4b5563')}>▼</button>
+        <span style={{ color: '#fff', minWidth: 26, textAlign: 'center' }}>{delay || '0'}</span>
+        <button onClick={function() { nudge('delay', 0.5) }} style={timelineBtn('#4b5563')}>▲</button>
+
+        <span style={{ color: '#9ca3af' }}>恢复</span>
+        <button onClick={function() { nudge('return', -0.5) }} style={timelineBtn('#4b5563')}>▼</button>
+        <span style={{ color: '#fff', minWidth: 26, textAlign: 'center' }}>{returnSec || '0'}</span>
+        <button onClick={function() { nudge('return', 0.5) }} style={timelineBtn('#4b5563')}>▲</button>
+
+        <button onClick={clearAnim} style={timelineBtn('#7f1d1d')}>清除</button>
       </div>
     )
   }
@@ -1236,9 +1319,32 @@ function AnimPanel({ selected, send }) {
         </select>
       </Field>
 
-      <NudgeField label="时长" value={duration} onUp={function() { nudge('duration', 0.5) }} onDown={function() { nudge('duration', -0.5) }} />
-      <NudgeField label="延迟" value={delay} onUp={function() { nudge('delay', 0.5) }} onDown={function() { nudge('delay', -0.5) }} />
-      <NudgeField label="恢复时长" value={returnSec} onUp={function() { nudge('return', 0.5) }} onDown={function() { nudge('return', -0.5) }} />
+      <Field label="时长">
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button onClick={function() { nudge('duration', -0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{duration || '0'}</span>
+          <button onClick={function() { nudge('duration', 0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
+        </div>
+      </Field>
+
+      <Field label="延迟">
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button onClick={function() { nudge('delay', -0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{delay || '0'}</span>
+          <button onClick={function() { nudge('delay', 0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
+        </div>
+      </Field>
+
+      <Field label="恢复时长">
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button onClick={function() { nudge('return', -0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{returnSec || '0'}</span>
+          <button onClick={function() { nudge('return', 0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
+        </div>
+      </Field>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <button onClick={clearAnim} style={{ ...btn('#6b7280'), flex: 1 }}>
@@ -1358,7 +1464,7 @@ function buildSubtitleDataScript(scripts) {
 }
 
 // 底部时间轴面板
-function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode, bindingTarget, onPrevPage, onNextPage, onBind, onConfirm, onCancelBind, current, total, onGoPrev, onGoNext }) {
+function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode, bindingTarget, onPrevPage, onNextPage, onBind, onConfirm, onCancelBind, current, total, onGoPrev, onGoNext, selected, send }) {
   const maxTime = subtitles.length > 0
     ? Math.max.apply(null, subtitles.map(function (s) { return s.end || 5 }))
     : 10
@@ -1429,6 +1535,9 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
               ✕ 取消
             </button>
           </>
+        )}
+        {selected && !subBindingMode && (
+          <AnimPanel selected={selected} send={send} inline />
         )}
       </div>
 

@@ -1336,8 +1336,9 @@
     document.body.style.cursor = ''
     postSelection()
     post({ type: 'changed' })
+    // 立即回传最新字幕数据，让时间轴立刻显示“已绑定”颜色，并能再次点击选中绑定元素
+    post({ type: 'subtitles', subtitles: getSubtitlesData() })
     post({ type: 'bindingConfirmed', subtitleIndex: idx, targetSelector: '[data-zt-id="' + targetId + '"]' })
-    markAllBounds()
   }
 
   // ---- 绑定关系呈现与联动 ----
@@ -1366,6 +1367,13 @@
 
   function clearBoundHighlight() {
     document.querySelectorAll('.zt-bound-highlight').forEach(function (el) { el.classList.remove('zt-bound-highlight') })
+  }
+
+  // 点击字幕时，选中它绑定的画面元素，便于直接修改动画/样式
+  function selectBySelector(selector) {
+    if (!selector) return
+    var el = document.querySelector(selector)
+    if (el && isEditable(el)) selectOnly(el)
   }
 
   // ---- 图片替换 ----
@@ -1596,6 +1604,13 @@
         }
       }
     })
+    // Ctrl+滚轮：画布缩放（50% ~ 150%，10% 步进），由父窗口处理
+    document.addEventListener('wheel', function (e) {
+      if (e.ctrlKey) {
+        e.preventDefault()
+        post({ type: 'zoom', deltaY: e.deltaY })
+      }
+    }, { passive: false })
     // 拖拽放置素材 / 文件
     document.addEventListener('dragover', function (e) { e.preventDefault() })
     document.addEventListener('drop', function (e) {
@@ -1642,10 +1657,10 @@
       else if (m.type === 'setText') setText(m.text)
       else if (m.type === 'setAnimation') setAnimation(m.props || {})
       else if (m.type === 'previewAnim') previewAnim()
-      else if (m.type === 'requestSubtitles') { markAllBounds(); post({ type: 'subtitles', subtitles: getSubtitlesData() }) }
+      else if (m.type === 'requestSubtitles') post({ type: 'subtitles', subtitles: getSubtitlesData() })
+      else if (m.type === 'selectBound') selectBySelector(m.selector)
       else if (m.type === 'highlightBound') highlightBound(m.selector)
       else if (m.type === 'clearBoundHighlight') clearBoundHighlight()
-      else if (m.type === 'markAllBounds') markAllBounds()
       else if (m.type === 'moveSubtitle') moveSubtitleToPage(m.direction, m.subtitleIndex)
       else if (m.type === 'startBinding') startBinding(m.subtitleIndex)
       else if (m.type === 'cancelBinding') cancelBinding()
@@ -1679,6 +1694,18 @@
     selectedList.forEach(function (el) {
       el.classList.remove('zt-selected')
     })
+    // 清理编辑器临时的聚焦/绑定/选中状态，避免导出后元素像蒙了一层遮罩
+    document.querySelectorAll('.zt-selected, .zt-focus-active, .zt-bound-highlight, .zt-bound-mark, .zt-binding-target')
+      .forEach(function (el) {
+        el.classList.remove('zt-selected', 'zt-focus-active', 'zt-bound-highlight', 'zt-bound-mark', 'zt-binding-target')
+      })
+    document.querySelectorAll('.focus-group.dim-others').forEach(function (el) {
+      el.classList.remove('dim-others')
+    })
+    // 清除正在播放的预览动画，避免影响导出后页面状态
+    if (document.getAnimations) {
+      document.getAnimations().forEach(function (a) { a.cancel() })
+    }
     // 恢复开场页：移除所有 .slide 的 active，只保留第一个 .slide（开场）的 active。
     // 否则导出后 active 停留在编辑时的当前页，与自动播放脚本初始 currentSlide=0 不一致，
     // 脚本的 updateSlide 在 time>=0 时因 currentSlide===target 而跳过切换，

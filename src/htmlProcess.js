@@ -59,7 +59,7 @@ export function stripEditorParts(html) {
     .replace(/<script id="zt-editor-runtime">[\s\S]*?<\/script>/g, '')
     .replace(/\s+class="([^"]*)"/g, (m, cls) => {
       const cleaned = cls
-        .replace(/\s*\b(zt-grid|zt-selected)\b\s*/g, ' ')
+        .replace(/\s*\b(zt-grid|zt-selected|zt-focus-active|zt-bound-mark|zt-bound-highlight|zt-binding-target|dim-others)\b\s*/g, ' ')
         .trim()
       return cleaned ? ` class="${cleaned}"` : ''
     })
@@ -199,7 +199,7 @@ function loop(){
         if(t>=absStart){boundEl.dataset.focusDone='1';var grp=boundEl.closest('.focus-group');if(grp)grp.classList.add('dim-others');boundEl.classList.add('zt-focus-active')}
       }else{
         if(boundEl.dataset.animDone)return;
-        if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';var duration=boundEl.getAttribute('data-zt-anim-duration');var delay=boundEl.getAttribute('data-zt-anim-delay');var returnSec=boundEl.getAttribute('data-zt-anim-return');var easing=boundEl.getAttribute('data-zt-anim-easing');playAnimation(boundEl,effect,duration,delay,returnSec,easing)}
+        if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';var duration=boundEl.getAttribute('data-zt-anim-duration');var delay=boundEl.getAttribute('data-zt-anim-delay');var returnSec=boundEl.getAttribute('data-zt-anim-return');var easing=boundEl.getAttribute('data-zt-anim-easing');var grp=boundEl.closest('.focus-group');if(grp){grp.classList.remove('dim-others');boundEl.classList.remove('zt-focus-active')}playAnimation(boundEl,effect,duration,delay,returnSec,easing)}
       }
     })
   }
