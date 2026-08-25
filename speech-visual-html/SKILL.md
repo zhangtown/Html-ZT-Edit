@@ -14,7 +14,7 @@ triggers:
   - "国风"
   - "视频脚本"
   - "MG动画"
-version: 5.2
+version: 5.3
 defaultTemplate: 模板-唐朝不存在风格-v5.1.html
 ---
 
