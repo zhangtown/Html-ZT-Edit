@@ -27,6 +27,7 @@
   var SNAP_DISTANCE = 6 // 智能参考线吸附阈值（px）
   var placementMode = false // 素材放置模式
   var placementData = null // { url, assetType }
+  var bindingMode = null // 字幕绑定模式：{ subtitleIndex: number } | null
 
   function post(msg) {
     window.parent.postMessage(msg, '*')
@@ -1150,6 +1151,88 @@
     })
   }
 
+  // ---- 字幕/时间轴功能 ----
+  function getSubtitleElements() {
+    var slide = slides[current]
+    if (!slide) return []
+    return Array.prototype.slice.call(slide.querySelectorAll('[data-zt-role="subtitle"]'))
+      .filter(function (el) { return el.parentNode && isEditable(el) })
+  }
+
+  function getSubtitlesData() {
+    var els = getSubtitleElements()
+    return els.map(function (el, i) {
+      return {
+        index: i,
+        text: el.textContent.slice(0, 30),
+        start: parseFloat(el.getAttribute('data-zt-subtitle-start')) || 0,
+        end: parseFloat(el.getAttribute('data-zt-subtitle-end')) || 5,
+        boundTo: el.getAttribute('data-zt-bound-to') || '',
+      }
+    })
+  }
+
+  function moveSubtitleToPage(direction, subtitleIndex) {
+    var slide = slides[current]
+    if (!slide) return
+    var subtitles = getSubtitleElements()
+    if (!subtitles.length || subtitleIndex < 0 || subtitleIndex >= subtitles.length) return
+    var targetIndex = direction === 'prev' ? current - 1 : current + 1
+    if (targetIndex < 0 || targetIndex >= slides.length) return
+    var targetSlide = slides[targetIndex]
+    var elsToMove = direction === 'prev'
+      ? subtitles.slice(0, subtitleIndex + 1) // 选中字幕 + 之前 → 到上一页
+      : subtitles.slice(subtitleIndex)         // 选中字幕 + 之后 → 到下一页
+    if (!elsToMove.length) return
+    var before = elsToMove.map(snapStyle)
+    elsToMove.forEach(function (el) {
+      slide.removeChild(el)
+      targetSlide.appendChild(el)
+    })
+    var after = elsToMove.map(snapStyle)
+    pushHistory(before, after, elsToMove.slice())
+    deselectAll()
+    postSelection()
+    post({ type: 'changed' })
+    post({ type: 'subtitlesMoved', subtitles: getSubtitlesData() })
+  }
+
+  function startBinding(subtitleIndex) {
+    var subtitles = getSubtitleElements()
+    if (!subtitles.length || subtitleIndex < 0 || subtitleIndex >= subtitles.length) return
+    bindingMode = { subtitleIndex: subtitleIndex }
+    document.body.style.cursor = 'crosshair'
+    post({ type: 'bindingModeStarted' })
+  }
+
+  function cancelBinding() {
+    document.querySelectorAll('.zt-binding-target').forEach(function (el) { el.classList.remove('zt-binding-target') })
+    bindingMode = null
+    document.body.style.cursor = ''
+    post({ type: 'bindingCancelled' })
+  }
+
+  function confirmBinding() {
+    if (!bindingMode) return
+    var idx = bindingMode.subtitleIndex
+    var subtitles = getSubtitleElements()
+    var subtitleEl = subtitles[idx]
+    var targetEl = document.querySelector('.zt-binding-target')
+    if (!subtitleEl || !targetEl) { cancelBinding(); return }
+    var targetId = targetEl.getAttribute('data-zt-id')
+    if (!targetId) { cancelBinding(); return }
+    var before = snapStyle(subtitleEl)
+    subtitleEl.setAttribute('data-zt-bound-to', '[data-zt-id="' + targetId + '"]')
+    var after = snapStyle(subtitleEl)
+    pushHistory([before], [after], [subtitleEl])
+    targetEl.classList.remove('zt-binding-target')
+    bindingMode = null
+    document.body.style.cursor = ''
+    postSelection()
+    post({ type: 'changed' })
+    post({ type: 'bindingConfirmed', subtitleIndex: idx, targetSelector: '[data-zt-id="' + targetId + '"]' })
+  }
+
   // ---- 图片替换 ----
   function replaceSelectedImage(url) {
     if (!url || !selectedList.length) return
@@ -1278,6 +1361,24 @@
 
   function onPointerDown(e) {
     // 放置模式：点击画布即插入素材
+    // 绑定模式：点击元素即选中目标，高亮显示，等待父窗口确认
+    if (bindingMode) {
+      var t = e.target
+      if (isEditable(t) && !isLocked(t)) {
+        // 清除之前的高亮
+        document.querySelectorAll('.zt-binding-target').forEach(function(el) { el.classList.remove('zt-binding-target') })
+        t.classList.add('zt-binding-target')
+        // 给目标元素生成唯一标识
+        var targetId = t.getAttribute('data-zt-id')
+        if (!targetId) {
+          targetId = 'zt-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
+          t.setAttribute('data-zt-id', targetId)
+        }
+        post({ type: 'bindingTarget', selector: '[data-zt-id="' + targetId + '"]', tag: t.tagName, text: t.textContent })
+      }
+      e.preventDefault()
+      return
+    }
     if (placementMode) {
       placeAsset(e)
       return
@@ -1406,6 +1507,11 @@
       else if (m.type === 'setText') setText(m.text)
       else if (m.type === 'setAnimation') setAnimation(m.props || {})
       else if (m.type === 'previewAnim') previewAnim()
+      else if (m.type === 'requestSubtitles') post({ type: 'subtitles', subtitles: getSubtitlesData() })
+      else if (m.type === 'moveSubtitle') moveSubtitleToPage(m.direction, m.subtitleIndex)
+      else if (m.type === 'startBinding') startBinding(m.subtitleIndex)
+      else if (m.type === 'cancelBinding') cancelBinding()
+      else if (m.type === 'confirmBinding') confirmBinding()
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()
       else if (m.type === 'paste') paste()

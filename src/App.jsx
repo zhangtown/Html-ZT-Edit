@@ -109,6 +109,10 @@ export default function App() {
   const [aspectLock, setAspectLock] = useState(false)
   const [assets, setAssets] = useState([]) // [{ name, url, type }] 素材列表
   const [placingAsset, setPlacingAsset] = useState(null) // { url, name, type } | null
+  const [subtitles, setSubtitles] = useState([]) // 字幕列表
+  const [selectedSubIdx, setSelectedSubIdx] = useState(-1) // 时间轴选中字幕索引
+  const [subBindingMode, setSubBindingMode] = useState(false) // 绑定模式激活
+  const [bindingTarget, setBindingTarget] = useState(null) // { selector, tag, text } | null
   const dragDataRef = useRef(null) // 拖拽中的素材信息
 
   gridOnRef.current = gridOn
@@ -248,6 +252,7 @@ export default function App() {
       } else if (m.type === 'pages') {
         setTotal(m.total)
         setCurrent(m.current)
+        requestSubtitles()
       } else if (m.type === 'selection') {
         setSelCount(m.count)
         setSelected(m.primary)
@@ -346,6 +351,28 @@ export default function App() {
     send({ type: 'assetDragEnded' })
   }
 
+  // 字幕/时间轴相关操作
+  function requestSubtitles() {
+    send({ type: 'requestSubtitles' })
+  }
+  function handleMoveSubtitle(dir) {
+    if (selectedSubIdx < 0) return
+    send({ type: 'moveSubtitle', direction: dir, subtitleIndex: selectedSubIdx })
+    setSelectedSubIdx(-1)
+  }
+  function handleStartBinding() {
+    if (selectedSubIdx < 0) return
+    send({ type: 'startBinding', subtitleIndex: selectedSubIdx })
+  }
+  function handleConfirmBinding() {
+    send({ type: 'confirmBinding' })
+  }
+  function handleCancelBinding() {
+    send({ type: 'cancelBinding' })
+    setSubBindingMode(false)
+    setBindingTarget(null)
+  }
+
   // 放置素材到画布
   function registerAssetPath(asset) {
     // 素材来自所选文件夹时，记录 blob -> 相对路径，导出时可恢复为正常文件引用
@@ -371,6 +398,31 @@ export default function App() {
       const m = e.data || {}
       if (m.type === 'assetPlaced' || m.type === 'placementCancelled') {
         setPlacingAsset(null)
+      }
+      // 字幕/时间轴消息
+      if (m.type === 'subtitles') {
+        setSubtitles(m.subtitles || [])
+        setSelectedSubIdx(-1)
+      }
+      if (m.type === 'subtitlesMoved') {
+        setSubtitles(m.subtitles || [])
+        setSelectedSubIdx(-1)
+      }
+      if (m.type === 'bindingModeStarted') {
+        setSubBindingMode(true)
+        setBindingTarget(null)
+      }
+      if (m.type === 'bindingTarget') {
+        setBindingTarget({ selector: m.selector, tag: m.tag, text: (m.text || '').slice(0, 30) })
+      }
+      if (m.type === 'bindingConfirmed') {
+        setSubBindingMode(false)
+        setBindingTarget(null)
+        setSelectedSubIdx(-1)
+      }
+      if (m.type === 'bindingCancelled') {
+        setSubBindingMode(false)
+        setBindingTarget(null)
       }
       // 拖拽放置：iframe 告知坐标，我方回传素材信息
       if (m.type === 'assetDropPosition') {
@@ -671,6 +723,22 @@ export default function App() {
           </div>
         </div>
       </div>
+      <TimelinePanel
+        subtitles={subtitles}
+        selectedSubIdx={selectedSubIdx}
+        onSelectSub={setSelectedSubIdx}
+        subBindingMode={subBindingMode}
+        bindingTarget={bindingTarget}
+        onPrevPage={handleMoveSubtitle}
+        onNextPage={handleMoveSubtitle}
+        onBind={handleStartBinding}
+        onConfirm={handleConfirmBinding}
+        onCancelBind={handleCancelBinding}
+        current={current}
+        total={total}
+        onGoPrev={() => send({ type: 'prev' })}
+        onGoNext={() => send({ type: 'next' })}
+      />
     </div>
   )
 }
@@ -1178,4 +1246,167 @@ function dataUrlToBlob(dataUrl) {
   const arr = new Uint8Array(bytes.length)
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
   return new Blob([arr], { type: mime })
+}
+
+// 底部时间轴面板
+function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode, bindingTarget, onPrevPage, onNextPage, onBind, onConfirm, onCancelBind, current, total, onGoPrev, onGoNext }) {
+  const maxTime = subtitles.length > 0
+    ? Math.max.apply(null, subtitles.map(function (s) { return s.end || 5 }))
+    : 10
+  const timelineWidth = 100 // %
+
+  return (
+    <div
+      style={{
+        background: '#1f2937',
+        borderTop: '1px solid #374151',
+        padding: '8px 14px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 6,
+        userSelect: 'none',
+      }}
+    >
+      {/* 页面导航 + 绑定操作按钮 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <button onClick={onGoPrev} disabled={total < 1} style={timelineBtn('#374151')}>
+          ◀ 上一页
+        </button>
+        <span style={{ fontSize: 12, color: '#d1d5db', minWidth: 50, textAlign: 'center' }}>
+          {total ? (current + 1) + ' / ' + total : '—'}
+        </span>
+        <button onClick={onGoNext} disabled={total < 1} style={timelineBtn('#374151')}>
+          下一页 ▶
+        </button>
+
+        <span style={{ width: 1, height: 20, background: '#374151' }} />
+
+        {!subBindingMode ? (
+          <>
+            <button
+              onClick={function () { onPrevPage('prev') }}
+              disabled={selectedSubIdx < 0}
+              style={timelineBtn(selectedSubIdx >= 0 ? '#4b5563' : '#374151')}
+              title="字幕移动到上一页"
+            >
+              ⬆ 字幕到上一页
+            </button>
+            <button
+              onClick={function () { onNextPage('next') }}
+              disabled={selectedSubIdx < 0}
+              style={timelineBtn(selectedSubIdx >= 0 ? '#4b5563' : '#374151')}
+              title="字幕移动到下一页"
+            >
+              字幕到下一页 ⬇
+            </button>
+            <button
+              onClick={onBind}
+              disabled={selectedSubIdx < 0}
+              style={timelineBtn(selectedSubIdx >= 0 ? '#C41E24' : '#374151')}
+              title="字幕绑定到画面元素"
+            >
+              🔗 绑定
+            </button>
+          </>
+        ) : (
+          <>
+            <span style={{ fontSize: 12, color: '#fbbf24' }}>
+              点击画布中的元素以绑定{bindingTarget ? '（已选: ' + (bindingTarget.tag || '') + ' - ' + (bindingTarget.text || '') + '）' : ''}
+            </span>
+            <button onClick={onConfirm} disabled={!bindingTarget} style={timelineBtn(bindingTarget ? '#0F6E56' : '#374151')}>
+              ✅ 确认
+            </button>
+            <button onClick={onCancelBind} style={timelineBtn('#7f1d1d')}>
+              ✕ 取消
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* 时间轴条 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 24 }}>0s</span>
+        <div
+          style={{
+            flex: 1,
+            height: 32,
+            background: '#111827',
+            borderRadius: 4,
+            position: 'relative',
+            overflow: 'hidden',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+        >
+          {subtitles.length === 0 && (
+            <span style={{ fontSize: 11, color: '#4b5563', paddingLeft: 8 }}>
+              当前页没有字幕（标记 data-zt-role="subtitle" 的元素）
+            </span>
+          )}
+          {subtitles.map(function (sub, i) {
+            var left = (sub.start / maxTime) * 100
+            var width = ((sub.end - sub.start) / maxTime) * 100
+            if (width < 3) width = 3
+            var isSelected = i === selectedSubIdx
+            var isBound = sub.boundTo && sub.boundTo.length > 0
+            return (
+              <div
+                key={i}
+                onClick={function () { onSelectSub(isSelected ? -1 : i) }}
+                style={{
+                  position: 'absolute',
+                  left: left + '%',
+                  width: width + '%',
+                  height: isSelected ? 28 : 22,
+                  background: isSelected ? '#C41E24' : (isBound ? '#0F6E56' : '#4b5563'),
+                  borderRadius: 3,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 10,
+                  color: '#fff',
+                  overflow: 'hidden',
+                  whiteSpace: 'nowrap',
+                  textOverflow: 'ellipsis',
+                  padding: '0 4px',
+                  boxSizing: 'border-box',
+                  border: isSelected ? '1.5px solid #fff' : 'none',
+                  transition: 'height .1s',
+                  zIndex: isSelected ? 2 : 1,
+                }}
+                title={sub.text + (isBound ? ' (已绑定)' : '')}
+              >
+                {sub.text}
+              </div>
+            )
+          })}
+        </div>
+        <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 24 }}>{maxTime}s</span>
+      </div>
+
+      {/* 提示信息 */}
+      <div style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.4 }}>
+        {subBindingMode
+          ? '绑定模式：点击画布中的元素选择目标，点击「确认」完成绑定（可 Ctrl+Z 撤销）'
+          : (subtitles.length > 0
+            ? '点击时间轴上的字幕块选中，可移动到上/下一页或绑定到画面元素'
+            : '在 HTML 中给字幕元素添加 data-zt-role="subtitle" 属性即可出现在时间轴中')
+        }
+      </div>
+    </div>
+  )
+}
+
+function timelineBtn(bg) {
+  return {
+    background: bg,
+    color: '#fff',
+    border: 'none',
+    padding: '5px 10px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontSize: 12,
+    whiteSpace: 'nowrap',
+  }
 }

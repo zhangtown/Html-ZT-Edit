@@ -27,3 +27,8 @@ draft/
 
 # 样例html
 样例HTML工程/
+
+# 临时文件
+*.rar
+*.zip
+pi-session-*.html
