@@ -71,6 +71,13 @@
       border: cs.border,
       borderRadius: cs.borderRadius,
       boxShadow: cs.boxShadow,
+      animScaleFrom: el.getAttribute('data-zt-anim-scale-from') || '',
+      animScaleTo: el.getAttribute('data-zt-anim-scale-to') || '',
+      animOpacityFrom: el.getAttribute('data-zt-anim-opacity-from') || '',
+      animOpacityTo: el.getAttribute('data-zt-anim-opacity-to') || '',
+      animDuration: el.getAttribute('data-zt-anim-duration') || '',
+      animDelay: el.getAttribute('data-zt-anim-delay') || '',
+      animEasing: el.getAttribute('data-zt-anim-easing') || '',
     }
   }
 
@@ -1090,6 +1097,59 @@
     post({ type: 'changed' })
   }
 
+  // ---- 动画设置 ----
+  function setAnimation(props) {
+    if (!selectedList.length) return
+    var before = selectedList.map(snapStyle)
+    var attrs = {
+      animScaleFrom: 'data-zt-anim-scale-from',
+      animScaleTo: 'data-zt-anim-scale-to',
+      animOpacityFrom: 'data-zt-anim-opacity-from',
+      animOpacityTo: 'data-zt-anim-opacity-to',
+      animDuration: 'data-zt-anim-duration',
+      animDelay: 'data-zt-anim-delay',
+      animEasing: 'data-zt-anim-easing',
+    }
+    selectedList.forEach(function (el) {
+      for (var k in props) {
+        if (!props.hasOwnProperty(k)) continue
+        var attr = attrs[k]
+        if (!attr) continue
+        var v = props[k]
+        if (v === '' || v == null) el.removeAttribute(attr)
+        else el.setAttribute(attr, v)
+      }
+    })
+    var after = selectedList.map(snapStyle)
+    pushHistory(before, after, selectedList.slice())
+    postSelection()
+    post({ type: 'changed' })
+  }
+
+  function previewAnim() {
+    if (!selectedList.length) return
+    selectedList.forEach(function (el) {
+      var fromScale = parseFloat(el.getAttribute('data-zt-anim-scale-from')) || 1
+      var toScale = parseFloat(el.getAttribute('data-zt-anim-scale-to')) || 1
+      var fromOpacity = parseFloat(el.getAttribute('data-zt-anim-opacity-from'))
+      var toOpacity = parseFloat(el.getAttribute('data-zt-anim-opacity-to'))
+      var duration = parseFloat(el.getAttribute('data-zt-anim-duration')) || 1
+      var delay = parseFloat(el.getAttribute('data-zt-anim-delay')) || 0
+      var easing = el.getAttribute('data-zt-anim-easing') || 'ease'
+      if (isNaN(fromOpacity)) fromOpacity = 1
+      if (isNaN(toOpacity)) toOpacity = 1
+      el.animate([
+        { transform: 'scale(' + fromScale + ')', opacity: fromOpacity },
+        { transform: 'scale(' + toScale + ')', opacity: toOpacity },
+      ], {
+        duration: duration * 1000,
+        delay: delay * 1000,
+        easing: easing,
+        fill: 'forwards',
+      })
+    })
+  }
+
   // ---- 图片替换 ----
   function replaceSelectedImage(url) {
     if (!url || !selectedList.length) return
@@ -1344,6 +1404,8 @@
       else if (m.type === 'assetDragStarted') assetDragActive = true
       else if (m.type === 'assetDragEnded') assetDragActive = false
       else if (m.type === 'setText') setText(m.text)
+      else if (m.type === 'setAnimation') setAnimation(m.props || {})
+      else if (m.type === 'previewAnim') previewAnim()
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()
       else if (m.type === 'paste') paste()

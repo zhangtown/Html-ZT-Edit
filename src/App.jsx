@@ -560,6 +560,7 @@ export default function App() {
             {[
               ['prop', '属性'],
               ['align', '对齐'],
+              ['anim', '动画'],
               ['assets', '素材'],
               ['info', '信息'],
             ].map(([k, label]) => (
@@ -653,6 +654,9 @@ export default function App() {
                 <Row k="文字色" v={selected.color || '—'} />
                 <Row k="背景色" v={selected.backgroundColor || '—'} />
               </div>
+            )}
+            {selected && tab === 'anim' && (
+              <AnimPanel selected={selected} send={send} />
             )}
             {tab === 'assets' && (
               <AssetsPanel
@@ -1015,6 +1019,103 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
           📁 释放文件以上传
         </div>
       )}
+    </div>
+  )
+}
+
+// 动画面板
+function AnimPanel({ selected, send }) {
+  const [scaleFrom, setScaleFrom] = useState('')
+  const [scaleTo, setScaleTo] = useState('')
+  const [opacityFrom, setOpacityFrom] = useState('')
+  const [opacityTo, setOpacityTo] = useState('')
+  const [duration, setDuration] = useState('')
+  const [delay, setDelay] = useState('')
+  const [easing, setEasing] = useState('')
+
+  useEffect(() => {
+    setScaleFrom(selected.animScaleFrom || '')
+    setScaleTo(selected.animScaleTo || '')
+    setOpacityFrom(selected.animOpacityFrom || '')
+    setOpacityTo(selected.animOpacityTo || '')
+    setDuration(selected.animDuration || '')
+    setDelay(selected.animDelay || '')
+    setEasing(selected.animEasing || '')
+  }, [selected])
+
+  function applyAnim() {
+    send({ type: 'setAnimation', props: {
+      animScaleFrom: scaleFrom,
+      animScaleTo: scaleTo,
+      animOpacityFrom: opacityFrom,
+      animOpacityTo: opacityTo,
+      animDuration: duration,
+      animDelay: delay,
+      animEasing: easing,
+    }})
+  }
+
+  function clearAnim() {
+    setScaleFrom(''); setScaleTo(''); setOpacityFrom(''); setOpacityTo('')
+    setDuration(''); setDelay(''); setEasing('')
+    send({ type: 'setAnimation', props: {
+      animScaleFrom: '', animScaleTo: '',
+      animOpacityFrom: '', animOpacityTo: '',
+      animDuration: '', animDelay: '', animEasing: '',
+    }})
+  }
+
+  return (
+    <div style={{ fontSize: 13 }}>
+      <p style={{ color: '#C41E24', fontWeight: 600, margin: '0 0 10px' }}>
+        元素动画
+      </p>
+      <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 10px', lineHeight: 1.5 }}>
+        设置选中元素的缩放/透明度动画，可预览效果。
+      </p>
+
+      <Field label="缩放 从">
+        <input style={inp} value={scaleFrom} onChange={(e) => setScaleFrom(e.target.value)} onBlur={applyAnim} placeholder="1 (原始大小)" />
+      </Field>
+      <Field label="缩放 到">
+        <input style={inp} value={scaleTo} onChange={(e) => setScaleTo(e.target.value)} onBlur={applyAnim} placeholder="如 1.2" />
+      </Field>
+
+      <Field label="透明度 从">
+        <input style={inp} value={opacityFrom} onChange={(e) => setOpacityFrom(e.target.value)} onBlur={applyAnim} placeholder="1 (不透明)" />
+      </Field>
+      <Field label="透明度 到">
+        <input style={inp} value={opacityTo} onChange={(e) => setOpacityTo(e.target.value)} onBlur={applyAnim} placeholder="如 0" />
+      </Field>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <Field label="时长(秒)">
+          <input style={inp} value={duration} onChange={(e) => setDuration(e.target.value)} onBlur={applyAnim} placeholder="1" />
+        </Field>
+        <Field label="延迟(秒)">
+          <input style={inp} value={delay} onChange={(e) => setDelay(e.target.value)} onBlur={applyAnim} placeholder="0" />
+        </Field>
+      </div>
+
+      <Field label="缓动函数">
+        <select style={inp} value={easing} onChange={(e) => { setEasing(e.target.value); applyAnim() }}>
+          <option value="">（不修改）</option>
+          <option value="ease">ease</option>
+          <option value="ease-in">ease-in</option>
+          <option value="ease-out">ease-out</option>
+          <option value="ease-in-out">ease-in-out</option>
+          <option value="linear">linear</option>
+        </select>
+      </Field>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
+        <button onClick={() => send({ type: 'previewAnim' })} style={{ ...btn('#2563eb'), flex: 1 }}>
+          ▶ 预览动画
+        </button>
+        <button onClick={clearAnim} style={{ ...btn('#6b7280'), flex: 1 }}>
+          清除动画
+        </button>
+      </div>
     </div>
   )
 }
