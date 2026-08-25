@@ -75,6 +75,19 @@ const SHADOW_PRESETS = [
   ['0 8px 30px rgba(0,0,0,.25)', '较重'],
 ]
 
+const ANIM_EFFECTS = [
+  ['zoom-in', '放大1.2倍'],
+  ['zoom-out', '缩小'],
+  ['fade-in', '淡入'],
+  ['fly-left', '飞入左侧'],
+  ['fly-right', '飞入右侧'],
+  ['fly-top', '飞入上方'],
+  ['fly-bottom', '飞入下方'],
+  ['bounce', '弹跳'],
+  ['rotate', '旋转'],
+  ['', '（无动画）'],
+]
+
 function download(filename, text) {
   const blob = new Blob([text], { type: 'text/html' })
   const a = document.createElement('a')
@@ -861,6 +874,14 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
       <Field label="背景颜色">
         <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
       </Field>
+      <Field label="透明度">
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button onClick={() => { const v = Math.max(0, (parseFloat(selected.opacity || '') || 1) - 0.1); send({ type: 'setStyles', styles: { opacity: String(v) } }) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{selected.opacity || '1'}</span>
+          <button onClick={() => { const v = Math.min(1, (parseFloat(selected.opacity || '') || 1) + 0.1); send({ type: 'setStyles', styles: { opacity: String(v) } }) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>0~1</span>
+        </div>
+      </Field>
       <Field label="边框宽度">
         <select style={inp} value={borderWidth} onChange={(e) => { const v = e.target.value; setBorderWidth(v); apply({ borderWidth: v }) }}>
           {BORDER_WIDTHS.map((v) => <option key={v} value={v}>{v}px</option>)}
@@ -1112,44 +1133,71 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
 
 // 动画面板
 function AnimPanel({ selected, send }) {
-  const [scaleFrom, setScaleFrom] = useState('')
-  const [scaleTo, setScaleTo] = useState('')
-  const [opacityFrom, setOpacityFrom] = useState('')
-  const [opacityTo, setOpacityTo] = useState('')
+  const [effect, setEffect] = useState('')
   const [duration, setDuration] = useState('')
   const [delay, setDelay] = useState('')
+  const [returnSec, setReturnSec] = useState('')
   const [easing, setEasing] = useState('')
 
   useEffect(() => {
-    setScaleFrom(selected.animScaleFrom || '')
-    setScaleTo(selected.animScaleTo || '')
-    setOpacityFrom(selected.animOpacityFrom || '')
-    setOpacityTo(selected.animOpacityTo || '')
+    setEffect(selected.animEffect || '')
     setDuration(selected.animDuration || '')
     setDelay(selected.animDelay || '')
+    setReturnSec(selected.animReturn || '')
     setEasing(selected.animEasing || '')
   }, [selected])
 
   function applyAnim() {
     send({ type: 'setAnimation', props: {
-      animScaleFrom: scaleFrom,
-      animScaleTo: scaleTo,
-      animOpacityFrom: opacityFrom,
-      animOpacityTo: opacityTo,
+      animEffect: effect,
       animDuration: duration,
       animDelay: delay,
+      animReturn: returnSec,
       animEasing: easing,
     }})
   }
 
   function clearAnim() {
-    setScaleFrom(''); setScaleTo(''); setOpacityFrom(''); setOpacityTo('')
-    setDuration(''); setDelay(''); setEasing('')
+    setEffect(''); setDuration(''); setDelay(''); setReturnSec(''); setEasing('')
     send({ type: 'setAnimation', props: {
-      animScaleFrom: '', animScaleTo: '',
-      animOpacityFrom: '', animOpacityTo: '',
-      animDuration: '', animDelay: '', animEasing: '',
+      animEffect: '', animDuration: '', animDelay: '', animReturn: '', animEasing: '',
     }})
+  }
+
+  function nudge(key, delta) {
+    var cur = ''
+    if (key === 'duration') cur = duration
+    else if (key === 'delay') cur = delay
+    else if (key === 'return') cur = returnSec
+    var v = parseFloat(cur) || 0
+    v = Math.round((v + delta) * 10) / 10
+    if (v < 0) v = 0
+    if (key === 'duration') setDuration(String(v))
+    else if (key === 'delay') setDelay(String(v))
+    else if (key === 'return') setReturnSec(String(v))
+    setTimeout(function () {
+      send({ type: 'setAnimation', props: {
+        animEffect: effect,
+        animDuration: key === 'duration' ? String(v) : duration,
+        animDelay: key === 'delay' ? String(v) : delay,
+        animReturn: key === 'return' ? String(v) : returnSec,
+        animEasing: easing,
+      }})
+    }, 0)
+  }
+
+  function NudgeField({ label, value, onUp, onDown }) {
+    return (
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ color: '#6b7280', marginBottom: 3, fontSize: 12 }}>{label}</div>
+        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+          <button onClick={onDown} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
+          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{value || '0'}</span>
+          <button onClick={onUp} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
+          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -1158,30 +1206,21 @@ function AnimPanel({ selected, send }) {
         元素动画
       </p>
       <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 10px', lineHeight: 1.5 }}>
-        设置选中元素的缩放/透明度动画，可预览效果。
+        选择动画效果，字幕出现时绑定的元素自动播放。
       </p>
 
-      <Field label="缩放 从">
-        <input style={inp} value={scaleFrom} onChange={(e) => setScaleFrom(e.target.value)} onBlur={applyAnim} placeholder="1 (原始大小)" />
-      </Field>
-      <Field label="缩放 到">
-        <input style={inp} value={scaleTo} onChange={(e) => setScaleTo(e.target.value)} onBlur={applyAnim} placeholder="如 1.2" />
-      </Field>
-
-      <Field label="透明度 从">
-        <input style={inp} value={opacityFrom} onChange={(e) => setOpacityFrom(e.target.value)} onBlur={applyAnim} placeholder="1 (不透明)" />
-      </Field>
-      <Field label="透明度 到">
-        <input style={inp} value={opacityTo} onChange={(e) => setOpacityTo(e.target.value)} onBlur={applyAnim} placeholder="如 0" />
+      <Field label="动画效果">
+        <select style={inp} value={effect} onChange={(e) => { setEffect(e.target.value); setTimeout(function() { send({ type: 'setAnimation', props: { animEffect: e.target.value, animDuration: duration, animDelay: delay, animReturn: returnSec, animEasing: easing } }) }, 0) }}>
+          {ANIM_EFFECTS.map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
       </Field>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <Field label="时长(秒)">
-          <input style={inp} value={duration} onChange={(e) => setDuration(e.target.value)} onBlur={applyAnim} placeholder="1" />
-        </Field>
-        <Field label="延迟(秒)">
-          <input style={inp} value={delay} onChange={(e) => setDelay(e.target.value)} onBlur={applyAnim} placeholder="0" />
-        </Field>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <NudgeField label="时长" value={duration} onUp={function() { nudge('duration', 0.5) }} onDown={function() { nudge('duration', -0.5) }} />
+        <NudgeField label="延迟" value={delay} onUp={function() { nudge('delay', 0.5) }} onDown={function() { nudge('delay', -0.5) }} />
+        <NudgeField label="恢复时长" value={returnSec} onUp={function() { nudge('return', 0.5) }} onDown={function() { nudge('return', -0.5) }} />
       </div>
 
       <Field label="缓动函数">

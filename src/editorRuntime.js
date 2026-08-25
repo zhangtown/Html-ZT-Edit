@@ -79,6 +79,9 @@
       animDuration: el.getAttribute('data-zt-anim-duration') || '',
       animDelay: el.getAttribute('data-zt-anim-delay') || '',
       animEasing: el.getAttribute('data-zt-anim-easing') || '',
+      animEffect: el.getAttribute('data-zt-anim-effect') || '',
+      animReturn: el.getAttribute('data-zt-anim-return') || '',
+      opacity: cs.opacity,
     }
   }
 
@@ -1102,15 +1105,7 @@
   function setAnimation(props) {
     if (!selectedList.length) return
     var before = selectedList.map(snapStyle)
-    var attrs = {
-      animScaleFrom: 'data-zt-anim-scale-from',
-      animScaleTo: 'data-zt-anim-scale-to',
-      animOpacityFrom: 'data-zt-anim-opacity-from',
-      animOpacityTo: 'data-zt-anim-opacity-to',
-      animDuration: 'data-zt-anim-duration',
-      animDelay: 'data-zt-anim-delay',
-      animEasing: 'data-zt-anim-easing',
-    }
+    var attrs = { animEffect:'data-zt-anim-effect', animDuration:'data-zt-anim-duration', animDelay:'data-zt-anim-delay', animReturn:'data-zt-anim-return', animEasing:'data-zt-anim-easing' }
     selectedList.forEach(function (el) {
       for (var k in props) {
         if (!props.hasOwnProperty(k)) continue
@@ -1127,27 +1122,38 @@
     post({ type: 'changed' })
   }
 
+  function getEffectKeyframes(effect) {
+    switch (effect) {
+      case 'zoom-in': return { from: { transform: 'scale(0.6)', opacity: 0 }, to: { transform: 'scale(1.3)', opacity: 1 } }
+      case 'zoom-out': return { from: { transform: 'scale(1)', opacity: 1 }, to: { transform: 'scale(0.6)', opacity: 0 } }
+      case 'fade-in': return { from: { opacity: 0 }, to: { opacity: 1 } }
+      case 'fly-left': return { from: { transform: 'translateX(-120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
+      case 'fly-right': return { from: { transform: 'translateX(120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
+      case 'fly-top': return { from: { transform: 'translateY(-120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
+      case 'fly-bottom': return { from: { transform: 'translateY(120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
+      case 'bounce': return { from: { transform: 'scale(0.8)', opacity: 0 }, to: { transform: 'scale(1.15)', opacity: 1 } }
+      case 'rotate': return { from: { transform: 'rotate(-15deg) scale(0.9)', opacity: 0 }, to: { transform: 'rotate(0deg) scale(1)', opacity: 1 } }
+      default: return { from: { transform: 'scale(1)' }, to: { transform: 'scale(1.2)' } }
+    }
+  }
   function previewAnim() {
     if (!selectedList.length) return
     selectedList.forEach(function (el) {
-      var fromScale = parseFloat(el.getAttribute('data-zt-anim-scale-from')) || 1
-      var toScale = parseFloat(el.getAttribute('data-zt-anim-scale-to')) || 1
-      var fromOpacity = parseFloat(el.getAttribute('data-zt-anim-opacity-from'))
-      var toOpacity = parseFloat(el.getAttribute('data-zt-anim-opacity-to'))
+      var effect = el.getAttribute('data-zt-anim-effect') || 'zoom-in'
       var duration = parseFloat(el.getAttribute('data-zt-anim-duration')) || 1
       var delay = parseFloat(el.getAttribute('data-zt-anim-delay')) || 0
+      var returnSec = parseFloat(el.getAttribute('data-zt-anim-return')) || 0
       var easing = el.getAttribute('data-zt-anim-easing') || 'ease'
-      if (isNaN(fromOpacity)) fromOpacity = 1
-      if (isNaN(toOpacity)) toOpacity = 1
-      el.animate([
-        { transform: 'scale(' + fromScale + ')', opacity: fromOpacity },
-        { transform: 'scale(' + toScale + ')', opacity: toOpacity },
-      ], {
-        duration: duration * 1000,
-        delay: delay * 1000,
-        easing: easing,
-        fill: 'forwards',
-      })
+      var kf = getEffectKeyframes(effect)
+      var totalDur = duration + returnSec
+      var keyframes = []
+      if (delay > 0) keyframes.push({ offset: 0, transform: 'scale(1)', opacity: 1 })
+      var startOff = delay > 0 ? delay / totalDur : 0
+      var endOff = (delay + duration) / totalDur
+      keyframes.push({ offset: startOff, transform: kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
+      keyframes.push({ offset: endOff, transform: kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
+      if (returnSec > 0) keyframes.push({ offset: 1, transform: 'scale(1)', opacity: 1 })
+      el.animate(keyframes, { duration: totalDur * 1000, easing: easing, fill: 'forwards' })
     })
   }
 
