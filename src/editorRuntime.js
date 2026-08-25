@@ -1159,8 +1159,35 @@
       .filter(function (el) { return el.parentNode && isEditable(el) })
   }
 
-  // 从页面脚本中读取全局 subtitles/slideTimings（用 Function 在全局作用域 eval）
-  var globalEval = new Function('name', 'try { return eval(name) } catch (e) { return undefined }')
+  // 从页面脚本中读取全局 subtitles/slideTimings（由父窗口注入 window.__zt*）
+  function getGlobalSubData() {
+    var subs = window.__ztSubtitles
+    var tms = window.__ztSlideTimings
+    if (!subs || !tms || !subs.length || !tms.length) return null
+    var timing = null
+    for (var i = 0; i < tms.length; i++) {
+      if (tms[i].slide === current) { timing = tms[i]; break }
+    }
+    if (!timing) return null
+    var result = []
+    var idx = 0
+    for (var j = 0; j < subs.length; j++) {
+      var s = subs[j]
+      if (s.startSec >= timing.start && s.startSec < timing.end) {
+        result.push({
+          index: idx,
+          text: (s.text || '').slice(0, 30),
+          start: s.startSec - timing.start,
+          end: (s.endSec || s.startSec + 3) - timing.start,
+          boundTo: '',
+          source: 'global',
+          globalIndex: j,
+        })
+        idx++
+      }
+    }
+    return result
+  }
 
   function getSubtitlesData() {
     var els = getSubtitleElements()
@@ -1176,35 +1203,9 @@
         }
       })
     }
-    // 回退：读取页面脚本中的全局 subtitles 数组
-    var subs = globalEval('subtitles')
-    var tms = globalEval('slideTimings')
-    if (subs && tms && subs.length && tms.length) {
-      var timing = null
-      for (var i = 0; i < tms.length; i++) {
-        if (tms[i].slide === current) { timing = tms[i]; break }
-      }
-      if (timing) {
-        var result = []
-        var idx = 0
-        for (var j = 0; j < subs.length; j++) {
-          var s = subs[j]
-          if (s.startSec >= timing.start && s.startSec < timing.end) {
-            result.push({
-              index: idx,
-              text: (s.text || '').slice(0, 30),
-              start: s.startSec - timing.start,
-              end: (s.endSec || s.startSec + 3) - timing.start,
-              boundTo: '',
-              source: 'global',
-              globalIndex: j, // 原数组索引，用于移动
-            })
-            idx++
-          }
-        }
-        return result
-      }
-    }
+    // 回退：读取父窗口注入的字幕数据
+    var globalData = getGlobalSubData()
+    if (globalData && globalData.length) return globalData
     return []
   }
 
@@ -1236,7 +1237,7 @@
       return
     }
     // 全局字幕：调整 slideTimings 边界
-    var tms = globalEval('slideTimings')
+    var tms = window.__ztSlideTimings
     if (!tms) return
     var data = getSubtitlesData()
     var selected = data[subtitleIndex]
@@ -1266,12 +1267,15 @@
   }
 
   function updateSlideTimingsInScript(tms) {
+    // 直接更新 window 上的数据（供后续读取）
+    window.__ztSlideTimings = tms
+    // 同步更新注入的 <script> 标签文本（草稿保存 outerHTML 时保留修改）
     var scripts = document.querySelectorAll('script:not(#zt-editor-runtime)')
     for (var i = 0; i < scripts.length; i++) {
       var s = scripts[i]
-      if (s.textContent && s.textContent.indexOf('slideTimings') >= 0) {
-        var serialized = 'const slideTimings=' + JSON.stringify(tms) + ';'
-        s.textContent = s.textContent.replace(/const\s+slideTimings\s*=\s*[\s\S]*?;/, serialized)
+      if (s.textContent && s.textContent.indexOf('__ztSlideTimings') >= 0) {
+        s.textContent = 'window.__ztSubtitles=' + JSON.stringify(window.__ztSubtitles || []) +
+          ';window.__ztSlideTimings=' + JSON.stringify(tms) + ';'
         return
       }
     }

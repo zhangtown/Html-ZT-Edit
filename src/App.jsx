@@ -153,7 +153,8 @@ export default function App() {
     const processed = rewriteAssets(stripped, baseDir, fm, relMap)
     scriptsRef.current = scripts
     relMapRef.current = relMap
-    const doc = processed.replace('</body>', STYLE_TAG + SCRIPT_TAG + '</body>')
+    const subDataScript = buildSubtitleDataScript(scripts)
+    const doc = processed.replace('</body>', STYLE_TAG + subDataScript + SCRIPT_TAG + '</body>')
     setReady(false)
     setSelected(null)
     setRestored(false)
@@ -175,7 +176,8 @@ export default function App() {
     scriptsRef.current = d.scripts || []
     relMapRef.current = relMap
     pendingCurrentRef.current = d.current || 0
-    const doc = html.replace('</body>', STYLE_TAG + SCRIPT_TAG + '</body>')
+    const subDataScript = buildSubtitleDataScript(d.scripts || [])
+    const doc = html.replace('</body>', STYLE_TAG + subDataScript + SCRIPT_TAG + '</body>')
     setReady(false)
     setSelected(null)
     restoredRef.current = true
@@ -1249,6 +1251,55 @@ function dataUrlToBlob(dataUrl) {
   const arr = new Uint8Array(bytes.length)
   for (let i = 0; i < bytes.length; i++) arr[i] = bytes.charCodeAt(i)
   return new Blob([arr], { type: mime })
+}
+
+// 从脚本数组中提取 subtitles / slideTimings（用括号匹配，避免正则无法处理嵌套）
+function extractBracketContent(str, startIdx) {
+  let depth = 0
+  for (let i = startIdx; i < str.length; i++) {
+    if (str[i] === '[') depth++
+    else if (str[i] === ']') {
+      depth--
+      if (depth === 0) return str.slice(startIdx, i + 1)
+    }
+  }
+  return null
+}
+
+function extractSubtitleData(scripts) {
+  for (const script of scripts) {
+    const content = script.replace(/^<script>/, '').replace(/<\/script>$/, '')
+    if (!content.includes('subtitles') || !content.includes('slideTimings')) continue
+    const subMatch = content.match(/const\s+subtitles\s*=\s*/)
+    const tmMatch = content.match(/const\s+slideTimings\s*=\s*/)
+    if (!subMatch || !tmMatch) continue
+    const subStart = content.indexOf('[', subMatch.index + subMatch[0].length)
+    const tmStart = content.indexOf('[', tmMatch.index + tmMatch[0].length)
+    if (subStart < 0 || tmStart < 0) continue
+    const subContent = extractBracketContent(content, subStart)
+    const tmContent = extractBracketContent(content, tmStart)
+    if (!subContent || !tmContent) continue
+    try {
+      const subtitles = JSON.parse(subContent)
+      const slideTimings = JSON.parse(tmContent)
+      return { subtitles, slideTimings }
+    } catch (e) {
+      try {
+        const subtitles = new Function('return ' + subContent)()
+        const slideTimings = new Function('return ' + tmContent)()
+        return { subtitles, slideTimings }
+      } catch (e2) {}
+    }
+  }
+  return null
+}
+
+// 生成注入字幕数据的 <script> 标签
+function buildSubtitleDataScript(scripts) {
+  const data = extractSubtitleData(scripts)
+  if (!data) return ''
+  return '<script>window.__ztSubtitles=' + JSON.stringify(data.subtitles) +
+    ';window.__ztSlideTimings=' + JSON.stringify(data.slideTimings) + ';</script>'
 }
 
 // 底部时间轴面板
