@@ -1,6 +1,6 @@
 ---
 name: speech-visual-html
-description: 将演讲字幕时间轴和音频文件生成为自动播放的HTML视觉页面。支持国风设计系统、MG动画、图片拆分动效、字幕聚焦效果、新中式Hero布局、Edge-TTS语音生成、模板化自动播放。集成 srt-remotion-video 智能分镜与视觉设计系统：语义分组、12种容器类型、scene-plan驱动HTML生成。
+description: 将演讲字幕时间轴和音频文件生成为自动播放的HTML视觉页面（ztEdit 原生格式，双击可录屏播放，导入 ztEdit 可编辑字幕/动画绑定/时间轴）。支持国风设计系统、focus-zoom 聚焦动画、字幕-元素绑定、图片拆分动效、新中式Hero布局、Edge-TTS语音生成、模板化自动播放。集成 srt-remotion-video 智能分镜与视觉设计系统：语义分组、12种容器类型、scene-plan驱动HTML生成。
 triggers:
   - "演讲"
   - "字幕"
@@ -18,7 +18,7 @@ version: 5.2
 defaultTemplate: 模板-唐朝不存在风格-v5.1.html
 ---
 
-# Speech Visual HTML Generator v5.1
+# Speech Visual HTML Generator v5.3
 
 > **默认风格**：基于"唐朝不存在"项目（2026.07.31 最终版），包含分批飞入封面、内容优先聚焦系统、左文右图布局。
 > 旧版风格（毒教材项目、mg-hide 模式）已归档，新项目优先使用 v5.3（ztEdit 原生格式）。
