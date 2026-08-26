@@ -1570,9 +1570,8 @@
   function onContextMenu(e) {
     e.preventDefault()
     var t = e.target
-    var editable = isEditable(t) && !isLocked(t)
-    if (editable) {
-      // 已是多选/已选中的元素：保持当前选择；否则点谁选谁
+    // 可编辑元素或已锁定元素都选中（锁定元素需要解锁入口）
+    if (isEditable(t)) {
       if (!isSelected(t)) {
         if (t.getAttribute && t.getAttribute('data-zt-group')) selectGroup(t)
         else selectOnly(t)
@@ -1586,7 +1585,7 @@
       type: 'contextmenu',
       x: e.clientX,
       y: e.clientY,
-      editable: editable && selectedList.length > 0,
+      editable: selectedList.length > 0,
       count: selectedList.length,
       locked: !!primary,
       primaryLocked: !!(primary && primary.locked),
