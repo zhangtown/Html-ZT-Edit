@@ -1110,7 +1110,7 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
       display: 'flex',
       alignItems: 'stretch',
       background: dark ? '#1f2937' : '#ffffff',
-      borderRadius: 10,
+      borderRadius: 6,
       boxShadow: dark ? 'none' : '0 2px 6px rgba(0,0,0,0.10)',
       border: dark ? '1px solid #4b5563' : 'none',
       overflow: 'hidden',
@@ -1139,7 +1139,7 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
           textAlign: 'left',
         }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: 24, alignSelf: 'stretch' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: 26, alignSelf: 'stretch' }}>
         <button
           onClick={() => adjust(step)}
           disabled={disabled}
