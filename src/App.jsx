@@ -1500,13 +1500,23 @@ function AnimPanel({ selected, send, inline }) {
   // 底栏 inline 样式：所有控件都在同一行，动画选择框用原生下拉菜单
   if (inline) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
-        <span style={{ color: '#e5e7eb', fontWeight: 600 }}>动画</span>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        flexWrap: 'wrap',
+        fontSize: 12,
+        background: '#111827',
+        border: '1px solid #374151',
+        borderRadius: 6,
+        padding: '4px 10px',
+      }}>
+        <span style={{ color: '#fbbf24', fontWeight: 700 }}>动画</span>
         <select
           value={effect}
           onChange={(e) => { setEffect(e.target.value); applyAnimAndPreview({ animEffect: e.target.value }) }}
           style={{
-            background: '#111827',
+            background: '#1f2937',
             color: '#fff',
             border: '1px solid #4b5563',
             borderRadius: 4,
@@ -1525,7 +1535,7 @@ function AnimPanel({ selected, send, inline }) {
           onChange={(v) => nudge('duration', parseFloat(v) - (parseFloat(duration) || 0))}
           step={0.5}
           min={0}
-          width={80}
+          width={78}
           dark
         />
 
@@ -1535,7 +1545,7 @@ function AnimPanel({ selected, send, inline }) {
           onChange={(v) => nudge('delay', parseFloat(v) - (parseFloat(delay) || 0))}
           step={0.5}
           min={0}
-          width={80}
+          width={78}
           dark
         />
 
@@ -1545,11 +1555,11 @@ function AnimPanel({ selected, send, inline }) {
           onChange={(v) => nudge('return', parseFloat(v) - (parseFloat(returnSec) || 0))}
           step={0.5}
           min={0}
-          width={80}
+          width={78}
           dark
         />
 
-        <button onClick={clearAnim} style={timelineBtn('#7f1d1d')}>清除</button>
+        <button onClick={clearAnim} style={timelineBtn('#7f1d1d')}>清除动画</button>
       </div>
     )
   }
