@@ -46,6 +46,7 @@
       s.classList.remove('active')
     })
     slides[i].classList.add('active')
+    deselectAll()
     current = i
     post({ type: 'pages', total: slides.length, current: current })
   }
@@ -1342,29 +1343,6 @@
   }
 
   // ---- 绑定关系呈现与联动 ----
-  // 标记当前页所有已绑定的元素（加载/切页时调用）
-  function markAllBounds() {
-    document.querySelectorAll('.zt-bound-mark').forEach(function (el) { el.classList.remove('zt-bound-mark') })
-    var slide = slides[current]
-    if (!slide) return
-    // DOM 字幕的绑定
-    slide.querySelectorAll('[data-zt-bound-to]').forEach(function (sub) {
-      var sel = sub.getAttribute('data-zt-bound-to')
-      if (sel) {
-        var target = document.querySelector(sel)
-        if (target && isEditable(target)) target.classList.add('zt-bound-mark')
-      }
-    })
-  }
-
-  // 联动高亮：选中某字幕时，高亮其绑定的元素
-  function highlightBound(selector) {
-    clearBoundHighlight()
-    if (!selector) return
-    var el = document.querySelector(selector)
-    if (el && isEditable(el)) el.classList.add('zt-bound-highlight')
-  }
-
   function clearBoundHighlight() {
     document.querySelectorAll('.zt-bound-highlight').forEach(function (el) { el.classList.remove('zt-bound-highlight') })
   }
@@ -1659,7 +1637,6 @@
       else if (m.type === 'previewAnim') previewAnim()
       else if (m.type === 'requestSubtitles') post({ type: 'subtitles', subtitles: getSubtitlesData() })
       else if (m.type === 'selectBound') selectBySelector(m.selector)
-      else if (m.type === 'highlightBound') highlightBound(m.selector)
       else if (m.type === 'clearBoundHighlight') clearBoundHighlight()
       else if (m.type === 'moveSubtitle') moveSubtitleToPage(m.direction, m.subtitleIndex)
       else if (m.type === 'startBinding') startBinding(m.subtitleIndex)

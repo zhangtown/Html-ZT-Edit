@@ -1302,57 +1302,7 @@ function AnimPanel({ selected, send, inline }) {
     )
   }
 
-  return (
-    <div style={{ fontSize: 13 }}>
-      <p style={{ color: '#C41E24', fontWeight: 600, margin: '0 0 10px' }}>
-        元素动画
-      </p>
-      <p style={{ fontSize: 12, color: '#9ca3af', margin: '0 0 10px', lineHeight: 1.5 }}>
-        选择动画效果，字幕出现时绑定的元素自动播放。切换效果即自动预览。
-      </p>
-
-      <Field label="动画效果">
-        <select style={inp} value={effect} onChange={(e) => { setEffect(e.target.value); applyAnimAndPreview({ animEffect: e.target.value }) }}>
-          {ANIM_EFFECTS.map(([v, l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </select>
-      </Field>
-
-      <Field label="时长">
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button onClick={function() { nudge('duration', -0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
-          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{duration || '0'}</span>
-          <button onClick={function() { nudge('duration', 0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
-        </div>
-      </Field>
-
-      <Field label="延迟">
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button onClick={function() { nudge('delay', -0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
-          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{delay || '0'}</span>
-          <button onClick={function() { nudge('delay', 0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
-        </div>
-      </Field>
-
-      <Field label="恢复时长">
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button onClick={function() { nudge('return', -0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
-          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{returnSec || '0'}</span>
-          <button onClick={function() { nudge('return', 0.5) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>秒</span>
-        </div>
-      </Field>
-
-      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-        <button onClick={clearAnim} style={{ ...btn('#6b7280'), flex: 1 }}>
-          清除动画
-        </button>
-      </div>
-    </div>
-  )
+  return null
 }
 const inp = {
   width: '100%',
@@ -1603,17 +1553,6 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
         <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 24 }}>{maxTime}s</span>
       </div>
 
-      {/* 提示信息 */}
-      <div style={{ fontSize: 11, color: '#6b7280', lineHeight: 1.4 }}>
-        {subBindingMode
-          ? '绑定模式：点击画布中的元素选择目标，点击「确认」完成绑定（可 Ctrl+Z 撤销）'
-          : (subtitles.length > 0
-            ? (isGlobal
-              ? '字幕来自页面脚本的 subtitles/slideTimings 数组（橙色块）。移动字幕会调整 slideTimings 时间边界；绑定仅支持 data-zt-role="subtitle" 的 DOM 字幕。'
-              : '点击时间轴上的字幕块选中，可移动到上/下一页或绑定到画面元素')
-            : '在 HTML 中给字幕元素添加 data-zt-role="subtitle" 属性，或确保页面脚本中有 subtitles/slideTimings 数组')
-        }
-      </div>
     </div>
   )
 }
