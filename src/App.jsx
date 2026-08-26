@@ -1115,7 +1115,7 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
       border: dark ? '1px solid #4b5563' : 'none',
       overflow: 'hidden',
       width,
-      height: 22,
+      height: 25,
       opacity: disabled ? 0.5 : 1,
       ...style,
     }}>
