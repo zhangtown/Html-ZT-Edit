@@ -315,6 +315,8 @@ export default function App() {
         })
       } else if (m.type === 'contextmenu') {
         setCtxMenu(m)
+      } else if (m.type === 'canvasPointerDown') {
+        setCtxMenu(null)
       }
     }
     function onKey(e) {
@@ -621,40 +623,7 @@ export default function App() {
         
         <span style={{ width: 1, height: 22, background: '#374151' }} />
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#d1d5db' }}>
-          对齐:
-          <select
-            value=""
-            onChange={(e) => {
-              if (e.target.value) { send({ type: 'align', mode: e.target.value }); e.target.value = '' }
-            }}
-            disabled={selCount < 2}
-            title="多选元素后选择对齐方式"
-            style={{ ...btn(selCount < 2 ? '#374151' : '#0F6E56'), minWidth: 120 }}
-          >
-            <option value="">选择对齐</option>
-            {ALIGNS.map(([mode, label]) => (
-              <option key={mode} value={mode}>{label}（{mode}）</option>
-            ))}
-          </select>
-        </label>
 
-        <span style={{ width: 1, height: 22, background: '#374151' }} />
-
-        <button onClick={() => send({ type: 'layer', mode: 'top' })} disabled={!selected} style={btn('#374151')}>置顶</button>
-        <button onClick={() => send({ type: 'layer', mode: 'up' })} disabled={!selected} style={btn('#374151')}>上移</button>
-        <button onClick={() => send({ type: 'layer', mode: 'down' })} disabled={!selected} style={btn('#374151')}>下移</button>
-        <button onClick={() => send({ type: 'layer', mode: 'bottom' })} disabled={!selected} style={btn('#374151')}>置底</button>
-
-        <span style={{ width: 1, height: 22, background: '#374151' }} />
-
-        <button onClick={() => send({ type: 'group' })} disabled={selCount < 2} style={btn(selected && selected.group ? '#0F6E56' : '#374151')}>
-          {selected && selected.group ? '已组合' : '组合'}
-        </button>
-        <button onClick={() => send({ type: 'ungroup' })} disabled={!selected} style={btn('#374151')}>取消组合</button>
-        <button onClick={() => send({ type: 'toggleLock' })} disabled={!selected} style={btn(selected && selected.locked ? '#0F6E56' : '#374151')}>
-          {selected && selected.locked ? '解锁' : '锁定'}
-        </button>
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
 
@@ -1565,6 +1534,8 @@ function timelineBtn(bg) {
 // 画布右键上下文菜单
 function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
   const [sub, setSub] = useState(null) // 'align' | null 二级菜单
+  const [subStyle, setSubStyle] = useState(null) // 对齐子菜单定位 { left, top, dir }
+  const alignRef = useRef(null) // 对齐行 ref，用于测量
   const ref = useRef(null)
   useEffect(() => {
     if (!menu) return
@@ -1572,11 +1543,13 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
       if (ref.current && ref.current.contains(e.target)) return
       onClose()
       setSub(null)
+      setSubStyle(null)
     }
     function onEsc(e) {
       if (e.key === 'Escape') {
         onClose()
         setSub(null)
+        setSubStyle(null)
       }
     }
     document.addEventListener('mousedown', onDocDown)
@@ -1601,6 +1574,25 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
   const top = Math.min(py, Math.max(8, window.innerHeight - menuH - 4))
 
   const editable = !!menu.editable
+  // 打开对齐二级菜单：根据可用空间自动选择展开方向（右/左、下/上）
+  function openAlignSub() {
+    if (selCount < 2) { setSub(null); setSubStyle(null); return }
+    const m = ref.current && ref.current.getBoundingClientRect()
+    const a = alignRef.current && alignRef.current.getBoundingClientRect()
+    const subW = menuW
+    const subH = ALIGNS.length * 31 + 9
+    let sx = m ? m.right - 4 : 0
+    let dir = 'right'
+    if (sx + subW > window.innerWidth - 4) {
+      sx = (m ? m.left : 0) - subW + 4
+      dir = 'left'
+    }
+    let sy = a ? a.top : 0
+    if (sy + subH > window.innerHeight - 4) sy = window.innerHeight - 4 - subH
+    if (sy < 4) sy = 4
+    setSubStyle({ left: Math.round(sx), top: Math.round(sy), dir })
+    setSub('align')
+  }
 
   const item = (label, action, disabled, danger) => (
     <div
@@ -1645,7 +1637,7 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
       }}
     >
       {item('复制', () => run('copy'), !editable)}
-      {item('粘贴', () => run('paste'), false)}
+      {item('粘贴', () => send({ type: 'paste', x: menu.x, y: menu.y }), false)}
       {item('删除', () => run('delete'), !editable, true)}
       {sep()}
       {item('置顶', () => send({ type: 'layer', mode: 'top' }), !editable)}
@@ -1658,9 +1650,10 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
       {item(menu.anyLocked ? '解锁' : '锁定', () => run('toggleLock'), !editable)}
       {sep()}
       <div
+        ref={alignRef}
         style={{ position: 'relative' }}
-        onMouseEnter={() => setSub(selCount >= 2 ? 'align' : null)}
-        onMouseLeave={() => setSub(null)}
+        onMouseEnter={openAlignSub}
+        onMouseLeave={() => { setSub(null); setSubStyle(null) }}
       >
         <div
           style={{
@@ -1674,14 +1667,14 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
           }}
         >
           对齐
-          <span style={{ color: '#9ca3af' }}>›</span>
+          <span style={{ color: '#9ca3af' }}>{subStyle && subStyle.dir === 'left' ? '‹' : '›'}</span>
         </div>
-        {sub === 'align' && (
+        {sub === 'align' && subStyle && (
           <div
             style={{
-              position: 'absolute',
-              left: menuW - 4,
-              top: -6,
+              position: 'fixed',
+              left: subStyle.left,
+              top: subStyle.top,
               width: menuW,
               background: '#fff',
               border: '1px solid #d1d5db',
@@ -1690,6 +1683,7 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
               zIndex: 2147483601,
               padding: '4px 0',
             }}
+            onMouseLeave={() => { setSub(null); setSubStyle(null) }}
           >
             {ALIGNS.map(([mode, label]) => (
               <div
@@ -1698,6 +1692,7 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
                   send({ type: 'align', mode })
                   onClose()
                   setSub(null)
+                  setSubStyle(null)
                 }}
                 style={{
                   padding: '7px 12px',
@@ -1706,7 +1701,6 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                 }}
-                onMouseEnter={() => setSub('align')}
               >
                 {label}
               </div>

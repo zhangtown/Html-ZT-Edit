@@ -1390,19 +1390,42 @@
     post({ type: 'clipboard', count: clipboard.length })
   }
 
-  function paste() {
+  function paste(m) {
     if (!clipboard.length) return
     var slide = slides[current]
     if (!slide) return
+    // 支持鼠标坐标定位粘贴：m = { x, y }（iframe 内相对坐标）
+    var hasPos = !!(m && typeof m.x === 'number' && typeof m.y === 'number')
+    var sr = hasPos ? slide.getBoundingClientRect() : null
+    var baseX = hasPos ? m.x - sr.left : 0
+    var baseY = hasPos ? m.y - sr.top : 0
     var before = []
     var after = []
     var newEls = []
-    clipboard.forEach(function (html) {
+    clipboard.forEach(function (html, idx) {
       var tmp = document.createElement('div')
       tmp.innerHTML = html
       var node = tmp.firstElementChild
       if (!node) return
       slide.appendChild(node)
+      // 定位粘贴：把元素 top-left 对齐到点击位置，多个元素逐行错开
+      if (hasPos && node.style) {
+        var cs = window.getComputedStyle(node)
+        var wantX = baseX + idx * 24
+        var wantY = baseY + idx * 24
+        if (cs.position === 'relative') {
+          var er = node.getBoundingClientRect()
+          node.style.left = (wantX - (er.left - sr.left)) + 'px'
+          node.style.top = (wantY - (er.top - sr.top)) + 'px'
+        } else {
+          node.style.position = 'absolute'
+          node.style.left = wantX + 'px'
+          node.style.top = wantY + 'px'
+          // 若 slide 使用百分比定位体系，换算百分比
+          if (sr.width && cs.left.indexOf('%') >= 0) node.style.left = (wantX / sr.width * 100) + '%'
+          if (sr.height && cs.top.indexOf('%') >= 0) node.style.top = (wantY / sr.height * 100) + '%'
+        }
+      }
       before.push({ el: node, style: node.getAttribute('style') || '', text: null, parent: null, next: null, present: false })
       after.push({ el: node, style: node.getAttribute('style') || '', text: null, parent: slide, next: node.nextSibling, present: true })
       newEls.push(node)
@@ -1481,6 +1504,8 @@
   }
 
   function onPointerDown(e) {
+    // 画布任意左键点击都通知父层关闭右键菜单
+    post({ type: 'canvasPointerDown' })
     // 放置模式：点击画布即插入素材
     // 绑定模式：点击元素即选中目标，高亮显示，等待父窗口确认
     if (bindingMode) {
@@ -1673,7 +1698,7 @@
       else if (m.type === 'confirmBinding') confirmBinding()
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()
-      else if (m.type === 'paste') paste()
+      else if (m.type === 'paste') paste(m)
       else if (m.type === 'undo') undo()
       else if (m.type === 'redo') redo()
     })
