@@ -65,6 +65,7 @@ const WEIGHTS = [
 ]
 
 const BORDER_WIDTHS = ['0', '1', '2', '3', '4', '5', '6']
+const FONT_SIZES = ['', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '56', '64', '72']
 const BORDER_STYLES = [
   ['solid', '实线'],
   ['dashed', '虚线'],
@@ -921,72 +922,68 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         已选中 {selCount} 个元素
       </p>
 
-      <Field label="宽度">
-        <input style={inp} value={width} onChange={(e) => { setWidth(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setHeight(String(Math.round(parseFloat(e.target.value) / r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="如 200 或 50%" />
-      </Field>
-      <Field label="高度">
-        <input style={inp} value={height} onChange={(e) => { setHeight(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setWidth(String(Math.round(parseFloat(e.target.value) * r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="如 100 或 auto" />
-      </Field>
-      <Field label="锁定纵横比">
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#374151' }}>
-          <input type="checkbox" checked={aspectLock} onChange={(e) => setAspectLock(e.target.checked)} />
-          宽高联动（改宽自动算高，改高自动算宽）
-        </label>
-      </Field>
-      <Field label="文字颜色">
-        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
-      </Field>
-      <Field label="背景颜色">
-        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
-      </Field>
-      <Field label="透明度">
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      {/* 宽高一行 */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Field label="宽度" grow>
+          <input style={inp} value={width} onChange={(e) => { setWidth(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setHeight(String(Math.round(parseFloat(e.target.value) / r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="200" />
+        </Field>
+        <Field label="高度" grow>
+          <input style={inp} value={height} onChange={(e) => { setHeight(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setWidth(String(Math.round(parseFloat(e.target.value) * r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="100" />
+        </Field>
+      </div>
+
+      {/* 锁定纵横比 */}
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#374151', marginBottom: 8 }}>
+        <input type="checkbox" checked={aspectLock} onChange={(e) => setAspectLock(e.target.checked)} />
+        锁定纵横比
+      </label>
+
+      {/* 三个颜色选框同一行 */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <Field label="文字颜色" grow>
+          <input type="color" style={{ ...inp, padding: 2 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
+        </Field>
+        <Field label="背景颜色" grow>
+          <input type="color" style={{ ...inp, padding: 2 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
+        </Field>
+        <Field label="边框颜色" grow>
+          <input type="color" style={{ ...inp, padding: 2 }} value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
+        </Field>
+      </div>
+
+      {/* 边框宽度/样式一行 */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Field label="边框宽度" grow>
+          <select style={inp} value={borderWidth} onChange={(e) => { const v = e.target.value; setBorderWidth(v); apply({ borderWidth: v }) }}>
+            {BORDER_WIDTHS.map((v) => <option key={v} value={v}>{v}px</option>)}
+          </select>
+        </Field>
+        <Field label="边框样式" grow>
+          <select style={inp} value={borderStyle} onChange={(e) => { const v = e.target.value; setBorderStyle(v); apply({ borderStyle: v }) }}>
+            {BORDER_STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </Field>
+      </div>
+
+      {/* 圆角/阴影一行 */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Field label="圆角" grow>
           <StepperInput
-            value={selected.opacity || '1'}
-            onChange={(v) => {
-              const num = parseFloat(v)
-              if (!isNaN(num)) {
-                let val = Math.max(0, Math.min(1, num))
-                send({ type: 'setStyles', styles: { opacity: String(val) } })
-              }
-            }}
-            step={0.1}
+            value={borderRadius}
+            onChange={(v) => { setBorderRadius(v); apply({ borderRadius: v }) }}
+            step={1}
             min={0}
-            max={1}
-            style={{ flex: 1, minWidth: 0 }}
-            placeholder="0~1"
+            width={'100%'}
+            placeholder="如 12"
           />
-          <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>0~1</span>
-        </div>
-      </Field>
-      <Field label="边框宽度">
-        <select style={inp} value={borderWidth} onChange={(e) => { const v = e.target.value; setBorderWidth(v); apply({ borderWidth: v }) }}>
-          {BORDER_WIDTHS.map((v) => <option key={v} value={v}>{v}px</option>)}
-        </select>
-      </Field>
-      <Field label="边框样式">
-        <select style={inp} value={borderStyle} onChange={(e) => { const v = e.target.value; setBorderStyle(v); apply({ borderStyle: v }) }}>
-          {BORDER_STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-      </Field>
-      <Field label="边框颜色">
-        <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
-      </Field>
-      <Field label="圆角">
-        <StepperInput
-          value={borderRadius}
-          onChange={(v) => { setBorderRadius(v); apply({ borderRadius: v }) }}
-          step={1}
-          min={0}
-          width={'100%'}
-          placeholder="如 12"
-        />
-      </Field>
-      <Field label="阴影">
-        <select style={inp} value={boxShadow} onChange={(e) => { const v = e.target.value; setBoxShadow(v); apply({ boxShadow: v }) }}>
-          {SHADOW_PRESETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-        </select>
-      </Field>
+        </Field>
+        <Field label="阴影" grow>
+          <select style={inp} value={boxShadow} onChange={(e) => { const v = e.target.value; setBoxShadow(v); apply({ boxShadow: v }) }}>
+            {SHADOW_PRESETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </Field>
+      </div>
+
       <Field label="字体">
         <select style={inp} value={font} onChange={(e) => { const v = e.target.value; setFont(v); apply({ font: v }) }}>
           {FONTS.map(([v, l]) => (
@@ -994,27 +991,26 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
           ))}
         </select>
       </Field>
-      <Field label="字号">
-        <StepperInput
-          value={size}
-          onChange={(v) => setSize(v)}
-          step={1}
-          min={0}
-          width={90}
-          placeholder="如 16"
-        />
-      </Field>
-      <Field label="字重">
-        <select style={inp} value={weight} onChange={(e) => { const v = e.target.value; setWeight(v); apply({ weight: v }) }}>
-          {WEIGHTS.map(([v, l]) => (
-            <option key={v} value={v}>{l}</option>
-          ))}
-        </select>
-      </Field>
+
+      {/* 字号/字重一行 */}
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Field label="字号" grow>
+          <select style={inp} value={size} onChange={(e) => { const v = e.target.value; setSize(v); apply({ size: v }) }}>
+            {FONT_SIZES.map((v) => <option key={v} value={v}>{v ? v + 'px' : '（不修改）'}</option>)}
+          </select>
+        </Field>
+        <Field label="字重" grow>
+          <select style={inp} value={weight} onChange={(e) => { const v = e.target.value; setWeight(v); apply({ weight: v }) }}>
+            {WEIGHTS.map(([v, l]) => (
+              <option key={v} value={v}>{l}</option>
+            ))}
+          </select>
+        </Field>
+      </div>
 
       <div style={{ marginTop: 8, marginBottom: 4, color: '#6b7280' }}>文本内容（双击画布也可直接改）</div>
       <textarea
-        style={{ ...inp, height: 60, resize: 'vertical' }}
+        style={{ ...inp, height: 60, padding: '8px 10px', resize: 'vertical' }}
         value={text}
         onChange={(e) => setText(e.target.value)}
         onBlur={() => send({ type: 'setText', text })}
@@ -1068,9 +1064,9 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
   )
 }
 
-function Field({ label, children }) {
+function Field({ label, children, grow }) {
   return (
-    <div style={{ marginBottom: 8 }}>
+    <div style={{ marginBottom: 8, flex: grow ? 1 : undefined, minWidth: 0 }}>
       <div style={{ color: '#6b7280', marginBottom: 3 }}>{label}</div>
       {children}
     </div>
@@ -1158,7 +1154,7 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
             background: '#e8f5e9',
             width: 26,
             height: 12,
-            borderRadius: 5,
+            borderRadius: '10px 10px 0 0',
             cursor: disabled ? 'not-allowed' : 'pointer',
             fontSize: 13,
             fontWeight: 700,
@@ -1177,7 +1173,7 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
             background: '#fce8e6',
             width: 26,
             height: 12,
-            borderRadius: 5,
+            borderRadius: '0 0 10px 10px',
             cursor: disabled ? 'not-allowed' : 'pointer',
             fontSize: 13,
             fontWeight: 700,
@@ -1570,10 +1566,16 @@ function AnimPanel({ selected, send, inline }) {
 const inp = {
   width: '100%',
   boxSizing: 'border-box',
-  padding: '6px 8px',
-  border: '1px solid #d1d5db',
-  borderRadius: 6,
+  height: 30,
+  padding: '0 10px',
+  border: '1px solid #e5e7eb',
+  borderRadius: 10,
+  boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
   fontSize: 13,
+  fontFamily: 'inherit',
+  background: '#fff',
+  color: '#1f2937',
+  outline: 'none',
 }
 
 function btn(bg) {
