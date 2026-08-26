@@ -1222,6 +1222,68 @@ function LayersPanel({ layers, current, total, send }) {
     setOverIdx(null)
   }
 
+  // 分离字幕元素和普通元素
+  var subtitleLayers = layers.filter(function(l){ return l.role === 'subtitle' })
+  var regularLayers = layers.filter(function(l){ return l.role !== 'subtitle' })
+
+  function renderLayer(layer, i, globalIdx) {
+    const isOver = overIdx === globalIdx && dragIdx !== globalIdx
+    const isSubtitle = layer.role === 'subtitle'
+    return (
+      <div
+        key={globalIdx}
+        draggable
+        onDragStart={(e) => handleDragStart(e, globalIdx)}
+        onDragOver={(e) => handleDragOver(e, globalIdx)}
+        onDrop={(e) => handleDrop(e, globalIdx)}
+        onDragEnd={handleDragEnd}
+        onClick={() => send({ type: 'selectLayer', index: globalIdx })}
+        onDoubleClick={() => send({ type: 'startTextEdit', index: globalIdx })}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6,
+          padding: '5px 6px',
+          borderRadius: 4,
+          cursor: 'pointer',
+          fontSize: 12,
+          background: isOver ? '#fef3c7' : (isSubtitle ? '#f0fdf4' : '#f9fafb'),
+          border: isOver ? '2px dashed #C41E24' : (isSubtitle ? '1px solid #bbf7d0' : '1px solid #e5e7eb'),
+          opacity: dragIdx === globalIdx ? 0.5 : 1,
+          transition: 'all .12s',
+        }}
+        title={layer.tag + (layer.text ? ' — ' + layer.text : '')}
+      >
+        {/* 序号 */}
+        <span style={{ color: '#9ca3af', fontSize: 11, minWidth: 20 }}>{globalIdx + 1}</span>
+        {/* 类型图标 */}
+        <span style={{ fontSize: 14, flexShrink: 0 }}>
+          {isSubtitle ? '📝' : layer.tag === 'img' ? '🖼' : layer.tag === 'video' ? '🎬' : layer.tag === 'svg' ? '🔷' : '📄'}
+        </span>
+        {/* 文字（截断） */}
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#374151' }}>
+          {layer.text || '<' + layer.tag + '>'}
+        </span>
+        {/* 字幕标记 */}
+        {isSubtitle && <span style={{ fontSize: 10, color: '#16a34a', background: '#dcfce7', padding: '0 4px', borderRadius: 3, flexShrink: 0 }}>字幕</span>}
+        {/* 锁定按钮 */}
+        <span
+          onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerLock', index: globalIdx }) }}
+          style={{ fontSize: 11, cursor: 'pointer', color: layer.locked ? '#ef4444' : '#d1d5db', opacity: layer.locked ? 1 : 0.4 }}
+          title={layer.locked ? '点击解锁' : '点击锁定'}
+        >🔒</span>
+        {/* 隐藏/显示按钮 */}
+        <span
+          onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerVisibility', index: globalIdx }) }}
+          style={{ fontSize: 11, cursor: 'pointer', color: layer.hidden ? '#9ca3af' : '#d1d5db', opacity: layer.hidden ? 1 : 0.4 }}
+          title={layer.hidden ? '点击显示' : '点击隐藏'}
+        >{layer.hidden ? '👁️‍🗨️' : '👁️'}</span>
+        {/* 拖拽手柄 */}
+        <span style={{ fontSize: 11, color: '#d1d5db', cursor: 'grab' }}>⠿</span>
+      </div>
+    )
+  }
+
   return (
     <div>
       <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
@@ -1231,60 +1293,26 @@ function LayersPanel({ layers, current, total, send }) {
         <p style={{ color: '#9ca3af', fontSize: 13 }}>当前页没有可编辑元素</p>
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {layers.map(function (layer, i) {
-          const isOver = overIdx === i && dragIdx !== i
-          return (
-            <div
-              key={i}
-              draggable
-              onDragStart={(e) => handleDragStart(e, i)}
-              onDragOver={(e) => handleDragOver(e, i)}
-              onDrop={(e) => handleDrop(e, i)}
-              onDragEnd={handleDragEnd}
-              onClick={() => send({ type: 'selectLayer', index: i })}
-              onDoubleClick={() => send({ type: 'startTextEdit', index: i })}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '5px 6px',
-                borderRadius: 4,
-                cursor: 'pointer',
-                fontSize: 12,
-                background: isOver ? '#fef3c7' : '#f9fafb',
-                border: isOver ? '2px dashed #C41E24' : '1px solid #e5e7eb',
-                opacity: dragIdx === i ? 0.5 : 1,
-                transition: 'all .12s',
-              }}
-              title={layer.tag + (layer.text ? ' — ' + layer.text : '')}
-            >
-              {/* 序号 */}
-              <span style={{ color: '#9ca3af', fontSize: 11, minWidth: 20 }}>{i + 1}</span>
-              {/* 类型图标 */}
-              <span style={{ fontSize: 14, flexShrink: 0 }}>
-                {layer.tag === 'img' ? '🖼' : layer.tag === 'video' ? '🎬' : layer.tag === 'svg' ? '🔷' : '📄'}
-              </span>
-              {/* 文字（截断） */}
-              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#374151' }}>
-                {layer.text || '<' + layer.tag + '>'}
-              </span>
-              {/* 锁定按钮（可点击切换） */}
-              <span
-                onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerLock', index: i }) }}
-                style={{ fontSize: 11, cursor: 'pointer', color: layer.locked ? '#ef4444' : '#d1d5db', opacity: layer.locked ? 1 : 0.4 }}
-                title={layer.locked ? '点击解锁' : '点击锁定'}
-              >🔒</span>
-              {/* 隐藏/显示按钮（可点击切换） */}
-              <span
-                onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerVisibility', index: i }) }}
-                style={{ fontSize: 11, cursor: 'pointer', color: layer.hidden ? '#9ca3af' : '#d1d5db', opacity: layer.hidden ? 1 : 0.4 }}
-                title={layer.hidden ? '点击显示' : '点击隐藏'}
-              >{layer.hidden ? '👁️‍🗨️' : '👁️'}</span>
-              {/* 拖拽手柄 */}
-              <span style={{ fontSize: 11, color: '#d1d5db', cursor: 'grab' }}>⠿</span>
+        {/* 普通元素区域 */}
+        {regularLayers.length > 0 && (
+          <div style={{ fontSize: 11, color: '#6b7280', padding: '4px 6px', marginTop: 4 }}>
+            元素
+            {regularLayers.map(function(layer, i) {
+              return renderLayer(layer, i, i)
+            })}
+          </div>
+        )}
+        {/* 字幕区域 */}
+        {subtitleLayers.length > 0 && (
+          <div style={{ marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: '#16a34a', padding: '4px 6px', fontWeight: 600, borderBottom: '1px solid #bbf7d0', marginBottom: 2 }}>
+              📝 字幕（{subtitleLayers.length} 条）
             </div>
-          )
-        })}
+            {subtitleLayers.map(function(layer, i) {
+              return renderLayer(layer, i, regularLayers.length + i)
+            })}
+          </div>
+        )}
       </div>
     </div>
   )

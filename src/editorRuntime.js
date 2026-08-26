@@ -82,6 +82,7 @@
         zIndex: parseInt(cs.zIndex, 10) || 0,
         id: el.getAttribute('data-zt-id') || '',
         name: el.getAttribute('data-zt-name') || '',
+        role: el.getAttribute('data-zt-role') || '',
         opacity: cs.opacity,
         width: parseFloat(cs.width) || 0,
         height: parseFloat(cs.height) || 0,
@@ -1556,6 +1557,35 @@
   }
 
   // ---- 文字编辑（双击进入）----
+  function startTextEditOnLayer(idx) {
+    var el = getElByLayerIndex(idx)
+    if (!el || textEditing) return
+    // 如果元素（或祖先）被隐藏，临时显示以便编辑
+    var hiddenChain = []
+    var check = el
+    while (check && check !== document.body) {
+      if (getComputedStyle(check).display === 'none') {
+        hiddenChain.push({ el: check, oldDisplay: check.style.display || '' })
+        check.style.display = 'block'
+      }
+      check = check.parentElement
+    }
+    // 劫持原有 finish 逻辑，在完成后恢复隐藏
+    var origFinish = null
+    startTextEdit(el)
+    // 如果 startTextEdit 成功设置 textEditing，在其 blur 事件前插入恢复逻辑
+    if (textEditing) {
+      // 用 mutation observer 或包装 blur 事件
+      // 简单方式：在 el 上挂一个标记，由 finish 检查
+      el._ztHiddenChain = hiddenChain
+    } else {
+      // startTextEdit 失败（可能 textEditing 已被占用），恢复隐藏
+      for (var i = 0; i < hiddenChain.length; i++) {
+        hiddenChain[i].el.style.display = hiddenChain[i].oldDisplay || 'none'
+      }
+    }
+  }
+
   function startTextEdit(el) {
     if (textEditing || !el) return
     textEditing = el
@@ -1574,6 +1604,13 @@
       el.removeEventListener('blur', finish)
       document.removeEventListener('keydown', onKeyEdit, true)
       textEditing = null
+      // 恢复隐藏的祖先（字幕等）
+      if (el._ztHiddenChain) {
+        for (var hc = 0; hc < el._ztHiddenChain.length; hc++) {
+          el._ztHiddenChain[hc].el.style.display = el._ztHiddenChain[hc].oldDisplay || 'none'
+        }
+        delete el._ztHiddenChain
+      }
       if (beforeText !== afterText) {
         var before = [{ el: el, style: el.getAttribute('style') || '', text: beforeText, parent: el.parentNode, next: el.nextSibling, present: true }]
         var after = [{ el: el, style: el.getAttribute('style') || '', text: afterText, parent: el.parentNode, next: el.nextSibling, present: true }]
@@ -1809,7 +1846,7 @@
       else if (m.type === 'previewAnim') previewAnim()
       else if (m.type === 'requestSubtitles') post({ type: 'subtitles', subtitles: getSubtitlesData() })
       else if (m.type === 'selectLayer') { var el = getElByLayerIndex(m.index); if (el) selectOnly(el) }
-      else if (m.type === 'startTextEdit') { var el = getElByLayerIndex(m.index); if (el) startTextEdit(el) }
+      else if (m.type === 'startTextEdit') { startTextEditOnLayer(m.index) }
       else if (m.type === 'reorderLayers') { reorderLayers(m.fromIdx, m.toIdx); post({ type: 'layers', layers: getLayers(), current: current, total: slides.length }) }
       else if (m.type === 'requestLayers') post({ type: 'layers', layers: getLayers(), current: current, total: slides.length })
       else if (m.type === 'selectBound') selectBySelector(m.selector)
