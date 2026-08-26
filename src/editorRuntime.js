@@ -71,6 +71,7 @@
   function getLayers() {
     var children = getLayerElements()
     var sorted = sortByZIndex(children)
+    var subEls = getSubtitleElements()
     return sorted.map(function (el, i) {
       var cs = getComputedStyle(el)
       return {
@@ -83,6 +84,7 @@
         id: el.getAttribute('data-zt-id') || '',
         name: el.getAttribute('data-zt-name') || '',
         role: el.getAttribute('data-zt-role') || '',
+        subIdx: el.getAttribute('data-zt-role') === 'subtitle' ? subEls.indexOf(el) : -1,
         opacity: cs.opacity,
         width: parseFloat(cs.width) || 0,
         height: parseFloat(cs.height) || 0,
@@ -1557,6 +1559,29 @@
   }
 
   // ---- 文字编辑（双击进入）----
+  function startTextEditOnSubtitle(subIdx) {
+    var subEls = getSubtitleElements()
+    var el = subEls[subIdx]
+    if (!el || textEditing) return
+    var hiddenChain = []
+    var check = el
+    while (check && check !== document.body) {
+      if (getComputedStyle(check).display === 'none') {
+        hiddenChain.push({ el: check, oldDisplay: check.style.display || '' })
+        check.style.display = 'block'
+      }
+      check = check.parentElement
+    }
+    startTextEdit(el)
+    if (textEditing) {
+      el._ztHiddenChain = hiddenChain
+    } else {
+      for (var i = 0; i < hiddenChain.length; i++) {
+        hiddenChain[i].el.style.display = hiddenChain[i].oldDisplay || 'none'
+      }
+    }
+  }
+
   function startTextEditOnLayer(idx) {
     var el = getElByLayerIndex(idx)
     if (!el || textEditing) return
@@ -1847,6 +1872,7 @@
       else if (m.type === 'requestSubtitles') post({ type: 'subtitles', subtitles: getSubtitlesData() })
       else if (m.type === 'selectLayer') { var el = getElByLayerIndex(m.index); if (el) selectOnly(el) }
       else if (m.type === 'startTextEdit') { startTextEditOnLayer(m.index) }
+      else if (m.type === 'startTextEditOnSubtitle') { startTextEditOnSubtitle(m.subIdx) }
       else if (m.type === 'reorderLayers') { reorderLayers(m.fromIdx, m.toIdx); post({ type: 'layers', layers: getLayers(), current: current, total: slides.length }) }
       else if (m.type === 'requestLayers') post({ type: 'layers', layers: getLayers(), current: current, total: slides.length })
       else if (m.type === 'selectBound') selectBySelector(m.selector)
