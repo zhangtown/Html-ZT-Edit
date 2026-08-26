@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react'
 import editorRuntimeSrc from './editorRuntime.js?raw'
 import {
   pickHtmlFile,
+  isElectron,
+  pickHtmlFolderBackend,
   buildFileMap,
   dirOf,
   toRelativePath,
@@ -150,15 +152,24 @@ export default function App() {
   }
 
   // ---------- 加载 / 恢复 ----------
-  // 点击「选择 HTML 文件」→ 原生文件框（已筛选 html / .htm）→ 选中并确认后加载
+  // 点击「选择 HTML 文件」：
+  // - Electron 环境：原生文件框筛选 .html，选中后加载该文件所在文件夹的全部资源
+  // - 纯浏览器环境：退回为仅加载选中的单个文件
   async function handlePick() {
     try {
-      const file = await pickHtmlFile()
-      // 仅加载该 HTML 文件；资源若未随文件获取则保留原始相对引用
-      const map = buildFileMap([file]) // key = 文件名
-      fileMapRef.current = map
-      setActiveHtml(file.name)
-      await loadHtml(file.name, map)
+      if (isElectron()) {
+        // 读整个文件夹（含图片/视频等资源），重建 File 映射
+        const { mainKey, map } = await pickHtmlFolderBackend()
+        fileMapRef.current = map
+        setActiveHtml(mainKey)
+        await loadHtml(mainKey, map)
+      } else {
+        const file = await pickHtmlFile()
+        const map = buildFileMap([file]) // key = 文件名
+        fileMapRef.current = map
+        setActiveHtml(file.name)
+        await loadHtml(file.name, map)
+      }
     } catch (e) {
       if (e.message !== '已取消') alert('打开 HTML 文件失败：' + e.message)
     }

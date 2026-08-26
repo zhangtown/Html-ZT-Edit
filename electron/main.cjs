@@ -3,7 +3,7 @@
 // 再用 BrowserWindow 加载 http://127.0.0.1:<port>/ ，避免 file:// 下
 // ES 模块 / blob URL / iframe 的兼容问题。
 
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
@@ -77,6 +77,7 @@ function createWindow(url) {
       contextIsolation: true,
       nodeIntegration: false,
       webSecurity: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   })
 
@@ -86,7 +87,98 @@ function createWindow(url) {
   return win
 }
 
+// ------------------------------------------------------------
+// IPC：选择 HTML 文件 → 返回该文件所在文件夹的全部资源清单
+// ------------------------------------------------------------
+
+// 参与归档的资源后缀（HTML 幻灯片常用到的图片/媒体/样式/脚本/字体）
+const ARCHIVE_EXTS = new Set([
+  '.html', '.htm', '.css', '.js', '.mjs', '.json',
+  '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.bmp',
+  '.woff', '.woff2', '.ttf', '.otf', '.eot',
+  '.mp3', '.wav', '.ogg', '.oga', '.m4a', '.aac',
+  '.mp4', '.webm', '.mov', '.m4v',
+])
+// 超过该大小的文件跳过（避免把超大视频读进内存）
+const MAX_FILE_BYTES = 150 * 1024 * 1024
+// 需要跳过的目录
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'dist-electron'])
+
+// 递归收集 folder 下所有参与归档的文件，返回 { relPath, absPath, name, size }
+function collectFolderFiles(folder) {
+  const rootAbs = path.resolve(folder)
+  const out = []
+  function walk(dir, relBase) {
+    let entries
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch (e) {
+      return
+    }
+    for (const ent of entries) {
+      const abs = path.join(dir, ent.name)
+      const rel = relBase ? relBase + '/' + ent.name : ent.name
+      if (ent.isDirectory()) {
+        if (SKIP_DIRS.has(ent.name)) continue
+        walk(abs, rel)
+      } else if (ent.isFile()) {
+        const ext = path.extname(ent.name).toLowerCase()
+        if (!ARCHIVE_EXTS.has(ext)) continue
+        let size = 0
+        try {
+          size = fs.statSync(abs).size
+        } catch (e) {}
+        if (size > MAX_FILE_BYTES) continue
+        out.push({ relPath: rel, absPath: abs, name: ent.name, size })
+      }
+    }
+  }
+  walk(rootAbs, '')
+  return out
+}
+
+// 原生文件框：筛选 html，选中的是主 HTML。返回它的绝对路径及其所在文件夹名。
+async function pickHtmlAndFolder(win) {
+  const result = await dialog.showOpenDialog(win, {
+    title: '选择 HTML 文件（将加载其所在文件夹的全部资源）',
+    properties: ['openFile'],
+    filters: [{ name: 'HTML 文件', extensions: ['html', 'htm'] }],
+  })
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return null
+  }
+  const htmlAbs = result.filePaths[0]
+  return {
+    htmlAbs,
+    rootName: path.basename(path.dirname(htmlAbs)),
+    mainHtmlName: path.basename(htmlAbs),
+  }
+}
+
+function registerIpc() {
+  ipcMain.handle('zt:open-html-folder', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const picked = await pickHtmlAndFolder(win)
+    if (!picked) return { canceled: true }
+    const rootAbs = path.dirname(picked.htmlAbs)
+    const files = collectFolderFiles(rootAbs)
+    return { canceled: false, ...picked, files }
+  })
+
+  ipcMain.handle('zt:read-file-b64', (event, absPath) => {
+    try {
+      const buf = fs.readFileSync(absPath)
+      return { ok: true, data: buf.toString('base64') }
+    } catch (e) {
+      return { ok: false, error: String(e && e.message) }
+    }
+  })
+}
+
+// ------------------------------------------------------------
+
 app.whenReady().then(() => {
+  registerIpc()
   // 开发调试模式：通过 VITE_DEV_SERVER_URL 直接加载 Vite dev server（HMR 热更新）
   const devUrl = process.env.VITE_DEV_SERVER_URL
   if (devUrl) {

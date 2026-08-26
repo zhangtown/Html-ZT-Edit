@@ -40,6 +40,63 @@ export function pickHtmlFile() {
   })
 }
 
+// 是否在 Electron 桌面环境（通过 preload 暴露的 ztPick 判断）
+// 在 Electron 下才能“选单个 HTML 但加载其所在文件夹的完整资源”
+export function isElectron() {
+  return !!(typeof window !== 'undefined' && window.ztPick && window.ztPick.openHtmlFolder)
+}
+
+// base64 -> File 对象（指定文件名与相对路径）
+function fileFromBase64(base64, name, type) {
+  const bin = atob(base64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new File([bytes], name, { type: type || '' })
+}
+
+// Electron 后端方案：挂出原生文件框（筛选 html），选中单个 HTML 后读取其所在文件夹的
+// 全部资源，重建为 key=根目录名/相对路径 的 File 映射。
+// 返回 { mainKey, map }，其中 map = Map<relKey, File>
+export async function pickHtmlFolderBackend() {
+  if (!isElectron()) {
+    throw new Error('当前不在 Electron 环境，无法读取文件夹')
+  }
+  const res = await window.ztPick.openHtmlFolder()
+  if (!res || res.canceled) throw new Error('已取消')
+  const map = new Map()
+  for (const f of res.files || []) {
+    const r = await window.ztPick.readFileB64(f.absPath)
+    if (!r || !r.ok) continue // 单个文件读取失败则跳过
+    const key = res.rootName + '/' + f.relPath
+    const file = fileFromBase64(r.data, f.name, mimeFromExt(f.name))
+    // webkitRelativePath 不可写，这里用它覆盖冲突；真正取 key 用 map key
+    try {
+      Object.defineProperty(file, 'webkitRelativePath', { value: key })
+    } catch (e) {}
+    map.set(key, file)
+  }
+  const mainKey = res.rootName + '/' + res.mainHtmlName
+  if (!map.has(mainKey)) {
+    throw new Error('在选定 HTML 所在文件夹中未能找到主文件')
+  }
+  return { mainKey, map }
+}
+
+function mimeFromExt(name) {
+  const ext = (name.split('.').pop() || '').toLowerCase()
+  const m = {
+    html: 'text/html', htm: 'text/html', css: 'text/css', js: 'text/javascript',
+    mjs: 'text/javascript', json: 'application/json', svg: 'image/svg+xml',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+    webp: 'image/webp', ico: 'image/x-icon',
+    woff: 'font/woff', woff2: 'font/woff2', ttf: 'font/ttf', otf: 'font/otf',
+    mp3: 'audio/mpeg', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg',
+    m4a: 'audio/mp4', aac: 'audio/aac',
+    mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/mp4',
+  }
+  return m[ext] || ''
+}
+
 // 建立 path -> File 映射，key 为 webkitRelativePath（含根目录名）
 export function buildFileMap(files) {
   const map = new Map()
