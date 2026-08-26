@@ -1809,6 +1809,7 @@
       else if (m.type === 'previewAnim') previewAnim()
       else if (m.type === 'requestSubtitles') post({ type: 'subtitles', subtitles: getSubtitlesData() })
       else if (m.type === 'selectLayer') { var el = getElByLayerIndex(m.index); if (el) selectOnly(el) }
+      else if (m.type === 'startTextEdit') { var el = getElByLayerIndex(m.index); if (el) startTextEdit(el) }
       else if (m.type === 'reorderLayers') { reorderLayers(m.fromIdx, m.toIdx); post({ type: 'layers', layers: getLayers(), current: current, total: slides.length }) }
       else if (m.type === 'requestLayers') post({ type: 'layers', layers: getLayers(), current: current, total: slides.length })
       else if (m.type === 'selectBound') selectBySelector(m.selector)

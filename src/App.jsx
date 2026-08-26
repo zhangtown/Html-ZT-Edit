@@ -1242,6 +1242,7 @@ function LayersPanel({ layers, current, total, send }) {
               onDrop={(e) => handleDrop(e, i)}
               onDragEnd={handleDragEnd}
               onClick={() => send({ type: 'selectLayer', index: i })}
+              onDoubleClick={() => send({ type: 'startTextEdit', index: i })}
               style={{
                 display: 'flex',
                 alignItems: 'center',
