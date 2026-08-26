@@ -953,10 +953,10 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
             step={0.1}
             min={0}
             max={1}
-            width={100}
+            style={{ flex: 1, minWidth: 0 }}
             placeholder="0~1"
           />
-          <span style={{ fontSize: 11, color: '#9ca3af' }}>0~1</span>
+          <span style={{ fontSize: 11, color: '#9ca3af', flexShrink: 0 }}>0~1</span>
         </div>
       </Field>
       <Field label="边框宽度">
@@ -978,7 +978,7 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
           onChange={(v) => { setBorderRadius(v); apply({ borderRadius: v }) }}
           step={1}
           min={0}
-          width={90}
+          width={'100%'}
           placeholder="如 12"
         />
       </Field>
@@ -1139,7 +1139,7 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
         style={{
           border: 'none',
           outline: 'none',
-          padding: '6px 4px 6px 12px',
+          padding: '5px 4px 5px 10px',
           fontSize: 14,
           fontWeight: 600,
           flex: 1,
@@ -1149,18 +1149,18 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
           textAlign: 'left',
         }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 4px', flexShrink: 0, justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 4px', flexShrink: 0, justifyContent: 'center' }}>
         <button
           onClick={() => adjust(step)}
           disabled={disabled}
           style={{
             border: 'none',
             background: '#e8f5e9',
-            width: 30,
-            height: 24,
-            borderRadius: 6,
+            width: 26,
+            height: 12,
+            borderRadius: 5,
             cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 16,
+            fontSize: 13,
             fontWeight: 700,
             lineHeight: 1,
             color: '#2e7d32',
@@ -1175,11 +1175,11 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
           style={{
             border: 'none',
             background: '#fce8e6',
-            width: 30,
-            height: 24,
-            borderRadius: 6,
+            width: 26,
+            height: 12,
+            borderRadius: 5,
             cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 16,
+            fontSize: 13,
             fontWeight: 700,
             lineHeight: 1,
             color: '#c62828',
