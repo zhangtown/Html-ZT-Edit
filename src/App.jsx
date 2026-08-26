@@ -1086,7 +1086,7 @@ function Row({ k, v }) {
   )
 }
 
-function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeholder, disabled, style }) {
+function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeholder, disabled, style, dark }) {
   const num = parseFloat(value)
   const isValid = !isNaN(num) && String(value).trim() !== ''
 
@@ -1120,8 +1120,10 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
     <div style={{
       display: 'flex',
       alignItems: 'stretch',
-      border: '1px solid #d1d5db',
-      borderRadius: 4,
+      background: dark ? '#1f2937' : '#ffffff',
+      borderRadius: 10,
+      boxShadow: dark ? 'none' : '0 2px 6px rgba(0,0,0,0.10)',
+      border: dark ? '1px solid #4b5563' : 'none',
       overflow: 'hidden',
       width,
       opacity: disabled ? 0.5 : 1,
@@ -1137,48 +1139,55 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
         style={{
           border: 'none',
           outline: 'none',
-          padding: '4px 4px 4px 8px',
-          fontSize: 13,
+          padding: '6px 4px 6px 12px',
+          fontSize: 14,
+          fontWeight: 600,
           flex: 1,
-          color: '#374151',
+          minWidth: 0,
+          color: dark ? '#e5e7eb' : '#1f2937',
           background: 'transparent',
           textAlign: 'left',
         }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid #d1d5db', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 4px', flexShrink: 0, justifyContent: 'center' }}>
         <button
           onClick={() => adjust(step)}
           disabled={disabled}
           style={{
             border: 'none',
-            background: '#f3f4f6',
-            padding: '2px 5px',
-            fontSize: 8,
+            background: '#e8f5e9',
+            width: 30,
+            height: 24,
+            borderRadius: 6,
             cursor: disabled ? 'not-allowed' : 'pointer',
+            fontSize: 16,
+            fontWeight: 700,
             lineHeight: 1,
-            color: '#6b7280',
+            color: '#2e7d32',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
-        >▲</button>
+        >+</button>
         <button
           onClick={() => adjust(-step)}
           disabled={disabled}
           style={{
             border: 'none',
-            background: '#f3f4f6',
-            padding: '2px 5px',
-            fontSize: 8,
+            background: '#fce8e6',
+            width: 30,
+            height: 24,
+            borderRadius: 6,
             cursor: disabled ? 'not-allowed' : 'pointer',
+            fontSize: 16,
+            fontWeight: 700,
             lineHeight: 1,
-            color: '#6b7280',
-            borderTop: '1px solid #d1d5db',
+            color: '#c62828',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
           }}
-        >▼</button>
+        >−</button>
       </div>
     </div>
   )
@@ -1528,7 +1537,7 @@ function AnimPanel({ selected, send, inline }) {
           step={0.5}
           min={0}
           width={80}
-          style={{ borderColor: '#4b5563' }}
+          dark
         />
 
         <span style={{ color: '#9ca3af' }}>延迟</span>
@@ -1538,7 +1547,7 @@ function AnimPanel({ selected, send, inline }) {
           step={0.5}
           min={0}
           width={80}
-          style={{ borderColor: '#4b5563' }}
+          dark
         />
 
         <span style={{ color: '#9ca3af' }}>恢复</span>
@@ -1548,7 +1557,7 @@ function AnimPanel({ selected, send, inline }) {
           step={0.5}
           min={0}
           width={80}
-          style={{ borderColor: '#4b5563' }}
+          dark
         />
 
         <button onClick={clearAnim} style={timelineBtn('#7f1d1d')}>清除</button>
