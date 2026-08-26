@@ -1390,6 +1390,13 @@
     post({ type: 'clipboard', count: clipboard.length })
   }
 
+  function cutSelection() {
+    if (!selectedList.length) return
+    clipboard = selectedList.map(function (el) { return el.outerHTML })
+    post({ type: 'clipboard', count: clipboard.length })
+    deleteSelected()
+  }
+
   function paste(m) {
     if (!clipboard.length) return
     var slide = slides[current]
@@ -1613,6 +1620,9 @@
       } else if (ctrl && ((e.shiftKey && k === 'z') || k === 'y')) {
         redo()
         e.preventDefault()
+      } else if (ctrl && k === 'x') {
+        cutSelection()
+        e.preventDefault()
       } else if (ctrl && k === 'c') {
         copySelection()
         e.preventDefault()
@@ -1698,6 +1708,7 @@
       else if (m.type === 'confirmBinding') confirmBinding()
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()
+      else if (m.type === 'cut') cutSelection()
       else if (m.type === 'paste') paste(m)
       else if (m.type === 'undo') undo()
       else if (m.type === 'redo') redo()

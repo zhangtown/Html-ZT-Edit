@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import editorRuntimeSrc from './editorRuntime.js?raw'
 import {
   pickHtmlFile,
@@ -144,6 +144,7 @@ export default function App() {
   const [zoom, setZoom] = useState(1) // 画布缩放 0.5 ~ 1.5，0.1 步进
   const dragDataRef = useRef(null) // 拖拽中的素材信息
   const [ctxMenu, setCtxMenu] = useState(null) // 右键菜单 { x, y, editable, count, locked, group, anyLocked } | null
+  const [clipCount, setClipCount] = useState(0) // 剪贴板元素数量（>0 复制/剪切后启用粘贴）
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -157,6 +158,7 @@ export default function App() {
   // - Electron 环境：原生文件框筛选 .html，选中后加载该文件所在文件夹的全部资源
   // - 纯浏览器环境：退回为仅加载选中的单个文件
   async function handlePick() {
+    setClipCount(0)
     try {
       if (isElectron()) {
         // 读整个文件夹（含图片/视频等资源），重建 File 映射
@@ -317,6 +319,8 @@ export default function App() {
         setCtxMenu(m)
       } else if (m.type === 'canvasPointerDown') {
         setCtxMenu(null)
+      } else if (m.type === 'clipboard') {
+        setClipCount(m.count || 0)
       }
     }
     function onKey(e) {
@@ -339,6 +343,9 @@ export default function App() {
       } else if (ctrl && ((e.shiftKey && k === 'z') || k === 'y')) {
         send({ type: 'redo' })
         e.preventDefault()
+      } else if (ctrl && k === 'x') {
+        send({ type: 'cut' })
+        e.preventDefault()
       } else if (ctrl && k === 'c') {
         send({ type: 'copy' })
         e.preventDefault()
@@ -352,7 +359,8 @@ export default function App() {
         send({ type: 'moveBy', dx, dy })
         e.preventDefault()
       } else if (!ctrl && (k === 'delete' || k === 'backspace')) {
-        // 避免误删（仅在画布聚焦且无输入框时）；交由 iframe 处理更稳妥，这里不拦截
+        // 仅在画布聚焦且无输入框时删除（父层兜底，iframe 内由 runtime 处理，两者不同时生效）
+        if (selected) { send({ type: 'delete' }); e.preventDefault() }
       } else if (!ctrl && selCount >= 2) {
         const map = { l: 'L', c: 'C', r: 'R', t: 'T', m: 'M', b: 'B', h: 'H', v: 'V', e: 'E', w: 'W', q: 'Q' }
         if (map[k]) {
@@ -809,7 +817,7 @@ export default function App() {
         selected={selected}
         send={send}
       />
-      <ContextMenu menu={ctxMenu} zoom={zoom} iframeRef={iframeRef} selCount={selCount} send={send} onClose={() => setCtxMenu(null)} />
+      <ContextMenu menu={ctxMenu} zoom={zoom} iframeRef={iframeRef} selCount={selCount} send={send} onClose={() => setCtxMenu(null)} clipCount={clipCount} />
     </div>
   )
 }
@@ -1532,13 +1540,23 @@ function timelineBtn(bg) {
 }
 
 // 画布右键上下文菜单
-function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
+function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose, clipCount }) {
   const [sub, setSub] = useState(null) // 'align' | null 二级菜单
   const [subStyle, setSubStyle] = useState(null) // 对齐子菜单定位 { left, top, dir }
+  const [hoverIdx, setHoverIdx] = useState(-1) // 当前悬浮菜单项索引（高亮）
+  const [measured, setMeasured] = useState({ h: 0, subH: 0 }) // 主菜单/二级菜单实际渲染高度
   const alignRef = useRef(null) // 对齐行 ref，用于测量
+  const subRef = useRef(null) // 对齐二级菜单 ref，用于测量
   const ref = useRef(null)
+  useLayoutEffect(() => {
+    const nm = { h: ref.current ? ref.current.offsetHeight : 0, subH: subRef.current ? subRef.current.offsetHeight : 0 }
+    setMeasured(nm)
+  }, [menu, sub, subStyle])
   useEffect(() => {
     if (!menu) return
+    setHoverIdx(-1)
+    setSub(null)
+    setSubStyle(null)
     function onDocDown(e) {
       if (ref.current && ref.current.contains(e.target)) return
       onClose()
@@ -1569,7 +1587,8 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
   const px = r ? r.left + menu.x * zoom : menu.x
   const py = r ? r.top + menu.y * zoom : menu.y
   const menuW = 190
-  const menuH = 320
+  // 主菜单高度：越界时向上弹出（顶部留 8px，底部留 4px）
+  const menuH = measured.h || 360
   const left = Math.min(px, Math.max(8, window.innerWidth - menuW - 4))
   const top = Math.min(py, Math.max(8, window.innerHeight - menuH - 4))
 
@@ -1580,7 +1599,8 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
     const m = ref.current && ref.current.getBoundingClientRect()
     const a = alignRef.current && alignRef.current.getBoundingClientRect()
     const subW = menuW
-    const subH = ALIGNS.length * 31 + 9
+    // 二级菜单高度：优先用实测值，未渲染时按每项高 31px 估算
+    const subH = (measured.subH || (ALIGNS.length * 31 + 9))
     let sx = m ? m.right - 4 : 0
     let dir = 'right'
     if (sx + subW > window.innerWidth - 4) {
@@ -1588,13 +1608,14 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
       dir = 'left'
     }
     let sy = a ? a.top : 0
+    // 底部越界向上弹出；顶部越界则下移
     if (sy + subH > window.innerHeight - 4) sy = window.innerHeight - 4 - subH
-    if (sy < 4) sy = 4
+    if (sy < 4) sy = Math.min(a ? a.top : 4, 4)
     setSubStyle({ left: Math.round(sx), top: Math.round(sy), dir })
     setSub('align')
   }
 
-  const item = (label, action, disabled, danger) => (
+  const item = (label, action, disabled, danger, idx) => (
     <div
       onClick={() => {
         if (disabled) return
@@ -1602,14 +1623,16 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
         onClose()
         setSub(null)
       }}
+      onMouseEnter={() => { setHoverIdx(idx); setSub(null) }}
       style={{
         padding: '7px 12px',
         fontSize: 13,
         color: disabled ? '#c0c4cc' : danger ? '#C41E24' : '#1f2937',
         cursor: disabled ? 'default' : 'pointer',
         whiteSpace: 'nowrap',
+        background: hoverIdx === idx && !disabled ? 'rgba(196,30,36,.10)' : 'transparent',
+        borderLeft: hoverIdx === idx && !disabled ? '3px solid #C41E24' : '3px solid transparent',
       }}
-      onMouseEnter={() => setSub(null)}
     >
       {label}
     </div>
@@ -1636,18 +1659,19 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
         fontFamily: 'inherit',
       }}
     >
-      {item('复制', () => run('copy'), !editable)}
-      {item('粘贴', () => send({ type: 'paste', x: menu.x, y: menu.y }), false)}
-      {item('删除', () => run('delete'), !editable, true)}
+      {item('复制', () => run('copy'), !editable, false, 0)}
+      {item('剪切', () => run('cut'), !editable, false, 1)}
+      {item('粘贴', () => send({ type: 'paste', x: menu.x, y: menu.y }), clipCount<=0, false, 2)}
+      {item('删除', () => run('delete'), !editable, true, 200)}
       {sep()}
-      {item('置顶', () => send({ type: 'layer', mode: 'top' }), !editable)}
-      {item('上移', () => send({ type: 'layer', mode: 'up' }), !editable)}
-      {item('下移', () => send({ type: 'layer', mode: 'down' }), !editable)}
-      {item('置底', () => send({ type: 'layer', mode: 'bottom' }), !editable)}
+      {item('置顶', () => send({ type: 'layer', mode: 'top' }), !editable, false, 3)}
+      {item('上移', () => send({ type: 'layer', mode: 'up' }), !editable, false, 4)}
+      {item('下移', () => send({ type: 'layer', mode: 'down' }), !editable, false, 5)}
+      {item('置底', () => send({ type: 'layer', mode: 'bottom' }), !editable, false, 6)}
       {sep()}
-      {item('组合', () => run('group'), !editable || selCount < 2)}
-      {item('取消组合', () => run('ungroup'), !editable)}
-      {item(menu.anyLocked ? '解锁' : '锁定', () => run('toggleLock'), !editable)}
+      {item('组合', () => run('group'), !editable || selCount < 2, false, 7)}
+      {item('取消组合', () => run('ungroup'), !editable, false, 8)}
+      {item(menu.anyLocked ? '解锁' : '锁定', () => run('toggleLock'), !editable, false, 9)}
       {sep()}
       <div
         ref={alignRef}
@@ -1671,6 +1695,7 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
         </div>
         {sub === 'align' && subStyle && (
           <div
+            ref={subRef}
             style={{
               position: 'fixed',
               left: subStyle.left,
@@ -1685,7 +1710,7 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
             }}
             onMouseLeave={() => { setSub(null); setSubStyle(null) }}
           >
-            {ALIGNS.map(([mode, label]) => (
+            {ALIGNS.map(([mode, label], si) => (
               <div
                 key={mode}
                 onClick={() => {
@@ -1694,12 +1719,16 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
                   setSub(null)
                   setSubStyle(null)
                 }}
+                onMouseEnter={() => setHoverIdx(100 + si)}
                 style={{
                   padding: '7px 12px',
                   fontSize: 13,
                   color: '#1f2937',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
+                  background: hoverIdx === 100 + si ? 'rgba(196,30,36,.10)' : 'transparent',
+                  borderLeft: hoverIdx === 100 + si ? '3px solid #C41E24' : '3px solid transparent',
+                  boxSizing: 'border-box',
                 }}
               >
                 {label}
