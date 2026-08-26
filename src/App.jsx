@@ -940,10 +940,22 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
       </Field>
       <Field label="透明度">
-        <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-          <button onClick={() => { const v = Math.max(0, (parseFloat(selected.opacity || '') || 1) - 0.1); send({ type: 'setStyles', styles: { opacity: String(v) } }) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▼</button>
-          <span style={{ flex: 1, textAlign: 'center', fontSize: 14, fontWeight: 600, color: '#374151', minWidth: 40 }}>{selected.opacity || '1'}</span>
-          <button onClick={() => { const v = Math.min(1, (parseFloat(selected.opacity || '') || 1) + 0.1); send({ type: 'setStyles', styles: { opacity: String(v) } }) }} style={{ ...btn('#374151'), padding: '4px 8px', fontSize: 12, lineHeight: '14px' }}>▲</button>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <StepperInput
+            value={selected.opacity || '1'}
+            onChange={(v) => {
+              const num = parseFloat(v)
+              if (!isNaN(num)) {
+                let val = Math.max(0, Math.min(1, num))
+                send({ type: 'setStyles', styles: { opacity: String(val) } })
+              }
+            }}
+            step={0.1}
+            min={0}
+            max={1}
+            width={100}
+            placeholder="0~1"
+          />
           <span style={{ fontSize: 11, color: '#9ca3af' }}>0~1</span>
         </div>
       </Field>
@@ -961,7 +973,14 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         <input type="color" style={{ ...inp, padding: 2, height: 30 }} value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
       </Field>
       <Field label="圆角">
-        <input type="number" min="0" step="1" style={inp} value={borderRadius} onChange={(e) => { const v = e.target.value; setBorderRadius(v); apply({ borderRadius: v }) }} onBlur={apply} onKeyDown={enterApply} placeholder="如 12" />
+        <StepperInput
+          value={borderRadius}
+          onChange={(v) => { setBorderRadius(v); apply({ borderRadius: v }) }}
+          step={1}
+          min={0}
+          width={90}
+          placeholder="如 12"
+        />
       </Field>
       <Field label="阴影">
         <select style={inp} value={boxShadow} onChange={(e) => { const v = e.target.value; setBoxShadow(v); apply({ boxShadow: v }) }}>
@@ -976,7 +995,14 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         </select>
       </Field>
       <Field label="字号">
-        <input style={inp} value={size} onChange={(e) => setSize(e.target.value)} onBlur={apply} onKeyDown={enterApply} placeholder="如 16 或 1.2em" />
+        <StepperInput
+          value={size}
+          onChange={(v) => setSize(v)}
+          step={1}
+          min={0}
+          width={90}
+          placeholder="如 16"
+        />
       </Field>
       <Field label="字重">
         <select style={inp} value={weight} onChange={(e) => { const v = e.target.value; setWeight(v); apply({ weight: v }) }}>
@@ -1056,6 +1082,104 @@ function Row({ k, v }) {
     <div style={{ display: 'flex', gap: 8 }}>
       <span style={{ color: '#9ca3af', minWidth: 52 }}>{k}</span>
       <span style={{ wordBreak: 'break-all' }}>{v}</span>
+    </div>
+  )
+}
+
+function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeholder, disabled, style }) {
+  const num = parseFloat(value)
+  const isValid = !isNaN(num) && String(value).trim() !== ''
+
+  function adjust(delta) {
+    if (disabled) return
+    const current = isValid ? num : 0
+    let next = +(current + delta).toFixed(2)
+    if (min !== undefined && next < min) next = min
+    if (max !== undefined && next > max) next = max
+    onChange(String(next))
+  }
+
+  function handleChange(e) { onChange(e.target.value) }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      const n = parseFloat(value)
+      if (!isNaN(n)) {
+        let v = n
+        if (min !== undefined && v < min) v = min
+        if (max !== undefined && v > max) v = max
+        onChange(String(v))
+      }
+    }
+    if (e.key === 'ArrowUp') { e.preventDefault(); adjust(step) }
+    if (e.key === 'ArrowDown') { e.preventDefault(); adjust(-step) }
+  }
+
+  return (
+    <div style={{
+      display: 'flex',
+      alignItems: 'stretch',
+      border: '1px solid #d1d5db',
+      borderRadius: 4,
+      overflow: 'hidden',
+      width,
+      opacity: disabled ? 0.5 : 1,
+      ...style,
+    }}>
+      <input
+        type="text"
+        value={value}
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        disabled={disabled}
+        placeholder={placeholder}
+        style={{
+          border: 'none',
+          outline: 'none',
+          padding: '4px 4px 4px 8px',
+          fontSize: 13,
+          flex: 1,
+          color: '#374151',
+          background: 'transparent',
+          textAlign: 'left',
+        }}
+      />
+      <div style={{ display: 'flex', flexDirection: 'column', borderLeft: '1px solid #d1d5db', flexShrink: 0 }}>
+        <button
+          onClick={() => adjust(step)}
+          disabled={disabled}
+          style={{
+            border: 'none',
+            background: '#f3f4f6',
+            padding: '2px 5px',
+            fontSize: 8,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            lineHeight: 1,
+            color: '#6b7280',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >▲</button>
+        <button
+          onClick={() => adjust(-step)}
+          disabled={disabled}
+          style={{
+            border: 'none',
+            background: '#f3f4f6',
+            padding: '2px 5px',
+            fontSize: 8,
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            lineHeight: 1,
+            color: '#6b7280',
+            borderTop: '1px solid #d1d5db',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >▼</button>
+      </div>
     </div>
   )
 }
@@ -1398,19 +1522,34 @@ function AnimPanel({ selected, send, inline }) {
         </select>
 
         <span style={{ color: '#9ca3af' }}>时长</span>
-        <button onClick={function() { nudge('duration', -0.5) }} style={timelineBtn('#4b5563')}>▼</button>
-        <span style={{ color: '#fff', minWidth: 26, textAlign: 'center' }}>{duration || '0'}</span>
-        <button onClick={function() { nudge('duration', 0.5) }} style={timelineBtn('#4b5563')}>▲</button>
+        <StepperInput
+          value={duration || '0'}
+          onChange={(v) => nudge('duration', parseFloat(v) - (parseFloat(duration) || 0))}
+          step={0.5}
+          min={0}
+          width={80}
+          style={{ borderColor: '#4b5563' }}
+        />
 
         <span style={{ color: '#9ca3af' }}>延迟</span>
-        <button onClick={function() { nudge('delay', -0.5) }} style={timelineBtn('#4b5563')}>▼</button>
-        <span style={{ color: '#fff', minWidth: 26, textAlign: 'center' }}>{delay || '0'}</span>
-        <button onClick={function() { nudge('delay', 0.5) }} style={timelineBtn('#4b5563')}>▲</button>
+        <StepperInput
+          value={delay || '0'}
+          onChange={(v) => nudge('delay', parseFloat(v) - (parseFloat(delay) || 0))}
+          step={0.5}
+          min={0}
+          width={80}
+          style={{ borderColor: '#4b5563' }}
+        />
 
         <span style={{ color: '#9ca3af' }}>恢复</span>
-        <button onClick={function() { nudge('return', -0.5) }} style={timelineBtn('#4b5563')}>▼</button>
-        <span style={{ color: '#fff', minWidth: 26, textAlign: 'center' }}>{returnSec || '0'}</span>
-        <button onClick={function() { nudge('return', 0.5) }} style={timelineBtn('#4b5563')}>▲</button>
+        <StepperInput
+          value={returnSec || '0'}
+          onChange={(v) => nudge('return', parseFloat(v) - (parseFloat(returnSec) || 0))}
+          step={0.5}
+          min={0}
+          width={80}
+          style={{ borderColor: '#4b5563' }}
+        />
 
         <button onClick={clearAnim} style={timelineBtn('#7f1d1d')}>清除</button>
       </div>
