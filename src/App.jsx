@@ -296,9 +296,11 @@ export default function App() {
       } else if (m.type === 'selection') {
         setSelCount(m.count)
         setSelected(m.primary)
+        setSelectedSubIdx(-1)
       } else if (m.type === 'deselected') {
         setSelCount(0)
         setSelected(null)
+        setSelectedSubIdx(-1)
       } else if (m.type === 'changed') {
         scheduleSave()
       } else if (m.type === 'serialize') {
@@ -1246,6 +1248,7 @@ function LayersPanel({ layers, current, total, send, selectedSubIdx, onSelectSub
           const isOver = overIdx === i && dragIdx !== i
           const isSubtitle = layer.role === 'subtitle'
           const isSubSelected = isSubtitle && selectedSubIdx === layer.subIdx
+          const isGlobal = layer.global
 
           return (
             <div key={i}>
@@ -1300,6 +1303,7 @@ function LayersPanel({ layers, current, total, send, selectedSubIdx, onSelectSub
                   {layer.text || '<' + layer.tag + '>'}
                 </span>
                 {isSubtitle && <span style={{ fontSize: 10, color: '#16a34a', background: '#dcfce7', padding: '0 4px', borderRadius: 3, flexShrink: 0 }}>字幕</span>}
+                {isGlobal && <span style={{ fontSize: 10, color: '#7c3aed', background: '#ede9fe', padding: '0 4px', borderRadius: 3, flexShrink: 0 }}>全局</span>}
                 <span
                   onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerLock', index: i }) }}
                   style={{ fontSize: 11, cursor: 'pointer', color: layer.locked ? '#ef4444' : '#d1d5db', opacity: layer.locked ? 1 : 0.4 }}

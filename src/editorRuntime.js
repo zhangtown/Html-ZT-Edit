@@ -53,11 +53,18 @@
   }
 
   // ---- 当前页图层列表（按 z-index 降序，顶层在前）----
+  function getGlobalElements() {
+    return Array.prototype.slice.call(document.querySelectorAll('[data-zt-global]'))
+  }
+
   function getLayerElements() {
     var slide = slides[current]
     if (!slide) return []
     var all = Array.prototype.slice.call(slide.querySelectorAll('*'))
-    return all.filter(isEditable)
+    var inSlide = all.filter(isEditable)
+    // 追加全局元素（fixed 定位，不受 slide 切换影响）
+    var globals = getGlobalElements()
+    return inSlide.concat(globals)
   }
 
   function sortByZIndex(els) {
@@ -85,6 +92,7 @@
         name: el.getAttribute('data-zt-name') || '',
         role: el.getAttribute('data-zt-role') || '',
         subIdx: el.getAttribute('data-zt-role') === 'subtitle' ? subEls.indexOf(el) : -1,
+        global: el.getAttribute('data-zt-global') !== null,
         opacity: cs.opacity,
         width: parseFloat(cs.width) || 0,
         height: parseFloat(cs.height) || 0,
@@ -779,6 +787,8 @@
     var forbid = ['HTML', 'BODY', 'HEAD', 'SCRIPT', 'STYLE', 'LINK', 'META', 'TITLE', 'BR', 'HR']
     if (forbid.indexOf(t.tagName) >= 0) return false
     if (t.classList && t.classList.contains('slide')) return false
+    // 全局元素（data-zt-global）不需要 .slide 容器
+    if (t.getAttribute && t.getAttribute('data-zt-global') !== null) return true
     return !!t.closest('.slide')
   }
 
