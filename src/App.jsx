@@ -758,22 +758,7 @@ export default function App() {
           </div>
 
           <div style={{ padding: 14, overflow: 'auto', flex: 1 }}>
-            {!selected && (
-              <p style={{ color: '#9ca3af', fontSize: 13, lineHeight: 1.7 }}>
-                在画布中点击任意元素（图片 / 卡片 / 文字 / 字幕等）即可选中并拖动。
-                <br />
-                <br />
-                按住 <b>Ctrl</b> 点击可多选，选中后整体拖动或用「对齐」页排版。
-                <br />
-                <br />
-                <b>双击</b>文字元素可直接修改文字内容。
-                <br />
-                <br />
-                所有改动会自动存为本地草稿，刷新不丢失。
-              </p>
-            )}
-
-            {selected && tab === 'prop' && (
+            {tab === 'prop' && (
               <PropPanel selected={selected} send={send} selCount={selCount} aspectLock={aspectLock} setAspectLock={setAspectLock} />
             )}
 
@@ -860,6 +845,12 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
 
   // 选中变化时，用计算样式回填（让用户看到当前值）
   useEffect(() => {
+    if (!selected) {
+      setWidth(''); setHeight(''); setColor(''); setBg(''); setFont(''); setSize(''); setWeight('')
+      setText(''); setBorderWidth('0'); setBorderStyle('solid'); setBorderColor('#000000')
+      setBorderRadius(''); setBoxShadow('none')
+      return
+    }
     setWidth(stripPx(selected.width))
     setHeight(stripPx(selected.height))
     setColor(toHex(selected.color))
@@ -916,12 +907,19 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
     }
   }
 
+  const noSel = !selected
+
   return (
     <div style={{ fontSize: 13 }}>
-      <p style={{ color: '#C41E24', fontWeight: 600, margin: '0 0 10px' }}>
-        已选中 {selCount} 个元素
-      </p>
+      {noSel ? (
+        <p style={{ color: '#9ca3af', fontSize: 13, margin: '0 0 10px' }}>请先选中一个元素</p>
+      ) : (
+        <p style={{ color: '#C41E24', fontWeight: 600, margin: '0 0 10px' }}>
+          已选中 {selCount} 个元素
+        </p>
+      )}
 
+      <div style={{ opacity: noSel ? 0.5 : 1, pointerEvents: noSel ? 'none' : 'auto' }}>
       {/* 宽高一行 */}
       <div style={{ display: 'flex', gap: 8 }}>
         <Field label="宽度" grow>
@@ -938,18 +936,16 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         锁定纵横比
       </label>
 
-      {/* 三个颜色选框同一行 */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <Field label="文字颜色" grow>
-          <input type="color" style={{ ...inp, padding: 2 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
-        </Field>
-        <Field label="背景颜色" grow>
-          <input type="color" style={{ ...inp, padding: 2 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
-        </Field>
-        <Field label="边框颜色" grow>
-          <input type="color" style={{ ...inp, padding: 2 }} value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
-        </Field>
-      </div>
+      {/* 三个颜色选框，各占一行 */}
+      <Field label="文字颜色">
+        <input type="color" style={{ ...inp, padding: 2 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
+      </Field>
+      <Field label="背景颜色">
+        <input type="color" style={{ ...inp, padding: 2 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
+      </Field>
+      <Field label="边框颜色">
+        <input type="color" style={{ ...inp, padding: 2 }} value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
+      </Field>
 
       {/* 边框宽度/样式一行 */}
       <div style={{ display: 'flex', gap: 8 }}>
@@ -1023,7 +1019,7 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         }}
       />
 
-        {selected.tag === 'IMG' && (
+        {selected && selected.tag === 'IMG' && (
           <div style={{ marginTop: 10 }}>
             <input
               ref={replaceInputRef}
@@ -1060,6 +1056,7 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         <br />
         复制 Ctrl+C / 粘贴 Ctrl+V（可跨页）。
       </p>
+      </div>
     </div>
   )
 }
@@ -1145,18 +1142,16 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
           textAlign: 'left',
         }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 4px', flexShrink: 0, justifyContent: 'center' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: 26, alignSelf: 'stretch' }}>
         <button
           onClick={() => adjust(step)}
           disabled={disabled}
           style={{
             border: 'none',
             background: '#e8f5e9',
-            width: 26,
-            height: 12,
-            borderRadius: '10px 10px 0 0',
+            flex: 1,
             cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: 700,
             lineHeight: 1,
             color: '#2e7d32',
@@ -1170,12 +1165,11 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
           disabled={disabled}
           style={{
             border: 'none',
+            borderTop: '1px solid #e5e7eb',
             background: '#fce8e6',
-            width: 26,
-            height: 12,
-            borderRadius: '0 0 10px 10px',
+            flex: 1,
             cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 13,
+            fontSize: 14,
             fontWeight: 700,
             lineHeight: 1,
             color: '#c62828',
