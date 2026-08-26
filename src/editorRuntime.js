@@ -53,16 +53,25 @@
   }
 
   // ---- 当前页图层列表（按 z-index 降序，顶层在前）----
-  function getLayers() {
+  function getLayerElements() {
     var slide = slides[current]
     if (!slide) return []
-    var children = Array.prototype.slice.call(slide.children).filter(isEditable)
-    children.sort(function (a, b) {
+    var all = Array.prototype.slice.call(slide.querySelectorAll('*'))
+    return all.filter(isEditable)
+  }
+
+  function sortByZIndex(els) {
+    return els.slice().sort(function (a, b) {
       var za = parseInt(getComputedStyle(a).zIndex, 10) || 0
       var zb = parseInt(getComputedStyle(b).zIndex, 10) || 0
-      return zb - za || children.indexOf(b) - children.indexOf(a)
+      return zb - za || els.indexOf(b) - els.indexOf(a)
     })
-    return children.map(function (el, i) {
+  }
+
+  function getLayers() {
+    var children = getLayerElements()
+    var sorted = sortByZIndex(children)
+    return sorted.map(function (el, i) {
       var cs = getComputedStyle(el)
       return {
         index: i,
@@ -81,15 +90,9 @@
   }
 
   function getElByLayerIndex(idx) {
-    var slide = slides[current]
-    if (!slide) return null
-    var children = Array.prototype.slice.call(slide.children).filter(isEditable)
-    children.sort(function (a, b) {
-      var za = parseInt(getComputedStyle(a).zIndex, 10) || 0
-      var zb = parseInt(getComputedStyle(b).zIndex, 10) || 0
-      return zb - za || children.indexOf(b) - children.indexOf(a)
-    })
-    return children[idx] || null
+    var children = getLayerElements()
+    var sorted = sortByZIndex(children)
+    return sorted[idx] || null
   }
 
   function reorderLayers(fromIdx, toIdx) {
@@ -98,11 +101,62 @@
     var el = getElByLayerIndex(fromIdx)
     var targetEl = getElByLayerIndex(toIdx)
     if (!el || !targetEl) return
-    if (fromIdx < toIdx) {
+    // 收集所有元素，按新顺序排列
+    var children = getLayerElements()
+    var sorted = sortByZIndex(children)
+    // 从 sorted 中移除 el，再插入到目标位置
+    var before = sorted.map(function(e){return snapStyle(e)})
+    var idx = sorted.indexOf(el)
+    if (idx >= 0) sorted.splice(idx, 1)
+    var targetPos = sorted.indexOf(targetEl)
+    var insert = (fromIdx < targetPos) ? targetPos + 1 : targetPos
+    sorted.splice(insert, 0, el)
+    // 根据新顺序重新设置 z-index（顶层 z-index 最大）
+    // 只对当前页可见元素设置，避免影响其他页面
+    for (var i = 0; i < sorted.length; i++) {
+      if (sorted[i] !== el) {
+        sorted[i].style.zIndex = (sorted.length - i) * 10
+      }
+    }
+    el.style.zIndex = (sorted.length - sorted.indexOf(el)) * 10
+    // 在 DOM 中移动 el 到目标位置（保持视觉顺序与 z-index 一致）
+    if (fromIdx < targetPos) {
       slide.insertBefore(el, targetEl.nextSibling)
     } else {
       slide.insertBefore(el, targetEl)
     }
+    var after = sorted.map(function(e){return snapStyle(e)})
+    pushHistory(before, after, [el])
+  }
+
+  function toggleLayerVisibility(idx) {
+    var el = getElByLayerIndex(idx)
+    if (!el) return
+    var before = snapStyle(el)
+    if (el.style.display === 'none') {
+      el.style.display = ''
+    } else {
+      el.style.display = 'none'
+    }
+    var after = snapStyle(el)
+    pushHistory([before], [after], [el])
+    postSelection()
+    post({ type: 'changed' })
+  }
+
+  function toggleLayerLock(idx) {
+    var el = getElByLayerIndex(idx)
+    if (!el) return
+    var before = snapStyle(el)
+    if (el.getAttribute('data-zt-lock')) {
+      el.removeAttribute('data-zt-lock')
+    } else {
+      el.setAttribute('data-zt-lock', '1')
+    }
+    var after = snapStyle(el)
+    pushHistory([before], [after], [el])
+    postSelection()
+    post({ type: 'changed' })
   }
 
   // ---- 元素信息（含计算样式，供属性面板回显）----
@@ -1763,6 +1817,8 @@
       else if (m.type === 'startBinding') startBinding(m.subtitleIndex)
       else if (m.type === 'cancelBinding') cancelBinding()
       else if (m.type === 'confirmBinding') confirmBinding()
+      else if (m.type === 'toggleLayerVisibility') { toggleLayerVisibility(m.index) }
+      else if (m.type === 'toggleLayerLock') { toggleLayerLock(m.index) }
       else if (m.type === 'delete') deleteSelected()
       else if (m.type === 'copy') copySelection()
       else if (m.type === 'cut') cutSelection()

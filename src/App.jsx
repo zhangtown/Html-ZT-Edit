@@ -1267,10 +1267,18 @@ function LayersPanel({ layers, current, total, send }) {
               <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#374151' }}>
                 {layer.text || '<' + layer.tag + '>'}
               </span>
-              {/* 锁定标记 */}
-              {layer.locked && <span style={{ fontSize: 11, color: '#ef4444' }}>🔒</span>}
-              {/* 隐藏标记 */}
-              {layer.hidden && <span style={{ fontSize: 11, color: '#9ca3af' }}>👁️‍🗨️</span>}
+              {/* 锁定按钮（可点击切换） */}
+              <span
+                onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerLock', index: i }) }}
+                style={{ fontSize: 11, cursor: 'pointer', color: layer.locked ? '#ef4444' : '#d1d5db', opacity: layer.locked ? 1 : 0.4 }}
+                title={layer.locked ? '点击解锁' : '点击锁定'}
+              >🔒</span>
+              {/* 隐藏/显示按钮（可点击切换） */}
+              <span
+                onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerVisibility', index: i }) }}
+                style={{ fontSize: 11, cursor: 'pointer', color: layer.hidden ? '#9ca3af' : '#d1d5db', opacity: layer.hidden ? 1 : 0.4 }}
+                title={layer.hidden ? '点击显示' : '点击隐藏'}
+              >{layer.hidden ? '👁️‍🗨️' : '👁️'}</span>
               {/* 拖拽手柄 */}
               <span style={{ fontSize: 11, color: '#d1d5db', cursor: 'grab' }}>⠿</span>
             </div>
