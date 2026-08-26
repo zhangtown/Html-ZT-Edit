@@ -65,6 +65,7 @@ const WEIGHTS = [
 ]
 
 const BORDER_WIDTHS = ['0', '1', '2', '3', '4', '5', '6']
+const RADIUS_VALUES = Array.from({ length: 21 }, (_, i) => String(i))
 const FONT_SIZES = ['', '12', '14', '16', '18', '20', '24', '28', '32', '36', '40', '48', '56', '64', '72']
 const BORDER_STYLES = [
   ['solid', '实线'],
@@ -863,7 +864,7 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
     setBorderWidth(bm ? bm[1] : '0')
     setBorderStyle(bm ? bm[2] : 'solid')
     setBorderColor(bm ? toHex(bm[3]) || '#000000' : '#000000')
-    setBorderRadius(stripPx(selected.borderRadius))
+    setBorderRadius(stripPx(selected.borderRadius) || '0')
     setBoxShadow(selected.boxShadow && selected.boxShadow !== 'none' ? '0 4px 20px rgba(0,0,0,.15)' : 'none')
   }, [selected])
 
@@ -964,14 +965,9 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
       {/* 圆角/阴影一行 */}
       <div style={{ display: 'flex', gap: 8 }}>
         <Field label="圆角" grow>
-          <StepperInput
-            value={borderRadius}
-            onChange={(v) => { setBorderRadius(v); apply({ borderRadius: v }) }}
-            step={1}
-            min={0}
-            width={'100%'}
-            placeholder="如 12"
-          />
+          <select style={inp} value={borderRadius} onChange={(e) => { const v = e.target.value; setBorderRadius(v); apply({ borderRadius: v }) }}>
+            {RADIUS_VALUES.map((v) => <option key={v} value={v}>{v}px</option>)}
+          </select>
         </Field>
         <Field label="阴影" grow>
           <select style={inp} value={boxShadow} onChange={(e) => { const v = e.target.value; setBoxShadow(v); apply({ boxShadow: v }) }}>
@@ -1132,8 +1128,8 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
         style={{
           border: 'none',
           outline: 'none',
-          padding: '5px 4px 5px 10px',
-          fontSize: 14,
+          padding: '1px 4px 1px 9px',
+          fontSize: 12,
           fontWeight: 600,
           flex: 1,
           minWidth: 0,
@@ -1142,19 +1138,19 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
           textAlign: 'left',
         }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: 26, alignSelf: 'stretch' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: 24, alignSelf: 'stretch' }}>
         <button
           onClick={() => adjust(step)}
           disabled={disabled}
           style={{
             border: 'none',
-            background: '#e8f5e9',
+            background: '#C41E24',
             flex: 1,
             cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: 700,
             lineHeight: 1,
-            color: '#2e7d32',
+            color: '#fff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -1165,14 +1161,14 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
           disabled={disabled}
           style={{
             border: 'none',
-            borderTop: '1px solid #e5e7eb',
-            background: '#fce8e6',
+            borderTop: '1px solid rgba(255,255,255,0.25)',
+            background: '#b01a20',
             flex: 1,
             cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: 700,
             lineHeight: 1,
-            color: '#c62828',
+            color: '#fff',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
