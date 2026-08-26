@@ -1535,8 +1535,37 @@
     if (!isLocked(t)) startDrag(selectedList.slice(), e) // 拖已选中的某个元素或其内部 → 整体一起拖
   }
 
+  function onContextMenu(e) {
+    e.preventDefault()
+    var t = e.target
+    var editable = isEditable(t) && !isLocked(t)
+    if (editable) {
+      // 已是多选/已选中的元素：保持当前选择；否则点谁选谁
+      if (!isSelected(t)) {
+        if (t.getAttribute && t.getAttribute('data-zt-group')) selectGroup(t)
+        else selectOnly(t)
+      }
+    } else {
+      // 画布空白处右键：清除选中，便于对空白执行/多选外操作
+      deselectAll()
+    }
+    var primary = selectedList.length ? selectedList[selectedList.length - 1] : null
+    post({
+      type: 'contextmenu',
+      x: e.clientX,
+      y: e.clientY,
+      editable: editable && selectedList.length > 0,
+      count: selectedList.length,
+      locked: !!primary,
+      primaryLocked: !!(primary && primary.locked),
+      primaryGroup: (primary && primary.group) || '',
+      anyLocked: selectedList.some(isLocked),
+    })
+  }
+
   function init() {
     document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('contextmenu', onContextMenu)
     document.addEventListener('dblclick', function (e) {
       var t = e.target
       if (!isEditable(t) || isLocked(t)) return

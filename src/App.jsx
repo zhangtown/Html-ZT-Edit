@@ -143,6 +143,7 @@ export default function App() {
   const [simRes, setSimRes] = useState('') // 模拟分辨率，如 '1920x1080'；''=编辑器窗口大小
   const [zoom, setZoom] = useState(1) // 画布缩放 0.5 ~ 1.5，0.1 步进
   const dragDataRef = useRef(null) // 拖拽中的素材信息
+  const [ctxMenu, setCtxMenu] = useState(null) // 右键菜单 { x, y, editable, count, locked, group, anyLocked } | null
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -312,6 +313,8 @@ export default function App() {
           const next = Math.min(1.5, Math.max(0.5, Math.round((z + step) * 10) / 10))
           return next
         })
+      } else if (m.type === 'contextmenu') {
+        setCtxMenu(m)
       }
     }
     function onKey(e) {
@@ -837,6 +840,7 @@ export default function App() {
         selected={selected}
         send={send}
       />
+      <ContextMenu menu={ctxMenu} zoom={zoom} iframeRef={iframeRef} selCount={selCount} send={send} onClose={() => setCtxMenu(null)} />
     </div>
   )
 }
@@ -1556,4 +1560,160 @@ function timelineBtn(bg) {
     fontSize: 12,
     whiteSpace: 'nowrap',
   }
+}
+
+// 画布右键上下文菜单
+function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose }) {
+  const [sub, setSub] = useState(null) // 'align' | null 二级菜单
+  const ref = useRef(null)
+  useEffect(() => {
+    if (!menu) return
+    function onDocDown(e) {
+      if (ref.current && ref.current.contains(e.target)) return
+      onClose()
+      setSub(null)
+    }
+    function onEsc(e) {
+      if (e.key === 'Escape') {
+        onClose()
+        setSub(null)
+      }
+    }
+    document.addEventListener('mousedown', onDocDown)
+    document.addEventListener('contextmenu', onDocDown)
+    document.addEventListener('keydown', onEsc)
+    return () => {
+      document.removeEventListener('mousedown', onDocDown)
+      document.removeEventListener('contextmenu', onDocDown)
+      document.removeEventListener('keydown', onEsc)
+    }
+  }, [menu, onClose])
+
+  if (!menu) return null
+
+  // 将 iframe 内的坐标换算到父页面（iframe 被 transform:scale(zoom) 缩放）
+  const r = iframeRef.current && iframeRef.current.getBoundingClientRect ? iframeRef.current.getBoundingClientRect() : null
+  const px = r ? r.left + menu.x * zoom : menu.x
+  const py = r ? r.top + menu.y * zoom : menu.y
+  const menuW = 190
+  const menuH = 320
+  const left = Math.min(px, Math.max(8, window.innerWidth - menuW - 4))
+  const top = Math.min(py, Math.max(8, window.innerHeight - menuH - 4))
+
+  const editable = !!menu.editable
+
+  const item = (label, action, disabled, danger) => (
+    <div
+      onClick={() => {
+        if (disabled) return
+        action()
+        onClose()
+        setSub(null)
+      }}
+      style={{
+        padding: '7px 12px',
+        fontSize: 13,
+        color: disabled ? '#c0c4cc' : danger ? '#C41E24' : '#1f2937',
+        cursor: disabled ? 'default' : 'pointer',
+        whiteSpace: 'nowrap',
+      }}
+      onMouseEnter={() => setSub(null)}
+    >
+      {label}
+    </div>
+  )
+
+  const sep = () => <div style={{ height: 1, background: '#e5e7eb', margin: '4px 0' }} />
+
+  const run = (action) => { send({ type: action }) }
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        position: 'fixed',
+        left,
+        top,
+        width: menuW,
+        background: '#fff',
+        border: '1px solid #d1d5db',
+        borderRadius: 8,
+        boxShadow: '0 6px 20px rgba(0,0,0,.15)',
+        zIndex: 2147483600,
+        padding: '4px 0',
+        fontFamily: 'inherit',
+      }}
+    >
+      {item('复制', () => run('copy'), !editable)}
+      {item('粘贴', () => run('paste'), false)}
+      {item('删除', () => run('delete'), !editable, true)}
+      {sep()}
+      {item('置顶', () => send({ type: 'layer', mode: 'top' }), !editable)}
+      {item('上移', () => send({ type: 'layer', mode: 'up' }), !editable)}
+      {item('下移', () => send({ type: 'layer', mode: 'down' }), !editable)}
+      {item('置底', () => send({ type: 'layer', mode: 'bottom' }), !editable)}
+      {sep()}
+      {item('组合', () => run('group'), !editable || selCount < 2)}
+      {item('取消组合', () => run('ungroup'), !editable)}
+      {item(menu.anyLocked ? '解锁' : '锁定', () => run('toggleLock'), !editable)}
+      {sep()}
+      <div
+        style={{ position: 'relative' }}
+        onMouseEnter={() => setSub(selCount >= 2 ? 'align' : null)}
+        onMouseLeave={() => setSub(null)}
+      >
+        <div
+          style={{
+            padding: '7px 12px',
+            fontSize: 13,
+            color: selCount >= 2 ? '#1f2937' : '#c0c4cc',
+            cursor: selCount >= 2 ? 'pointer' : 'default',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          对齐
+          <span style={{ color: '#9ca3af' }}>›</span>
+        </div>
+        {sub === 'align' && (
+          <div
+            style={{
+              position: 'absolute',
+              left: menuW - 4,
+              top: -6,
+              width: menuW,
+              background: '#fff',
+              border: '1px solid #d1d5db',
+              borderRadius: 8,
+              boxShadow: '0 6px 20px rgba(0,0,0,.15)',
+              zIndex: 2147483601,
+              padding: '4px 0',
+            }}
+          >
+            {ALIGNS.map(([mode, label]) => (
+              <div
+                key={mode}
+                onClick={() => {
+                  send({ type: 'align', mode })
+                  onClose()
+                  setSub(null)
+                }}
+                style={{
+                  padding: '7px 12px',
+                  fontSize: 13,
+                  color: '#1f2937',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+                onMouseEnter={() => setSub('align')}
+              >
+                {label}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
