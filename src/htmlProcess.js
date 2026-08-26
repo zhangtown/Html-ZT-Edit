@@ -126,20 +126,23 @@ ${getEffectKeyframesCode()}
 
 function playAnimation(el, effect, duration, delay, returnSec, easing) {
   if (!el) return
+  if (!effect) return
   var kf = getEffectKeyframes(effect || 'zoom-in')
   var dur = parseFloat(duration) || 1
   var dly = parseFloat(delay) || 0
   var ret = parseFloat(returnSec) || 0
   var ease = easing || 'ease'
   var totalDur = dur + ret
+  var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
+  if (baseTransform) baseTransform += ' '
   var keyframes = []
-  if (dly > 0) keyframes.push({ offset: 0, transform: 'scale(1)', opacity: 1 })
+  if (dly > 0) keyframes.push({ offset: 0, transform: baseTransform + 'scale(1)', opacity: 1 })
   var startOff = dly > 0 ? dly / totalDur : 0
   var endOff = (dly + dur) / totalDur
-  keyframes.push({ offset: startOff, transform: kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
-  keyframes.push({ offset: endOff, transform: kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
-  if (ret > 0) keyframes.push({ offset: 1, transform: 'scale(1)', opacity: 1 })
-  el.animate(keyframes, { duration: totalDur * 1000, easing: ease, fill: 'forwards' })
+  keyframes.push({ offset: startOff, transform: baseTransform + kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
+  keyframes.push({ offset: endOff, transform: baseTransform + kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
+  if (ret > 0) keyframes.push({ offset: 1, transform: baseTransform + 'scale(1)', opacity: 1 })
+  el.animate(keyframes, { duration: totalDur * 1000, easing: ease, fill: 'none' })
 }
 
 ${slideTimingsStr}

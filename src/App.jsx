@@ -426,6 +426,14 @@ export default function App() {
       send({ type: 'clearBoundHighlight' })
     }
   }
+  function handleUnbindSub() {
+    if (selectedSubIdx >= 0) {
+      send({ type: 'unbindSubtitle', subtitleIndex: selectedSubIdx })
+      return
+    }
+    // 如果当前选中的是画面元素，直接解除它身上的绑定
+    if (selected) send({ type: 'unbindSelectedElement' })
+  }
   function handleMoveSubtitle(dir) {
     if (selectedSubIdx < 0) return
     send({ type: 'moveSubtitle', direction: dir, subtitleIndex: selectedSubIdx })
@@ -813,6 +821,7 @@ export default function App() {
         onPrevPage={handleMoveSubtitle}
         onNextPage={handleMoveSubtitle}
         onBind={handleStartBinding}
+          onUnbind={handleUnbindSub}
         onConfirm={handleConfirmBinding}
         onCancelBind={handleCancelBinding}
         current={current}
@@ -1682,11 +1691,13 @@ function buildSubtitleDataScript(scripts) {
 }
 
 // 底部时间轴面板
-function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode, bindingTarget, onPrevPage, onNextPage, onBind, onConfirm, onCancelBind, current, total, onGoPrev, onGoNext, selected, send }) {
+function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode, bindingTarget, onPrevPage, onNextPage, onBind, onUnbind, onConfirm, onCancelBind, current, total, onGoPrev, onGoNext, selected, send }) {
   const maxTime = subtitles.length > 0
     ? Math.max.apply(null, subtitles.map(function (s) { return s.end || 5 }))
     : 10
   const isGlobal = subtitles.length > 0 && subtitles[0].source === 'global'
+  const selectedSub = selectedSubIdx >= 0 ? subtitles[selectedSubIdx] : null
+  const canUnbind = (selectedSub && selectedSub.boundTo && selectedSub.source === 'dom') || !!selected
 
   return (
     <div
@@ -1740,6 +1751,14 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
             >
               🔗 绑定
             </button>
+              <button
+                onClick={onUnbind}
+                disabled={!canUnbind}
+                style={timelineBtn(canUnbind ? '#7f1d1d' : '#374151')}
+                title="解除当前字幕与元素的绑定关系"
+              >
+                ⛓ 解除绑定
+              </button>
           </>
         ) : (
           <>

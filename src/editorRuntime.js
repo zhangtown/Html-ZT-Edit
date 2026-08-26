@@ -1019,6 +1019,10 @@
       if (!dragging) {
         if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return
         dragging = true
+          // 拖动前取消预览动画，避免动画 transform 覆盖元素原本位置
+          els.forEach(function (el) {
+            if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
+          })
         before = els.map(snapStyle)
         bases = els.map(function (el) {
           return safeMatrix(getComputedStyle(el).transform)
@@ -1262,6 +1266,7 @@
   function previewAnim() {
     if (!selectedList.length) return
     selectedList.forEach(function (el) {
+        if (!el.getAttribute('data-zt-anim-effect')) return // 没有动画效果：不预览
       var effect = el.getAttribute('data-zt-anim-effect') || 'zoom-in'
       // 聚焦强调类效果：通过 CSS 类切换实现（放大高亮 + 同组变暗），不用关键帧动画
       if (effect.indexOf('focus-') === 0) {
@@ -1280,14 +1285,17 @@
       var easing = el.getAttribute('data-zt-anim-easing') || 'ease'
       var kf = getEffectKeyframes(effect)
       var totalDur = duration + returnSec
+        var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
+        if (baseTransform) baseTransform += ' '
       var keyframes = []
-      if (delay > 0) keyframes.push({ offset: 0, transform: 'scale(1)', opacity: 1 })
+      if (delay > 0) keyframes.push({ offset: 0, transform: baseTransform + 'scale(1)', opacity: 1 })
       var startOff = delay > 0 ? delay / totalDur : 0
       var endOff = (delay + duration) / totalDur
-      keyframes.push({ offset: startOff, transform: kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
-      keyframes.push({ offset: endOff, transform: kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
-      if (returnSec > 0) keyframes.push({ offset: 1, transform: 'scale(1)', opacity: 1 })
-      el.animate(keyframes, { duration: totalDur * 1000, easing: easing, fill: 'forwards' })
+      keyframes.push({ offset: startOff, transform: baseTransform + kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
+      keyframes.push({ offset: endOff, transform: baseTransform + kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
+      if (returnSec > 0) keyframes.push({ offset: 1, transform: baseTransform + 'scale(1)', opacity: 1 })
+        if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
+      el.animate(keyframes, { duration: totalDur * 1000, easing: easing, fill: 'none' })
     })
   }
 
@@ -1464,7 +1472,49 @@
     post({ type: 'bindingConfirmed', subtitleIndex: idx, targetSelector: '[data-zt-id="' + targetId + '"]' })
   }
 
+  // 解除绑定：移除选中字幕的 data-zt-bound-to
+  function unbindSubtitle(subtitleIndex) {
+    var els = getSubtitleElements()
+    var subtitleEl = els[subtitleIndex]
+    if (!subtitleEl) return
+    var before = snapStyle(subtitleEl)
+    subtitleEl.removeAttribute('data-zt-bound-to')
+    var after = snapStyle(subtitleEl)
+    pushHistory([before], [after], [subtitleEl])
+    post({ type: 'changed' })
+    post({ type: 'subtitles', subtitles: getSubtitlesData() })
+    post({ type: 'bindingUnbound', subtitleIndex: subtitleIndex })
+  }
+
   // ---- 绑定关系呈现与联动 ----
+
+  // 解除当前选中元素上的所有绑定
+  function unbindSelectedElement() {
+    var slide = slides[current]
+    if (!slide || !selectedList.length) return
+    var before = []
+    var after = []
+    var changed = false
+    selectedList.forEach(function (el) {
+      var id = el.getAttribute('data-zt-id')
+      if (!id) return
+      var selSubs = Array.prototype.slice.call(slide.querySelectorAll('[data-zt-role="subtitle"]'))
+      selSubs.forEach(function (sub) {
+        var bound = sub.getAttribute('data-zt-bound-to')
+        if (bound && bound.indexOf('data-zt-id="' + id + '"') >= 0) {
+          before.push(snapStyle(sub))
+          sub.removeAttribute('data-zt-bound-to')
+          after.push(snapStyle(sub))
+          changed = true
+        }
+      })
+    })
+    if (!changed) return
+    pushHistory(before, after, selectedList.slice())
+    post({ type: 'changed' })
+    post({ type: 'subtitles', subtitles: getSubtitlesData() })
+    post({ type: 'bindingUnbound', subtitleIndex: -1 })
+  }
   function clearBoundHighlight() {
     document.querySelectorAll('.zt-bound-highlight').forEach(function (el) { el.classList.remove('zt-bound-highlight') })
   }
@@ -1698,6 +1748,8 @@
     // 绑定模式：点击元素即选中目标，高亮显示，等待父窗口确认
     if (bindingMode) {
       var t = e.target
+        var bindTargetEl = t && t.closest ? (t.closest('[data-zt-id]') || t.closest('.focus-item') || t) : t
+        if (bindTargetEl) t = bindTargetEl
       if (isEditable(t) && !isLocked(t)) {
         // 清除之前的高亮
         document.querySelectorAll('.zt-binding-target').forEach(function(el) { el.classList.remove('zt-binding-target') })
@@ -1891,6 +1943,8 @@
       else if (m.type === 'startBinding') startBinding(m.subtitleIndex)
       else if (m.type === 'cancelBinding') cancelBinding()
       else if (m.type === 'confirmBinding') confirmBinding()
+        else if (m.type === 'unbindSubtitle') unbindSubtitle(m.subtitleIndex)
+        else if (m.type === 'unbindSelectedElement') unbindSelectedElement()
       else if (m.type === 'toggleLayerVisibility') { toggleLayerVisibility(m.index) }
       else if (m.type === 'toggleLayerLock') { toggleLayerLock(m.index) }
       else if (m.type === 'delete') deleteSelected()
