@@ -124,6 +124,8 @@ export default function App() {
 
   const [htmlFiles, setHtmlFiles] = useState([])
   const [activeHtml, setActiveHtml] = useState('')
+  const [pickList, setPickList] = useState([]) // 待选择的 HTML 文件列表（弹窗）
+  const [pickSel, setPickSel] = useState('') // 弹窗中选中的 HTML 路径
   const [srcdoc, setSrcdoc] = useState('')
   const [ready, setReady] = useState(false)
   const [total, setTotal] = useState(0)
@@ -140,7 +142,7 @@ export default function App() {
   const [selectedSubIdx, setSelectedSubIdx] = useState(-1) // 时间轴选中字幕索引
   const [subBindingMode, setSubBindingMode] = useState(false) // 绑定模式激活
   const [bindingTarget, setBindingTarget] = useState(null) // { selector, tag, text } | null
-  const [simRes, setSimRes] = useState('current') // 模拟分辨率，如 '1920x1080'；current=自动识别当前屏幕物理分辨率
+  const [simRes, setSimRes] = useState('') // 模拟分辨率，如 '1920x1080'；''=编辑器窗口大小
   const [zoom, setZoom] = useState(1) // 画布缩放 0.5 ~ 1.5，0.1 步进
   const dragDataRef = useRef(null) // 拖拽中的素材信息
 
@@ -152,6 +154,7 @@ export default function App() {
   }
 
   // ---------- 加载 / 恢复 ----------
+  // 选择文件夹 → 提取 HTML 列表 → 弹出选择框，用户确认后加载
   async function handlePick() {
     try {
       const files = await pickFolder()
@@ -160,15 +163,28 @@ export default function App() {
       const list = listHtmlFiles(files)
       setHtmlFiles(list)
       if (list.length === 0) {
-        alert('该文件夹下没有找到 HTML 文件')
+        alert('所选文件夹下没有找到 HTML 文件')
         return
       }
-      const target = list[0]
-      setActiveHtml(target)
-      await loadHtml(target, map)
+      setPickList(list)
+      setPickSel(list[0])
     } catch (e) {
       if (e.message !== '已取消') alert('选择文件夹失败：' + e.message)
     }
+  }
+
+  function confirmPick() {
+    if (!pickSel) return
+    const target = pickSel
+    setActiveHtml(target)
+    setPickList([])
+    setPickSel('')
+    loadHtml(target, fileMapRef.current)
+  }
+
+  function cancelPick() {
+    setPickList([])
+    setPickSel('')
   }
 
   async function loadHtml(relPath, map) {
@@ -561,24 +577,8 @@ export default function App() {
       >
         <strong style={{ fontSize: 15 }}>HTML 可视化编辑器 · ZtEdit</strong>
         <button onClick={handlePick} style={btn('#C41E24')}>
-          选择文件夹
+          选择 HTML 文件
         </button>
-        {htmlFiles.length > 0 && (
-          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#d1d5db' }}>HTML: <select
-            value={activeHtml}
-            onChange={(e) => {
-              setActiveHtml(e.target.value)
-              loadHtml(e.target.value)
-            }}
-            style={{ ...btn('#374151'), minWidth: 200 }}
-          >
-            {htmlFiles.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select></label>
-        )}
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
 
@@ -606,7 +606,7 @@ export default function App() {
               setSimRes(e.target.value)
               setZoom(1)
             }}
-            style={{ ...btn('#374151'), minWidth: 150 }}
+            style={{ ...btn('#374151'), minWidth: 84 }}
             title="模拟浏览器分辨率，查看元素与屏幕的占比"
           >
             {RESOLUTIONS.map(([v, l]) => (
@@ -849,6 +849,71 @@ export default function App() {
         selected={selected}
         send={send}
       />
+
+      {/* 选择 HTML 文件弹窗 */}
+      {pickList.length > 0 && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(0,0,0,.4)',
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 10,
+              padding: 20,
+              minWidth: 520,
+              maxWidth: 640,
+              boxShadow: '0 8px 30px rgba(0,0,0,.3)',
+            }}
+          >
+            <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#1f2937' }}>选择要打开的 HTML 文件</h3>
+            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
+              共找到 <b>{pickList.length}</b> 个 HTML 文件，请选择其中一个打开：
+            </div>
+            <div
+              style={{
+                maxHeight: 300,
+                overflow: 'auto',
+                border: '1px solid #e5e7eb',
+                borderRadius: 6,
+              }}
+            >
+              {pickList.map((p) => (
+                <div
+                  key={p}
+                  onClick={() => setPickSel(p)}
+                  style={{
+                    padding: '9px 12px',
+                    cursor: 'pointer',
+                    fontSize: 13,
+                    background: pickSel === p ? '#C41E24' : '#fff',
+                    color: pickSel === p ? '#fff' : '#374151',
+                    borderBottom: '1px solid #f3f4f6',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {p}
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
+              <button onClick={cancelPick} style={{ ...btn('#6b7280'), padding: '7px 14px' }}>
+                取消
+              </button>
+              <button onClick={confirmPick} disabled={!pickSel} style={{ ...btn('#2563eb'), padding: '7px 14px' }}>
+                确认打开
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
