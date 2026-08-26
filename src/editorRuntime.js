@@ -49,6 +49,60 @@
     deselectAll()
     current = i
     post({ type: 'pages', total: slides.length, current: current })
+    post({ type: 'layers', layers: getLayers(), current: current, total: slides.length })
+  }
+
+  // ---- 当前页图层列表（按 z-index 降序，顶层在前）----
+  function getLayers() {
+    var slide = slides[current]
+    if (!slide) return []
+    var children = Array.prototype.slice.call(slide.children).filter(isEditable)
+    children.sort(function (a, b) {
+      var za = parseInt(getComputedStyle(a).zIndex, 10) || 0
+      var zb = parseInt(getComputedStyle(b).zIndex, 10) || 0
+      return zb - za || children.indexOf(b) - children.indexOf(a)
+    })
+    return children.map(function (el, i) {
+      var cs = getComputedStyle(el)
+      return {
+        index: i,
+        tag: el.tagName.toLowerCase(),
+        text: (el.textContent || '').substring(0, 30),
+        locked: !!el.getAttribute('data-zt-lock'),
+        hidden: el.style.display === 'none',
+        zIndex: parseInt(cs.zIndex, 10) || 0,
+        id: el.getAttribute('data-zt-id') || '',
+        name: el.getAttribute('data-zt-name') || '',
+        opacity: cs.opacity,
+        width: parseFloat(cs.width) || 0,
+        height: parseFloat(cs.height) || 0,
+      }
+    })
+  }
+
+  function getElByLayerIndex(idx) {
+    var slide = slides[current]
+    if (!slide) return null
+    var children = Array.prototype.slice.call(slide.children).filter(isEditable)
+    children.sort(function (a, b) {
+      var za = parseInt(getComputedStyle(a).zIndex, 10) || 0
+      var zb = parseInt(getComputedStyle(b).zIndex, 10) || 0
+      return zb - za || children.indexOf(b) - children.indexOf(a)
+    })
+    return children[idx] || null
+  }
+
+  function reorderLayers(fromIdx, toIdx) {
+    var slide = slides[current]
+    if (!slide || fromIdx === toIdx) return
+    var el = getElByLayerIndex(fromIdx)
+    var targetEl = getElByLayerIndex(toIdx)
+    if (!el || !targetEl) return
+    if (fromIdx < toIdx) {
+      slide.insertBefore(el, targetEl.nextSibling)
+    } else {
+      slide.insertBefore(el, targetEl)
+    }
   }
 
   // ---- 元素信息（含计算样式，供属性面板回显）----
@@ -89,6 +143,7 @@
   function postSelection() {
     var primary = selectedList.length ? getInfo(selectedList[selectedList.length - 1]) : null
     post({ type: 'selection', count: selectedList.length, primary: primary })
+    post({ type: 'layers', layers: getLayers(), current: current, total: slides.length })
     updateResizeHandles()
   }
 
@@ -1699,6 +1754,9 @@
       else if (m.type === 'setAnimation') setAnimation(m.props || {})
       else if (m.type === 'previewAnim') previewAnim()
       else if (m.type === 'requestSubtitles') post({ type: 'subtitles', subtitles: getSubtitlesData() })
+      else if (m.type === 'selectLayer') { var el = getElByLayerIndex(m.index); if (el) selectOnly(el) }
+      else if (m.type === 'reorderLayers') { reorderLayers(m.fromIdx, m.toIdx); post({ type: 'layers', layers: getLayers(), current: current, total: slides.length }) }
+      else if (m.type === 'requestLayers') post({ type: 'layers', layers: getLayers(), current: current, total: slides.length })
       else if (m.type === 'selectBound') selectBySelector(m.selector)
       else if (m.type === 'clearBoundHighlight') clearBoundHighlight()
       else if (m.type === 'moveSubtitle') moveSubtitleToPage(m.direction, m.subtitleIndex)

@@ -145,6 +145,7 @@ export default function App() {
   const dragDataRef = useRef(null) // 拖拽中的素材信息
   const [ctxMenu, setCtxMenu] = useState(null) // 右键菜单 { x, y, editable, count, locked, group, anyLocked } | null
   const [clipCount, setClipCount] = useState(0) // 剪贴板元素数量（>0 复制/剪切后启用粘贴）
+  const [layers, setLayers] = useState([]) // 当前页图层列表（顶层在前）
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -465,6 +466,10 @@ export default function App() {
       if (m.type === 'assetPlaced' || m.type === 'placementCancelled') {
         setPlacingAsset(null)
       }
+      // 图层面板消息
+      if (m.type === 'layers') {
+        setLayers(m.layers || [])
+      }
       // 字幕/时间轴消息
       if (m.type === 'subtitles') {
         setSubtitles(m.subtitles || [])
@@ -727,6 +732,7 @@ export default function App() {
             {[
               ['prop', '属性'],
               ['assets', '素材'],
+              ['layers', '图层'],
               ['info', '信息'],
             ].map(([k, label]) => (
               <button
@@ -794,6 +800,14 @@ export default function App() {
                 onCancel={cancelPlacement}
                 onDragStart={handleDragStart}
                 onDragEnd={handleDragEnd}
+              />
+            )}
+            {tab === 'layers' && (
+              <LayersPanel
+                layers={layers}
+                current={current}
+                total={total}
+                send={send}
               />
             )}
           </div>
@@ -1174,6 +1188,95 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
           📁 释放文件以上传
         </div>
       )}
+    </div>
+  )
+}
+
+// 图层面板（当前页元素列表，按 z-index 降序，顶层在前）
+function LayersPanel({ layers, current, total, send }) {
+  const [dragIdx, setDragIdx] = useState(null) // 拖拽中的索引
+  const [overIdx, setOverIdx] = useState(null) // 拖拽悬停索引
+
+  function handleDragStart(e, i) {
+    setDragIdx(i)
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', String(i))
+  }
+
+  function handleDragOver(e, i) {
+    e.preventDefault()
+    setOverIdx(i)
+  }
+
+  function handleDrop(e, i) {
+    e.preventDefault()
+    if (dragIdx !== null && dragIdx !== i) {
+      send({ type: 'reorderLayers', fromIdx: dragIdx, toIdx: i })
+    }
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  function handleDragEnd() {
+    setDragIdx(null)
+    setOverIdx(null)
+  }
+
+  return (
+    <div>
+      <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
+        当前页 {current + 1}/{total}  ·  {layers.length} 个元素
+      </p>
+      {layers.length === 0 && (
+        <p style={{ color: '#9ca3af', fontSize: 13 }}>当前页没有可编辑元素</p>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {layers.map(function (layer, i) {
+          const isOver = overIdx === i && dragIdx !== i
+          return (
+            <div
+              key={i}
+              draggable
+              onDragStart={(e) => handleDragStart(e, i)}
+              onDragOver={(e) => handleDragOver(e, i)}
+              onDrop={(e) => handleDrop(e, i)}
+              onDragEnd={handleDragEnd}
+              onClick={() => send({ type: 'selectLayer', index: i })}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '5px 6px',
+                borderRadius: 4,
+                cursor: 'pointer',
+                fontSize: 12,
+                background: isOver ? '#fef3c7' : '#f9fafb',
+                border: isOver ? '2px dashed #C41E24' : '1px solid #e5e7eb',
+                opacity: dragIdx === i ? 0.5 : 1,
+                transition: 'all .12s',
+              }}
+              title={layer.tag + (layer.text ? ' — ' + layer.text : '')}
+            >
+              {/* 序号 */}
+              <span style={{ color: '#9ca3af', fontSize: 11, minWidth: 20 }}>{i + 1}</span>
+              {/* 类型图标 */}
+              <span style={{ fontSize: 14, flexShrink: 0 }}>
+                {layer.tag === 'img' ? '🖼' : layer.tag === 'video' ? '🎬' : layer.tag === 'svg' ? '🔷' : '📄'}
+              </span>
+              {/* 文字（截断） */}
+              <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#374151' }}>
+                {layer.text || '<' + layer.tag + '>'}
+              </span>
+              {/* 锁定标记 */}
+              {layer.locked && <span style={{ fontSize: 11, color: '#ef4444' }}>🔒</span>}
+              {/* 隐藏标记 */}
+              {layer.hidden && <span style={{ fontSize: 11, color: '#9ca3af' }}>👁️‍🗨️</span>}
+              {/* 拖拽手柄 */}
+              <span style={{ fontSize: 11, color: '#d1d5db', cursor: 'grab' }}>⠿</span>
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
