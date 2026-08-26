@@ -20,6 +20,26 @@ export function pickFolder() {
   })
 }
 
+// 原生文件浏览框，文件类型自动筛选为 HTML
+// 选择单个 HTML 文件后直接返回该 File（含它的文件名）
+export function pickHtmlFile() {
+  return new Promise((resolve, reject) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.html,.htm,text/html'
+    input.onchange = () => {
+      const f = input.files && input.files[0]
+      if (!f) {
+        reject(new Error('未选择任何文件'))
+        return
+      }
+      resolve(f)
+    }
+    input.oncancel = () => reject(new Error('已取消'))
+    input.click()
+  })
+}
+
 // 建立 path -> File 映射，key 为 webkitRelativePath（含根目录名）
 export function buildFileMap(files) {
   const map = new Map()

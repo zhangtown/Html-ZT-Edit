@@ -1,9 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react'
 import editorRuntimeSrc from './editorRuntime.js?raw'
 import {
-  pickFolder,
+  pickHtmlFile,
   buildFileMap,
-  listHtmlFiles,
   dirOf,
   toRelativePath,
 } from './loadFolder.js'
@@ -122,10 +121,7 @@ export default function App() {
   const pendingCurrentRef = useRef(0)
   const lastSavedRef = useRef(0)
 
-  const [htmlFiles, setHtmlFiles] = useState([])
   const [activeHtml, setActiveHtml] = useState('')
-  const [pickList, setPickList] = useState([]) // 待选择的 HTML 文件列表（弹窗）
-  const [pickSel, setPickSel] = useState('') // 弹窗中选中的 HTML 路径
   const [srcdoc, setSrcdoc] = useState('')
   const [ready, setReady] = useState(false)
   const [total, setTotal] = useState(0)
@@ -154,37 +150,18 @@ export default function App() {
   }
 
   // ---------- 加载 / 恢复 ----------
-  // 选择文件夹 → 提取 HTML 列表 → 弹出选择框，用户确认后加载
+  // 点击「选择 HTML 文件」→ 原生文件框（已筛选 html / .htm）→ 选中并确认后加载
   async function handlePick() {
     try {
-      const files = await pickFolder()
-      const map = buildFileMap(files)
+      const file = await pickHtmlFile()
+      // 仅加载该 HTML 文件；资源若未随文件获取则保留原始相对引用
+      const map = buildFileMap([file]) // key = 文件名
       fileMapRef.current = map
-      const list = listHtmlFiles(files)
-      setHtmlFiles(list)
-      if (list.length === 0) {
-        alert('所选文件夹下没有找到 HTML 文件')
-        return
-      }
-      setPickList(list)
-      setPickSel(list[0])
+      setActiveHtml(file.name)
+      await loadHtml(file.name, map)
     } catch (e) {
-      if (e.message !== '已取消') alert('选择文件夹失败：' + e.message)
+      if (e.message !== '已取消') alert('打开 HTML 文件失败：' + e.message)
     }
-  }
-
-  function confirmPick() {
-    if (!pickSel) return
-    const target = pickSel
-    setActiveHtml(target)
-    setPickList([])
-    setPickSel('')
-    loadHtml(target, fileMapRef.current)
-  }
-
-  function cancelPick() {
-    setPickList([])
-    setPickSel('')
   }
 
   async function loadHtml(relPath, map) {
@@ -376,7 +353,7 @@ export default function App() {
     }
   }, [selCount, selected])
 
-  // 选择文件夹时，同步提取图片/视频素材
+  // 打开 HTML 文件时，同步提取图片/视频素材
   const assetUrlsRef = useRef([])
   useEffect(() => {
     // 清理旧 blob URL
@@ -394,7 +371,7 @@ export default function App() {
       list.push({ name: path.split('/').pop() || path, path, url, type: isVideo ? 'video' : 'image' })
     }
     setAssets(list)
-  }, [htmlFiles])
+  }, [activeHtml]) // 打开新的 HTML 文件时重扫素材
 
   // 拖拽素材到画布
   function handleDragStart(asset) {
@@ -606,7 +583,7 @@ export default function App() {
               setSimRes(e.target.value)
               setZoom(1)
             }}
-            style={{ ...btn('#374151'), minWidth: 84 }}
+            style={{ ...btn('#374151'), minWidth: 42 }}
             title="模拟浏览器分辨率，查看元素与屏幕的占比"
           >
             {RESOLUTIONS.map(([v, l]) => (
@@ -849,71 +826,6 @@ export default function App() {
         selected={selected}
         send={send}
       />
-
-      {/* 选择 HTML 文件弹窗 */}
-      {pickList.length > 0 && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            background: 'rgba(0,0,0,.4)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <div
-            style={{
-              background: '#fff',
-              borderRadius: 10,
-              padding: 20,
-              minWidth: 520,
-              maxWidth: 640,
-              boxShadow: '0 8px 30px rgba(0,0,0,.3)',
-            }}
-          >
-            <h3 style={{ margin: '0 0 12px', fontSize: 16, color: '#1f2937' }}>选择要打开的 HTML 文件</h3>
-            <div style={{ fontSize: 12, color: '#6b7280', marginBottom: 10 }}>
-              共找到 <b>{pickList.length}</b> 个 HTML 文件，请选择其中一个打开：
-            </div>
-            <div
-              style={{
-                maxHeight: 300,
-                overflow: 'auto',
-                border: '1px solid #e5e7eb',
-                borderRadius: 6,
-              }}
-            >
-              {pickList.map((p) => (
-                <div
-                  key={p}
-                  onClick={() => setPickSel(p)}
-                  style={{
-                    padding: '9px 12px',
-                    cursor: 'pointer',
-                    fontSize: 13,
-                    background: pickSel === p ? '#C41E24' : '#fff',
-                    color: pickSel === p ? '#fff' : '#374151',
-                    borderBottom: '1px solid #f3f4f6',
-                    wordBreak: 'break-all',
-                  }}
-                >
-                  {p}
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
-              <button onClick={cancelPick} style={{ ...btn('#6b7280'), padding: '7px 14px' }}>
-                取消
-              </button>
-              <button onClick={confirmPick} disabled={!pickSel} style={{ ...btn('#2563eb'), padding: '7px 14px' }}>
-                确认打开
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
