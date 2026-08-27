@@ -1,4 +1,98 @@
-/*
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>播放预览测试页</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@600;900&family=Noto+Sans+SC:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Noto Sans SC',sans-serif; background:#F5F0E8; overflow:hidden; }
+  .slide { position:fixed; inset:0; display:none; padding:40px; background:#F5F0E8; }
+  .slide.active { display:flex; align-items:center; justify-content:center; }
+  .slide-dark { background:#2C2C2C; color:#F5F0E8; }
+  .slide-title { font-family:'Noto Serif SC',serif; font-size:3.4rem; color:#C41E24; font-weight:900; margin-bottom:24px; }
+  .slide-dark .slide-title { color:#F5F0E8; }
+  .cream-card { background:#FAF6F0; border:1px solid #D4C9B8; border-radius:8px; padding:24px 36px; font-size:1.6rem; }
+  .focus-group .focus-item{transition:all .6s ease;position:relative}
+  .focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
+  .focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}
+  #subtitleBar { position:fixed; left:0; right:0; bottom:8vh; text-align:center; pointer-events:none; z-index:99; }
+  #subtitleCurrent { display:inline-block; font-size:2.2rem; font-weight:700; color:#fff;
+    text-shadow:0 2px 6px #000,0 4px 18px #000,0 8px 40px #000; transition:all .35s; }
+  #subtitleCurrent.is-changing { opacity:0; transform:translateY(10px); }
+  #progressTrack { position:fixed; left:0; right:0; bottom:0; height:5px; background:rgba(0,0,0,.15); z-index:99; }
+  #progressBar { height:100%; width:0; background:#C41E24; }
+</style>
+</head>
+<body>
+
+<audio id="bgAudio" src="测试音频.wav" preload="auto"></audio>
+<div id="subtitleBar"><div id="subtitleCurrent"></div></div>
+<div id="progressTrack"><div id="progressBar"></div></div>
+
+<!-- 第 1 页：封面 -->
+<div class="slide active" id="s0" style="background:#2C2C2C;">
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.0" data-zt-subtitle-end="2.0" data-zt-bound-to="[data-zt-id='el-0-0']">欢迎收看本次产品演示</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.2" data-zt-subtitle-end="4.8">三分钟了解全新功能</div>
+  </div>
+  <div class="focus-group" style="text-align:center;">
+    <div class="focus-item" data-zt-id="el-0-0" data-zt-anim-effect="focus-zoom"
+         style="font-family:'Noto Serif SC',serif;font-size:5rem;color:#F5F0E8;font-weight:900;">产品演示</div>
+    <div class="focus-item" data-zt-id="el-0-1" data-zt-anim-effect="focus-zoom"
+         style="font-size:1.8rem;color:#B8860B;margin-top:20px;">播放预览 · 功能测试</div>
+  </div>
+</div>
+
+<!-- 第 2 页：三个亮点 -->
+<div class="slide" id="s1">
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.0" data-zt-subtitle-end="1.8" data-zt-bound-to="[data-zt-id='el-1-0']">第一个亮点是快速</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.0" data-zt-subtitle-end="3.4" data-zt-bound-to="[data-zt-id='el-1-1']">第二个亮点是稳定</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="3.6" data-zt-subtitle-end="4.8" data-zt-bound-to="[data-zt-id='el-1-2']">第三个亮点是易用</div>
+  </div>
+  <div style="width:100%;max-width:1200px;">
+    <div class="slide-title" style="text-align:center;">三大亮点</div>
+    <div class="focus-group" style="display:flex;gap:22px;justify-content:center;">
+      <div class="cream-card focus-item" data-zt-id="el-1-0" data-zt-anim-effect="focus-zoom">⚡ 快速</div>
+      <div class="cream-card focus-item" data-zt-id="el-1-1" data-zt-anim-effect="focus-zoom">🛡 稳定</div>
+      <div class="cream-card focus-item" data-zt-id="el-1-2" data-zt-anim-effect="focus-zoom">👍 易用</div>
+    </div>
+  </div>
+</div>
+
+<!-- 第 3 页：入场动画 -->
+<div class="slide" id="s2">
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.0" data-zt-subtitle-end="2.2" data-zt-bound-to="[data-zt-id='el-2-0']">数据从左飞入</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.5" data-zt-subtitle-end="4.8" data-zt-bound-to="[data-zt-id='el-2-1']">结论从右侧抵达</div>
+  </div>
+  <div style="text-align:center;">
+    <div class="slide-title">入场动画</div>
+    <div class="cream-card" data-zt-id="el-2-0" data-zt-anim-effect="fly-left" style="margin-bottom:20px;">📈 增长 128%</div>
+    <div class="cream-card" data-zt-id="el-2-1" data-zt-anim-effect="fly-right">✅ 全面达标</div>
+  </div>
+</div>
+
+<!-- 第 4 页：结尾 -->
+<div class="slide slide-dark" id="s3">
+  <div class="slide-subtitles" style="display:none">
+    <div data-zt-role="subtitle" data-zt-subtitle-start="0.0" data-zt-subtitle-end="2.4">感谢观看</div>
+    <div data-zt-role="subtitle" data-zt-subtitle-start="2.6" data-zt-subtitle-end="4.8" data-zt-bound-to="[data-zt-id='el-3-0']">我们下次再见</div>
+  </div>
+  <div class="focus-group" style="text-align:center;">
+    <div class="focus-item" data-zt-id="el-3-0" data-zt-anim-effect="focus-zoom"
+         style="font-family:'Noto Serif SC',serif;font-size:4.4rem;font-weight:900;">谢谢观看</div>
+  </div>
+</div>
+
+
+<script>window.__ztSubtitles=[];window.__ztSlideTimings=[
+  {slide:0,start:0,end:5},
+  {slide:1,start:5,end:10},
+  {slide:2,start:10,end:15},
+  {slide:3,start:15,end:20}
+];</script><script id="zt-editor-runtime">/*
  * 编辑器运行时：以纯脚本形式注入到 iframe（经 Vite ?raw 导入为字符串）。
  * 职责：
  *  - 选中(单击单选 / Ctrl+单击多选) / 拖动(前置 translate 平移，保留原有旋转缩放，绝不重排兄弟)
@@ -2306,3 +2400,5 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init)
   else init()
 })()
+</script></body>
+</html>

@@ -148,6 +148,8 @@ export default function App() {
   const [ctxMenu, setCtxMenu] = useState(null) // 右键菜单 { x, y, editable, count, locked, group, anyLocked } | null
   const [clipCount, setClipCount] = useState(0) // 剪贴板元素数量（>0 复制/剪切后启用粘贴）
   const [layers, setLayers] = useState([]) // 当前页图层列表（顶层在前）
+  const [playMode, setPlayMode] = useState(false) // 播放预览模式
+  const [playCurrent, setPlayCurrent] = useState(0) // 播放中的当前页
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -195,6 +197,7 @@ export default function App() {
     const subDataScript = buildSubtitleDataScript(scripts)
     const doc = processed.replace('</body>', STYLE_TAG + subDataScript + SCRIPT_TAG + '</body>')
     setReady(false)
+    setPlayMode(false)
     setSelected(null)
     setRestored(false)
     restoredRef.current = false
@@ -218,6 +221,7 @@ export default function App() {
     const subDataScript = buildSubtitleDataScript(d.scripts || [])
     const doc = html.replace('</body>', STYLE_TAG + subDataScript + SCRIPT_TAG + '</body>')
     setReady(false)
+    setPlayMode(false)
     setSelected(null)
     restoredRef.current = true
     setRestored(true)
@@ -268,6 +272,7 @@ export default function App() {
     await clearDraft()
     setSrcdoc('')
     setReady(false)
+    setPlayMode(false)
     setTotal(0)
     setCurrent(0)
     setSelected(null)
@@ -331,6 +336,17 @@ export default function App() {
         })
       } else if (m.type === 'contextmenu') {
         setCtxMenu(m)
+      } else if (m.type === 'playState') {
+        // 播放开始/结束（结束可能由 iframe 内 Esc 或音频播完触发）
+        setPlayMode(m.playing)
+        if (typeof m.current === 'number') { setPlayCurrent(m.current); setCurrent(m.current) }
+        if (!m.playing) {
+          // 回到编辑模式：重新拉取页面信息，确保面板同步
+          setSelected(null)
+          setSelCount(0)
+        }
+      } else if (m.type === 'playProgress') {
+        setPlayCurrent(m.current)
       } else if (m.type === 'canvasPointerDown') {
         setCtxMenu(null)
       } else if (m.type === 'clipboard') {
@@ -609,19 +625,19 @@ export default function App() {
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
 
-        <button onClick={() => send({ type: 'undo' })} disabled={!ready} title="撤销（Ctrl+Z）" style={btn('#374151')}>
+        <button onClick={() => send({ type: 'undo' })} disabled={!ready || playMode} title="撤销（Ctrl+Z）" style={btn('#374151')}>
           撤销
         </button>
-        <button onClick={() => send({ type: 'redo' })} disabled={!ready} title="重做（Ctrl+Shift+Z）" style={btn('#374151')}>
+        <button onClick={() => send({ type: 'redo' })} disabled={!ready || playMode} title="重做（Ctrl+Shift+Z）" style={btn('#374151')}>
           重做
         </button>
-        <button onClick={() => send({ type: 'delete' })} disabled={!selected} title="删除选中（Delete）" style={btn('#7f1d1d')}>
+        <button onClick={() => send({ type: 'delete' })} disabled={!selected || playMode} title="删除选中（Delete）" style={btn('#7f1d1d')}>
           删除
         </button>
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
 
-        <button onClick={toggleGrid} style={btn(gridOn ? '#0F6E56' : '#374151')}>
+        <button onClick={toggleGrid} disabled={playMode} style={btn(gridOn ? '#0F6E56' : '#374151')}>
           {gridOn ? '网格：开' : '网格：关'}
         </button>
 
@@ -649,19 +665,50 @@ export default function App() {
 
         <button
           onClick={() => send({ type: 'resetElement' })}
-          disabled={!selected}
+          disabled={!selected || playMode}
           style={btn('#374151')}
         >
           重置选中
         </button>
-        
-        <span style={{ width: 1, height: 22, background: '#374151' }} />
-
-
 
         <span style={{ width: 1, height: 22, background: '#374151' }} />
 
-        <button onClick={handleExport} disabled={!ready} style={btn('#2563eb')}>
+        {playMode ? (
+          <>
+            <span style={{ fontSize: 12, color: '#fbbf24', fontWeight: 600 }}>
+              ▶ 播放中 · 第 {playCurrent + 1}/{total} 页（Esc 停止）
+            </span>
+            <button
+              onClick={() => send({ type: 'stopPlay' })}
+              title="停止播放，返回编辑模式"
+              style={btn('#C41E24')}
+            >
+              ⏹ 停止播放
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              onClick={() => send({ type: 'startPlay', from: 0 })}
+              disabled={!ready || !total}
+              title="从头开始自动播放（含音频/字幕/动画）"
+              style={btn('#0F6E56')}
+            >
+              ▶ 从头播放
+            </button>
+            <button
+              onClick={() => send({ type: 'startPlay', from: current })}
+              disabled={!ready || !total}
+              title="从当前页开始播放预览（含音频）"
+              style={btn('#0F6E56')}
+            >
+              ▶ 本页预览
+            </button>
+          </>
+        )}
+        <span style={{ width: 1, height: 22, background: '#374151' }} />
+
+        <button onClick={handleExport} disabled={!ready || playMode} style={btn('#2563eb')}>
           导出 HTML
         </button>
         <button onClick={handleClearDraft} disabled={!restored} title="清除本地草稿" style={btn('#4b5563')}>
@@ -672,6 +719,77 @@ export default function App() {
           📁 本地读取，文件不会上传到任何服务器
         </span>
       </div>
+
+      {/* 页面预览 tab 条：点击快速跳转；播放模式下点击从该页续播 */}
+      {total > 0 && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 4,
+            padding: '4px 12px',
+            background: playMode ? '#111827' : '#f3f4f6',
+            borderBottom: '1px solid #d1d5db',
+            overflowX: 'auto',
+            flexShrink: 0,
+          }}
+        >
+          <button
+            onClick={() => send(playMode ? { type: 'playGoto', index: (playMode ? playCurrent : current) - 1 } : { type: 'prev' })}
+            disabled={playMode ? playCurrent <= 0 : current <= 0}
+            title="上一页"
+            style={{
+              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+              fontSize: 13, fontWeight: 700, marginRight: 2,
+              background: playMode ? '#374151' : '#e5e7eb',
+              color: playMode ? '#d1d5db' : '#374151',
+              opacity: (playMode ? playCurrent <= 0 : current <= 0) ? 0.4 : 1,
+            }}
+          >
+            ‹
+          </button>
+          <span style={{ fontSize: 12, color: playMode ? '#fbbf24' : '#6b7280', marginRight: 6, whiteSpace: 'nowrap' }}>
+            {playMode ? '预览' : '页面'}
+          </span>
+          {Array.from({ length: total }, (_, i) => {
+            const active = playMode ? i === playCurrent : i === current
+            return (
+              <button
+                key={i}
+                onClick={() => send(playMode ? { type: 'playGoto', index: i } : { type: 'goto', index: i })}
+                title={playMode ? `跳到第 ${i + 1} 页继续播放` : `跳到第 ${i + 1} 页`}
+                style={{
+                  minWidth: 34,
+                  padding: '3px 8px',
+                  border: 'none',
+                  borderRadius: 6,
+                  cursor: 'pointer',
+                  fontSize: 12,
+                  fontWeight: 600,
+                  background: active ? '#C41E24' : playMode ? '#374151' : '#e5e7eb',
+                  color: active ? '#fff' : playMode ? '#d1d5db' : '#374151',
+                }}
+              >
+                {i + 1}
+              </button>
+            )
+          })}
+          <button
+            onClick={() => send(playMode ? { type: 'playGoto', index: playCurrent + 1 } : { type: 'next' })}
+            disabled={playMode ? playCurrent >= total - 1 : current >= total - 1}
+            title="下一页"
+            style={{
+              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+              fontSize: 13, fontWeight: 700, marginLeft: 2,
+              background: playMode ? '#374151' : '#e5e7eb',
+              color: playMode ? '#d1d5db' : '#374151',
+              opacity: (playMode ? playCurrent >= total - 1 : current >= total - 1) ? 0.4 : 1,
+            }}
+          >
+            ›
+          </button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <div
@@ -739,6 +857,7 @@ export default function App() {
           )}
         </div>
 
+        {!playMode && (
         <div
           style={{
             width: 270,
@@ -820,7 +939,9 @@ export default function App() {
             )}
           </div>
         </div>
+        )}
       </div>
+      {!playMode && (
       <TimelinePanel
         subtitles={subtitles}
         selectedSubIdx={selectedSubIdx}
@@ -835,11 +956,10 @@ export default function App() {
         onCancelBind={handleCancelBinding}
         current={current}
         total={total}
-        onGoPrev={() => send({ type: 'prev' })}
-        onGoNext={() => send({ type: 'next' })}
         selected={selected}
         send={send}
       />
+      )}
       <ContextMenu menu={ctxMenu} zoom={zoom} iframeRef={iframeRef} selCount={selCount} send={send} onClose={() => setCtxMenu(null)} clipCount={clipCount} />
     </div>
   )
@@ -1700,7 +1820,7 @@ function buildSubtitleDataScript(scripts) {
 }
 
 // 底部时间轴面板
-function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode, bindingTarget, onPrevPage, onNextPage, onBind, onUnbind, onConfirm, onCancelBind, current, total, onGoPrev, onGoNext, selected, send }) {
+function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode, bindingTarget, onPrevPage, onNextPage, onBind, onUnbind, onConfirm, onCancelBind, current, total, selected, send }) {
   const maxTime = subtitles.length > 0
     ? Math.max.apply(null, subtitles.map(function (s) { return s.end || 5 }))
     : 10
@@ -1720,20 +1840,8 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
         userSelect: 'none',
       }}
     >
-      {/* 页面导航 + 绑定操作按钮 */}
+      {/* 绑定操作按钮（页面导航已移至上方页面预览 tab 条） */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-        <button onClick={onGoPrev} disabled={total < 1} style={timelineBtn('#374151')}>
-          ◀ 上一页
-        </button>
-        <span style={{ fontSize: 12, color: '#d1d5db', minWidth: 50, textAlign: 'center' }}>
-          {total ? (current + 1) + ' / ' + total : '—'}
-        </span>
-        <button onClick={onGoNext} disabled={total < 1} style={timelineBtn('#374151')}>
-          下一页 ▶
-        </button>
-
-        <span style={{ width: 1, height: 20, background: '#374151' }} />
-
         {!subBindingMode ? (
           <>
             <button
