@@ -226,9 +226,11 @@ export default function App() {
 
   // ---------- 自动保存草稿 ----------
   function scheduleSave() {
+    if (!srcdoc) return // 无内容时不调度保存
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(performSave, 800)
   }
+
 
   function performSave() {
     pendingSaveRef.current = true
@@ -262,7 +264,14 @@ export default function App() {
 
   async function handleClearDraft() {
     if (!confirm('确定清除本地草稿？此操作不可撤销（不影响你磁盘上的原文件）。')) return
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     await clearDraft()
+    setSrcdoc('')
+    setReady(false)
+    setTotal(0)
+    setCurrent(0)
+    setSelected(null)
+    setSelCount(0)
     setRestored(false)
     restoredRef.current = false
     alert('本地草稿已清除。')

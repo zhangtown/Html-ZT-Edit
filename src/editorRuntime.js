@@ -1722,7 +1722,21 @@
   function resetSelected() {
     if (!selectedList.length) return
     var before = selectedList.map(snapStyle)
-    selectedList.forEach(function (el) { el.removeAttribute('style') })
+    selectedList.forEach(function (el) {
+      var orig = el.getAttribute('data-zt-original-style')
+      if (orig !== null) {
+        el.setAttribute('style', orig)
+      } else {
+        el.removeAttribute('style')
+      }
+      // 清理属性面板可能添加的字体标记与 CSS 变量
+      el.removeAttribute('data-zt-ff')
+      el.removeAttribute('data-zt-fs')
+      el.removeAttribute('data-zt-fw')
+      el.style.removeProperty('--zt-ff')
+      el.style.removeProperty('--zt-fs')
+      el.style.removeProperty('--zt-fw')
+    })
     var after = selectedList.map(snapStyle)
     pushHistory(before, after, selectedList.slice())
     postSelection()
@@ -1958,6 +1972,14 @@
     if (slides.length) show(0)
     else post({ type: 'pages', total: 0, current: 0 })
     post({ type: 'ready' })
+
+    // 保存所有元素的原始内联样式，供"重置选中"恢复使用
+    document.querySelectorAll('*').forEach(function (el) {
+      var s = el.getAttribute('style')
+      if (s !== null) {
+        el.setAttribute('data-zt-original-style', s)
+      }
+    })
   }
 
   function exportClean() {
@@ -1996,6 +2018,13 @@
     var allSlides = document.querySelectorAll('.slide')
     allSlides.forEach(function (s) { s.classList.remove('active') })
     if (allSlides.length) allSlides[0].classList.add('active')
+    // 清理编辑器内部使用的 data 属性，避免污染导出 HTML
+    document.querySelectorAll('[data-zt-original-style], [data-zt-ff], [data-zt-fs], [data-zt-fw]').forEach(function (el) {
+      el.removeAttribute('data-zt-original-style')
+      el.removeAttribute('data-zt-ff')
+      el.removeAttribute('data-zt-fs')
+      el.removeAttribute('data-zt-fw')
+    })
     post({ type: 'export', html: document.documentElement.outerHTML })
   }
 
