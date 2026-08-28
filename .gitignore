@@ -39,3 +39,13 @@ pi-session-*.html
 # Python
 __pycache__/
 *.pyc
+
+# vo-pipeline 生成产物（音频/试听/字幕/参数，可由 纯文案+vo.config.json 重新生成）
+vo-pipeline/*.mp3
+vo-pipeline/*.wav
+vo-pipeline/*.m4a
+vo-pipeline/*.srt
+vo-pipeline/*.voice.json
+vo-pipeline/试听/
+# 克隆实验遗留（GPT-SoVITS 路线已裁撤，脚本仅本地留档）
+vo-pipeline/test_tts.py
