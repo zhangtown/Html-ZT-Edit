@@ -3,7 +3,7 @@
 // 再用 BrowserWindow 加载 http://127.0.0.1:<port>/ ，避免 file:// 下
 // ES 模块 / blob URL / iframe 的兼容问题。
 
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, session } = require('electron')
 const http = require('http')
 const fs = require('fs')
 const path = require('path')
@@ -173,12 +173,39 @@ function registerIpc() {
       return { ok: false, error: String(e && e.message) }
     }
   })
+
+  // 录屏：保存视频文件（渲染进程录好 blob 后传 ArrayBuffer 过来落盘）
+  ipcMain.handle('zt:save-recording', async (event, payload) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const { data, ext, suggestedName } = payload || {}
+    if (!data) return { canceled: true, error: '无数据' }
+    const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
+    const result = await dialog.showSaveDialog(win, {
+      title: '保存录屏视频',
+      defaultPath: suggestedName || `录屏-${stamp}.${ext || 'webm'}`,
+      filters: [{ name: '视频文件', extensions: [ext || 'webm'] }],
+    })
+    if (result.canceled || !result.filePath) return { canceled: true }
+    try {
+      fs.writeFileSync(result.filePath, Buffer.from(data))
+      return { canceled: false, filePath: result.filePath }
+    } catch (e) {
+      return { canceled: true, error: String(e && e.message) }
+    }
+  })
 }
 
 // ------------------------------------------------------------
 
 app.whenReady().then(() => {
   registerIpc()
+  // 录屏：getDisplayMedia 直接捕获本窗口的页面内容（不含标题栏，无需用户选窗口）
+  // 注意：Electron 29+ 要求 video 是 WebFrameMain 或 DesktopCapturerSource，不能传 webContents
+  session.defaultSession.setDisplayMediaRequestHandler((request, callback) => {
+    const win = BrowserWindow.getAllWindows()[0]
+    if (win && win.webContents.mainFrame) callback({ video: win.webContents.mainFrame })
+    else callback({})
+  })
   // 开发调试模式：通过 VITE_DEV_SERVER_URL 直接加载 Vite dev server（HMR 热更新）
   const devUrl = process.env.VITE_DEV_SERVER_URL
   if (devUrl) {

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>recorder test</title></head>
+<body style="background:#222">
+<div style="color:#fff;font:14px sans-serif;padding:8px" id="status">ready</div>
+<iframe id="cv" src="测试页面.html" style="width:960px;height:540px;border:none;background:#fff"></iframe>
+<script type="module">
+import { startRecording } from '/src/recorder.js'
+window.__testRec = async () => {
+  const st = document.getElementById('status')
+  try {
+    const iframe = document.getElementById('cv')
+    const session = await startRecording(iframe)
+    st.textContent = 'recording...'
+    // 开始播放 iframe 内页面（让画面动起来 + 音频出声）
+    iframe.contentWindow.__ztStartPlayback && iframe.contentWindow.__ztStartPlayback()
+    await new Promise(r => setTimeout(r, 6000))
+    const { blob, ext } = await session.stop()
+    st.textContent = 'done: ' + ext + ' ' + blob.size + ' bytes'
+    return { ext, size: blob.size, cw: session.canvas.width, ch: session.canvas.height }
+  } catch (e) {
+    st.textContent = 'error: ' + (e.message || e)
+    return { error: String(e.message || e) }
+  }
+}
+</script>
+</body>
+</html>

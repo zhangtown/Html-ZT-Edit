@@ -11,7 +11,7 @@ import {
 import { stripScripts, rewriteAssets, restoreAndWrap, stripEditorParts } from './htmlProcess.js'
 import { saveDraft, loadDraft, clearDraft } from './draftStore.js'
 
-// 注入 iframe 的编辑器样式（选中轮廓 + 网格 + 编辑态冻结动画）
+import { startRecording } from './recorder.js'
 const STYLE_TAG =
   '<style id="zt-editor-style">' +
   '*{animation:none!important;transition:none!important;}' + // 编辑态冻结 CSS 动画/过渡，避免播放干扰拖拽；导出/草稿时随之移除
@@ -104,7 +104,7 @@ const RESOLUTIONS = [
 ]
 
 function download(filename, text) {
-  const blob = new Blob([text], { type: 'text/html' })
+  const blob = text instanceof Blob ? text : new Blob([text], { type: 'text/html' })
   const a = document.createElement('a')
   a.href = URL.createObjectURL(blob)
   a.download = filename
@@ -150,6 +150,10 @@ export default function App() {
   const [layers, setLayers] = useState([]) // 当前页图层列表（顶层在前）
   const [playMode, setPlayMode] = useState(false) // 播放预览模式
   const [playCurrent, setPlayCurrent] = useState(0) // 播放中的当前页
+  const [recordOn, setRecordOn] = useState(false) // 播放时是否录屏
+  const [recording, setRecording] = useState(false) // 正在录制
+  const [savingRec, setSavingRec] = useState(false) // 正在保存录屏
+  const recRef = useRef(null) // 录制会话
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -198,6 +202,7 @@ export default function App() {
     const doc = processed.replace('</body>', STYLE_TAG + subDataScript + SCRIPT_TAG + '</body>')
     setReady(false)
     setPlayMode(false)
+    finishRecording() // 加载/清空时兜底结束录制
     setSelected(null)
     setRestored(false)
     restoredRef.current = false
@@ -222,6 +227,7 @@ export default function App() {
     const doc = html.replace('</body>', STYLE_TAG + subDataScript + SCRIPT_TAG + '</body>')
     setReady(false)
     setPlayMode(false)
+    finishRecording() // 加载/清空时兜底结束录制
     setSelected(null)
     restoredRef.current = true
     setRestored(true)
@@ -273,6 +279,7 @@ export default function App() {
     setSrcdoc('')
     setReady(false)
     setPlayMode(false)
+    finishRecording() // 加载/清空时兜底结束录制
     setTotal(0)
     setCurrent(0)
     setSelected(null)
@@ -291,6 +298,63 @@ export default function App() {
     const next = !gridOn
     setGridOn(next)
     send({ type: 'toggleGrid', on: next, size: 20 })
+  }
+
+  // 从原始脚本中取出 HTML 自带的原生播放器（含 startPlayback / slideTimings）
+  function getNativePlayerScript() {
+    const scripts = scriptsRef.current || []
+    for (const s of scripts) {
+      if (!/src=/.test(s) && s.indexOf('startPlayback') >= 0) {
+        return s.replace(/<\/?script[^>]*>/g, '')
+      }
+    }
+    return null
+  }
+
+  // ---------- 录屏 ----------
+  async function handleStartPlay(from) {
+    const nativeScript = getNativePlayerScript()
+    if (recordOn && !recRef.current) {
+      try {
+        const session = await startRecording(iframeRef.current)
+        recRef.current = session
+        setRecording(true)
+        // 用户在系统层面停止共享时：兜底结束录制并停止播放
+        session.onExternalStop.then(() => {
+          if (recRef.current === session) {
+            send({ type: 'stopPlay' })
+          }
+        })
+      } catch (e) {
+        alert('录屏启动失败：' + ((e && e.message) || e) + '\n将继续播放（不录屏）。')
+      }
+    }
+    send({ type: 'startPlay', from, nativeScript })
+  }
+
+  async function finishRecording() {
+    const session = recRef.current
+    if (!session) return
+    recRef.current = null
+    setRecording(false)
+    setSavingRec(true)
+    try {
+      const { blob, ext } = await session.stop()
+      if (!blob.size) return
+      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
+      const name = `录屏-${stamp}.${ext}`
+      if (window.ztRec && window.ztRec.saveRecording) {
+        const buf = await blob.arrayBuffer()
+        const r = await window.ztRec.saveRecording(buf, ext, name)
+        if (r && r.canceled) return // 用户取消保存
+      } else {
+        download(name, blob)
+      }
+    } catch (e) {
+      alert('录屏保存失败：' + ((e && e.message) || e))
+    } finally {
+      setSavingRec(false)
+    }
   }
 
   // ---------- 通信 ----------
@@ -344,6 +408,7 @@ export default function App() {
           // 回到编辑模式：重新拉取页面信息，确保面板同步
           setSelected(null)
           setSelCount(0)
+          finishRecording() // 播放结束/停止 → 输出录屏
         }
       } else if (m.type === 'playProgress') {
         setPlayCurrent(m.current)
@@ -678,6 +743,12 @@ export default function App() {
             <span style={{ fontSize: 12, color: '#fbbf24', fontWeight: 600 }}>
               ▶ 播放中 · 第 {playCurrent + 1}/{total} 页（Esc 停止）
             </span>
+            {recording && (
+              <span style={{ fontSize: 12, color: '#f87171', fontWeight: 700 }}>● 录制中</span>
+            )}
+            {savingRec && (
+              <span style={{ fontSize: 12, color: '#60a5fa', fontWeight: 600 }}>正在保存录屏…</span>
+            )}
             <button
               onClick={() => send({ type: 'stopPlay' })}
               title="停止播放，返回编辑模式"
@@ -689,7 +760,7 @@ export default function App() {
         ) : (
           <>
             <button
-              onClick={() => send({ type: 'startPlay', from: 0 })}
+              onClick={() => handleStartPlay(0)}
               disabled={!ready || !total}
               title="从头开始自动播放（含音频/字幕/动画）"
               style={btn('#0F6E56')}
@@ -697,13 +768,25 @@ export default function App() {
               ▶ 从头播放
             </button>
             <button
-              onClick={() => send({ type: 'startPlay', from: current })}
+              onClick={() => handleStartPlay(current)}
               disabled={!ready || !total}
               title="从当前页开始播放预览（含音频）"
               style={btn('#0F6E56')}
             >
               ▶ 本页预览
             </button>
+            <label
+              style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#d1d5db', cursor: 'pointer' }}
+              title="播放时录制画布区域，停止或播完后自动保存视频"
+            >
+              <input
+                type="checkbox"
+                checked={recordOn}
+                onChange={(e) => setRecordOn(e.target.checked)}
+                style={{ accentColor: '#C41E24' }}
+              />
+              录屏
+            </label>
           </>
         )}
         <span style={{ width: 1, height: 22, background: '#374151' }} />
@@ -736,14 +819,14 @@ export default function App() {
         >
           <button
             onClick={() => send(playMode ? { type: 'playGoto', index: (playMode ? playCurrent : current) - 1 } : { type: 'prev' })}
-            disabled={playMode ? playCurrent <= 0 : current <= 0}
-            title="上一页"
+            disabled={playMode}
+            title={playMode ? '播放中不可切页，请先停止' : '上一页'}
             style={{
-              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6,
               fontSize: 13, fontWeight: 700, marginRight: 2,
-              background: playMode ? '#374151' : '#e5e7eb',
-              color: playMode ? '#d1d5db' : '#374151',
-              opacity: (playMode ? playCurrent <= 0 : current <= 0) ? 0.4 : 1,
+              background: '#e5e7eb', color: '#374151',
+              opacity: (playMode || (playMode ? playCurrent <= 0 : current <= 0)) ? 0.4 : 1,
+              cursor: playMode ? 'not-allowed' : 'pointer',
             }}
           >
             ‹
@@ -756,18 +839,20 @@ export default function App() {
             return (
               <button
                 key={i}
-                onClick={() => send(playMode ? { type: 'playGoto', index: i } : { type: 'goto', index: i })}
-                title={playMode ? `跳到第 ${i + 1} 页继续播放` : `跳到第 ${i + 1} 页`}
+                onClick={() => { if (!playMode) send({ type: 'goto', index: i }) }}
+                title={playMode ? `播放中不可切页，请先停止（当前第 ${playCurrent + 1} 页）` : `跳到第 ${i + 1} 页`}
+                disabled={playMode}
                 style={{
                   minWidth: 34,
                   padding: '3px 8px',
                   border: 'none',
                   borderRadius: 6,
-                  cursor: 'pointer',
+                  cursor: playMode ? 'not-allowed' : 'pointer',
                   fontSize: 12,
                   fontWeight: 600,
-                  background: active ? '#C41E24' : playMode ? '#374151' : '#e5e7eb',
-                  color: active ? '#fff' : playMode ? '#d1d5db' : '#374151',
+                  background: active ? '#C41E24' : '#e5e7eb',
+                  color: active ? '#fff' : '#374151',
+                  opacity: playMode ? 0.55 : 1,
                 }}
               >
                 {i + 1}
@@ -776,14 +861,14 @@ export default function App() {
           })}
           <button
             onClick={() => send(playMode ? { type: 'playGoto', index: playCurrent + 1 } : { type: 'next' })}
-            disabled={playMode ? playCurrent >= total - 1 : current >= total - 1}
-            title="下一页"
+            disabled={playMode}
+            title={playMode ? '播放中不可切页，请先停止' : '下一页'}
             style={{
-              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6, cursor: 'pointer',
+              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6,
               fontSize: 13, fontWeight: 700, marginLeft: 2,
-              background: playMode ? '#374151' : '#e5e7eb',
-              color: playMode ? '#d1d5db' : '#374151',
-              opacity: (playMode ? playCurrent >= total - 1 : current >= total - 1) ? 0.4 : 1,
+              background: '#e5e7eb', color: '#374151',
+              opacity: (playMode || (playMode ? playCurrent >= total - 1 : current >= total - 1)) ? 0.4 : 1,
+              cursor: playMode ? 'not-allowed' : 'pointer',
             }}
           >
             ›

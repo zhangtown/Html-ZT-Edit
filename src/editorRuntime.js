@@ -2044,7 +2044,47 @@
     playRaf = requestAnimationFrame(playLoop)
   }
 
-  function startPlay(fromIndex) {
+  // ---- 原生播放（复用 HTML 自带的播放系统）----
+  // 优先用 HTML 自带播放脚本驱动画面与语音，避免与编辑器引擎重复驱动导致冲突。
+  var nativeMode = false
+  var nativeRaf = null
+  var nativeScriptEl = null
+
+  function injectNativePlayer(code) {
+    if (nativeScriptEl) return
+    // 去掉原生脚本里绑在 document/window 上的交互监听（前进/后退由编辑器 UI 负责），
+    // 仅保留播放引擎本身，并把 startPlayback 暴露为全局以便外部启动；同时支持外部停止残留循环。
+    code = code
+      .replace(/window\.addEventListener\('load'[\s\S]*?\}\);/, 'window.__ztStartPlayback=function(){if(window.__ztKillNative)return;startPlayback();};window.__ztNativeStop=function(){isPlaying=false;};window.__ztSeekToSlide=function(idx){var st=slideTimings.find(function(t){return t.slide===idx});if(st)audio.currentTime=st.start;showSlide(idx,false);var sl=slides[idx];if(sl){var ns=sl.querySelectorAll("*");for(var k2=0;k2<ns.length;k2++){var cs=getComputedStyle(ns[k2]);if(cs.animationName&&cs.animationName!=="none"){ns[k2].style.animation="none";void ns[k2].offsetWidth;ns[k2].style.animation="";}}}};')
+      .replace(/document\.addEventListener\('keydown'[\s\S]*?\}\);/, '')
+      .replace(/document\.addEventListener\('click'[\s\S]*?\}\);/, '')
+    var s = document.createElement('script')
+    s.textContent = code
+    document.body.appendChild(s)
+    nativeScriptEl = s
+  }
+
+  function killNativePlayer() {
+    if (nativeScriptEl && nativeScriptEl.parentNode) {
+      try { nativeScriptEl.parentNode.removeChild(nativeScriptEl) } catch (e) {}
+    }
+    nativeScriptEl = null
+    window.__ztNativeInjected = false
+    window.__ztKillNative = false
+  }
+
+  function nativeTick() {
+    if (!nativeMode) return
+    var slides = document.querySelectorAll('.slide')
+    var idx = -1
+    for (var i = 0; i < slides.length; i++) {
+      if (slides[i].classList.contains('active')) { idx = i; break }
+    }
+    if (idx >= 0) post({ type: 'playProgress', current: idx })
+    nativeRaf = requestAnimationFrame(nativeTick)
+  }
+
+  function startPlay(fromIndex, nativeScript) {
     if (playMode) stopPlay(true)
     slides = getSlides()
     if (!slides.length) return
@@ -2058,7 +2098,35 @@
     resizeOverlay = null
     resizeHandles = {}
     document.body.classList.remove('zt-grid')
+    // 解除编辑态的动画冻结（*{animation:none;transition:none}），让 CSS 动画/focus 过渡在播放时生效
+    var editorStyle = document.getElementById('zt-editor-style')
+    if (editorStyle && editorStyle.sheet) editorStyle.sheet.disabled = true
     playMode = true
+
+    // 优先使用 HTML 自带的原生播放系统（避免与编辑器引擎重复驱动导致冲突）
+    var hasAudio = getPlayAudio() && getPlayAudio().getAttribute('src')
+    if (nativeScript && hasAudio) {
+      nativeMode = true
+      injectNativePlayer(nativeScript)
+      window.__ztKillNative = false
+      var startIdx = (typeof fromIndex === 'number' && fromIndex > 0) ? fromIndex : 0
+      // 原生播放器错过了 load 自动启动，这里显式启动（暴露的 startPlayback）
+      setTimeout(function () {
+        if (!nativeMode) return
+        if (window.__ztStartPlayback) {
+          window.__ztStartPlayback()
+          // 跳到目标页并把音频定位到该页起点（含首页：重新播放开场动画/音频；停止后再播放也不会继承进度）
+          if (window.__ztSeekToSlide) window.__ztSeekToSlide(startIdx)
+        } else {
+          document.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        }
+      }, 60)
+      nativeRaf = requestAnimationFrame(nativeTick)
+      post({ type: 'playState', playing: true, current: startIdx })
+      return
+    }
+
+    // 回退：编辑器自有引擎（无原生播放器的普通 .slide 页面）
     playSubtitles = buildPlaySubtitles()
     playSubIndex = -1
     playAudio = getPlayAudio()
@@ -2070,7 +2138,7 @@
     playStartStamp = performance.now()
     playShowSlide(fromIndex, false)
     if (playAudio) {
-      seekAudioTo(playBaseTime)
+      seekAudioTo(  playBaseTime)
       try {
         var p = playAudio.play()
         if (p && p.then) {
@@ -2091,14 +2159,31 @@
 
   function stopPlay(silent) {
     if (playRaf) { cancelAnimationFrame(playRaf); playRaf = null }
+    if (nativeRaf) { cancelAnimationFrame(nativeRaf); nativeRaf = null }
+    nativeMode = false
+    window.__ztKillNative = true
+    // 停止原生播放循环：置 isPlaying=false，让原生 loop 自行退出（移除 script 无法停掉已排程的 rAF）
+    try { if (window.__ztNativeStop) window.__ztNativeStop() } catch (e) {}
+    // 暂停底层音频（原生播放器与编辑器引擎共用同一 <audio>）
+    var a = getPlayAudio()
+    if (a) { try { a.pause() } catch (e) {} }
+    // 记录原生播放最后停留的页，停后让编辑器当前页与之对齐
+    var lastIdx = current
+    var sls = document.querySelectorAll('.slide')
+    for (var i = 0; i < sls.length; i++) { if (sls[i].classList.contains('active')) { lastIdx = i; break } }
+    killNativePlayer()
     if (playAudio) {
       try { playAudio.pause() } catch (e) {}
-      playAudio.onended = null
+      playAudio.onended =  null
     }
+    current = lastIdx
     playMode = false
+    // 恢复编辑态动画冻结
+    var editorStyle2 = document.getElementById('zt-editor-style')
+    if (editorStyle2 && editorStyle2.sheet) editorStyle2.sheet.disabled = false
     playSubIndex = -1
     resetPlayAnimState()
-    if (!silent) post({ type: 'playState', playing: false, current: current })
+    if (!silent) post({ type: 'playState', playing: false, current: lastIdx })
   }
 
   function playGoto(idx) {
@@ -2194,7 +2279,7 @@
       if (m.type === 'goto') show(m.index)
       else if (m.type === 'next') show(current + 1)
       else if (m.type === 'prev') show(current - 1)
-      else if (m.type === 'startPlay') startPlay(m.from)
+      else if (m.type === 'startPlay') startPlay(m.from, m.nativeScript)
       else if (m.type === 'stopPlay') stopPlay()
       else if (m.type === 'playGoto') playGoto(m.index)
       else if (m.type === 'toggleGrid') {
