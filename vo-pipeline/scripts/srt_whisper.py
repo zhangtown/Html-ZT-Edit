@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 vo-pipeline 配套工具：任意音频 → SRT（faster-whisper ASR 对齐）
-用途：克隆引擎产出校验、外部音频补时间轴、TTS 成片抽查。
+用途：外部音频补时间轴、TTS 成片抽查。
 
 用法:
   uv run --with faster-whisper python scripts/srt_whisper.py 音频.mp3 --model small --out 口播.srt

@@ -130,13 +130,13 @@ HTML-ZtEdit/
 - 录制管线 v1：getDisplayMedia 捕获窗口 → 实时裁剪 iframe → 混入页面音轨 → MediaRecorder
 - 字幕绑定/解绑稳定性修复 ×2（跨页兜底查找；selection 消息误清空字幕选中态）
 - 工作区清理：调试代码、临时诊断文件、设计素材移出 git
-- **vo-pipeline 口播产线技能 v1.0**（edge-tts 引擎全链路实测通过；GPT-SoVITS 引擎待部署联调）
+- **vo-pipeline 口播产线技能 v1.1**（edge-tts 引擎全链路实测通过；GPT-SoVITS 克隆路线实测效果不佳，已裁撤）
 
 **已知卡点（即下面 P0 的来源）**：
 1. 录制输出 webm 而非 MP4 —— Electron 29（Chromium 120）的 MediaRecorder 不支持 video/mp4，`pickMime()` 的 mp4 候选全部落空
 2. 录制分辨率随窗口尺寸走 —— 画布按 iframe 在窗口内的实际显示大小裁剪，窗口小则成片小
 3. 动画只有 11 种整元素变换（zoom×2/fade/fly×4/bounce/rotate/focus-zoom），缺文字类效果
-4. ~~定稿文案 → MP3+SRT 没有自动化产线~~ → vo-pipeline 已建成；**GPT-SoVITS 整合包尚未部署**（阶段2 联调待做）
+4. ~~定稿文案 → MP3+SRT 没有自动化产线~~ → vo-pipeline 已建成（纯 edge-tts，克隆路线已裁撤）
 
 ## 六、路线图 TODO
 
@@ -159,11 +159,9 @@ HTML-ZtEdit/
 - ✅ **阶段1 edge-tts 引擎（默认）**：Phase0 文案口语化打磨指引 → 合成 → **WordBoundary 字级时间戳直接出 SRT**
   （对齐回原文保留标点、按标点自然断条）→ 响度归一 -16 LUFS → 段落间隙 → 试听选音色 → 语速体检（字/秒）。
   零系统依赖（uv 按需拉 edge-tts/mutagen/imageio-ffmpeg）。实测：97字 → 21.9s MP3 + 6条 SRT，时间轴误差 <0.1s
-- 🚧 **阶段2 音色克隆（已选型：GPT-SoVITS，1660S 6GB 可跑）**：
-  - 硬件结论：推理 ≈4GB 显存可用；1~5 分钟素材微调 batch=1 可行，走 Windows 整合包
-  - 引擎脚本 `tts_gptsovits.py` 已就位（逐句调 api_v2、句时长直接出 SRT，无需 ASR），**待部署整合包后端到端联调**
-  - 兜底对齐工具 `srt_whisper.py`（faster-whisper，small/medium int8 均可跑）已就位
-  - 无 GPU 备选 API 路线：fish-audio / MiniMax（注意成本与隐私）
+- ⛔ **阶段2 音色克隆（2026-08-28 裁撤）**：GPT-SoVITS 整合包部署 + "小踏音色"端到端实测，
+  音色相似度/自然度不达预期，用户拍板回到 edge-tts 通用音色（选音色 + 文案层打磨补足表现力）。
+  `tts_gptsovits.py` 已删除、SKILL.md 同步移除；`srt_whisper.py` 保留（SRT 校验兜底，不依赖克隆）
 - ✅ 阶段3 去AI味清单已写入 SKILL.md（文案层打磨为收益最大项）
 
 #### 3. 动画扩充（两档实现，契约同步升级）

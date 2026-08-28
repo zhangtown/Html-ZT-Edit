@@ -1,17 +1,16 @@
 ---
 name: vo-pipeline
-description: 口播产线：定稿文案一键合成 MP3 + 精确 SRT。默认 edge-tts 引擎（免费、字级时间轴、零依赖），支持 GPT-SoVITS 本地音色克隆（6GB 显存可跑）、语速/音色参数化、响度归一去AI味、试听选音色。产出可直接喂给 speech-visual-html 技能生成视觉页。
+description: 口播产线：定稿文案一键合成 MP3 + 精确 SRT。edge-tts 引擎（免费、字级时间轴、零依赖），语速/音色参数化、响度归一去AI味、试听选音色。产出可直接喂给 speech-visual-html 技能生成视觉页。
 triggers:
   - "口播"
   - "配音"
   - "TTS"
   - "语音合成"
   - "音色"
-  - "克隆音色"
   - "朗读"
   - "SRT"
   - "去AI味"
-version: 1.0
+version: 1.1
 defaultEngine: edge-tts
 ---
 
@@ -51,7 +50,7 @@ uv run --with edge-tts --with mutagen python scripts/tts_edge.py 文案.txt \
 产出 `试听/*.mp3`，请用户试听选择。常用音色见 [voices.md](voices.md)。
 选定后写入工程目录 `vo.config.json`（参考 `config.example.json`），下次直接用。
 
-### Phase 2 · 合成（默认引擎 edge-tts）
+### Phase 2 · 合成
 
 ```bash
 uv run --with edge-tts --with mutagen --with imageio-ffmpeg python scripts/tts_edge.py 文案.txt \
@@ -61,27 +60,6 @@ uv run --with edge-tts --with mutagen --with imageio-ffmpeg python scripts/tts_e
 - `--rate` 建议区间 `-8% ~ +5%`；**注意负值参数必须用 `--rate=-4%` 等号形式**（否则被 argparse 当选项）
 - SRT 由微软服务端字级时间戳直接生成（无需 ASR），中文默认按 ≤20 字/条断条
 - 段落间默认插 0.35s 静音（`--gap` 调整）
-
-### Phase 2' · 音色克隆引擎（GPT-SoVITS，学习"我的音色"）
-
-前提：本机已部署并启动 GPT-SoVITS api_v2（部署指南见下节），准备 3~10s 干净音色样本 wav。
-
-```bash
-uv run --with imageio-ffmpeg python scripts/tts_gptsovits.py 文案.txt \
-    --ref-audio 我的音色样本.wav --prompt-text "样本里说的那句话原文" \
-    "--speed=1.0" --out-dir <工程目录> --name XX
-```
-- 逐句合成，SRT 由每句精确时长直接生成，同样无需 ASR
-- 语速用 `--speed`（0.8~1.2）；合成质量不满意优先换/换位置裁剪参考音频，其次调 speed
-
-**GPT-SoVITS 部署（1660S 6GB 实测可行）**：
-1. 下载官方 Windows 整合包（GitHub Releases，国内走 `ghproxy` 类镜像加速），解压即用
-2. go-webui.bat 打开训练界面：3~10s 参考音频可**零样本克隆**直接推理；
-   想更像 → 用 1~5 分钟干净录音走微调（SoVITS + GPT 各几百步，6GB 显存 batch=1 可训，约十几分钟）
-3. 启动推理 API：`runtime\python.exe api_v2.py -a 127.0.0.1 -p 9880 -c GPT_SoVITS/configs/tts_infer.yaml`
-   （webui 里"开启推理服务"按钮等价）
-4. 模型下载走 `hf-mirror.com`（`set HF_ENDPOINT=https://hf-mirror.com`）
-5. 显存参考：推理 ≈4GB；别同时开游戏/浏览器大页面
 
 ### Phase 3 · 质检
 
@@ -108,8 +86,7 @@ uv run --with imageio-ffmpeg python scripts/tts_gptsovits.py 文案.txt \
 2. **语速**：`-4%` 附近比默认更沉稳；整篇匀速偏机械，重要句可单独合成再拼
 3. **停顿**：段落间 0.3~0.5s 真静音，比标点自然停顿更接近真人换气
 4. **响度归一**：-16 LUFS 统一响度，避免忽大忽小的"合成感"
-5. **克隆**：GPT-SoVITS 用本人 1~5 分钟录音微调后，相似度和自然度远超通用音色
-6. 终极手段：合成后 DAW/ffmpeg 做极轻微底噪与房间感（如 `aecho=0.8:0.9:40|60:0.15|0.1`，慎用）
+5. 终极手段：合成后 DAW/ffmpeg 做极轻微底噪与房间感（如 `aecho=0.8:0.9:40|60:0.15|0.1`，慎用）
 
 ## 输出命名与目录约定
 
@@ -123,15 +100,10 @@ uv run --with imageio-ffmpeg python scripts/tts_gptsovits.py 文案.txt \
 └── （接着放 素材1.png… → 交给 speech-visual-html）
 ```
 
-## 引擎对比与选择
+## 引擎说明
 
-| | edge-tts（默认） | GPT-SoVITS（克隆） |
-| --- | --- | --- |
-| 成本/依赖 | 免费，uv 在线拉包即可 | 整合包 ~几GB + N 卡（6GB 可跑） |
-| 音色 | 微软官方音色库（见 voices.md） | 你的音色（3~10s 零样本 / 1~5min 微调） |
-| SRT 来源 | 服务端字级时间戳 | 逐句合成时长（精确） |
-| 去AI味上限 | 中（参数+文案层） | 高（本人音色） |
-| 适用 | 快速出片、批量 | 正式成品、个人 IP 声音 |
+统一使用 edge-tts：微软官方音色库（见 voices.md），免费、零依赖、服务端字级时间戳直接出 SRT。
+音色克隆路线（GPT-SoVITS）经实测效果不佳已移除；需要个性声音时，优先"选准音色库音色 + 文案层打磨"。
 
 ## 常见问题
 

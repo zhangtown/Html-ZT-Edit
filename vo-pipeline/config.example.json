@@ -6,13 +6,5 @@
   "volume": "+0%",
   "paragraph_gap": 0.35,
   "loudnorm": true,
-  "max_chars": 20,
-  "replace_table": "XX-替换表.txt",
-  "gptsovits": {
-    "api": "http://127.0.0.1:9880",
-    "ref_audio": "我的音色样本.wav",
-    "prompt_text": "参考音频里说的那句话原文",
-    "speed_factor": 1.0,
-    "gap": 0.3
-  }
+  "max_chars": 20
 }
