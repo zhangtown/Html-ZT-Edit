@@ -376,7 +376,9 @@ export default function App() {
       } else if (m.type === 'selection') {
         setSelCount(m.count)
         setSelected(m.primary)
-        setSelectedSubIdx(-1)
+        // 注意：画布元素选中【不应】清空字幕选中（selectedSubIdx），
+        // 否则点字幕块后 runtime 回传 selection 会把选中态冲掉，
+        // 导致「解除绑定」按钮走到 unbindSelectedElement 分支而解不掉字幕。
       } else if (m.type === 'deselected') {
         setSelCount(0)
         setSelected(null)
