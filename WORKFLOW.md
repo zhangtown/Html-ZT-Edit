@@ -83,6 +83,9 @@ npm install
 npm run dev            # 纯 Web 调试（http://localhost:5173）
 npm run dev:electron   # Electron 桌面调试模式
 # 发布：双击 打包.bat（自动配国内镜像 + npm install + electron-builder）
+
+# 安装仓库内 AI 技能到 ZCode 技能目录（否则不会被自动触发）：
+cp -r vo-pipeline ~/.agents/skills/     # speech-visual-html 同理；装完新开会话生效
 ```
 
 ### 3. 不在 git 里的资产（换机器必须手动拷贝！）
@@ -127,12 +130,13 @@ HTML-ZtEdit/
 - 录制管线 v1：getDisplayMedia 捕获窗口 → 实时裁剪 iframe → 混入页面音轨 → MediaRecorder
 - 字幕绑定/解绑稳定性修复 ×2（跨页兜底查找；selection 消息误清空字幕选中态）
 - 工作区清理：调试代码、临时诊断文件、设计素材移出 git
+- **vo-pipeline 口播产线技能 v1.0**（edge-tts 引擎全链路实测通过；GPT-SoVITS 引擎待部署联调）
 
 **已知卡点（即下面 P0 的来源）**：
 1. 录制输出 webm 而非 MP4 —— Electron 29（Chromium 120）的 MediaRecorder 不支持 video/mp4，`pickMime()` 的 mp4 候选全部落空
 2. 录制分辨率随窗口尺寸走 —— 画布按 iframe 在窗口内的实际显示大小裁剪，窗口小则成片小
 3. 动画只有 11 种整元素变换（zoom×2/fade/fly×4/bounce/rotate/focus-zoom），缺文字类效果
-4. 定稿文案 → MP3+SRT 没有自动化产线，语音合成靠手动零散操作
+4. ~~定稿文案 → MP3+SRT 没有自动化产线~~ → vo-pipeline 已建成；**GPT-SoVITS 整合包尚未部署**（阶段2 联调待做）
 
 ## 六、路线图 TODO
 
@@ -148,22 +152,19 @@ HTML-ZtEdit/
 
 验收：窗口任意大小都能录出 1080p MP4，成片可直接进剪映/PR。
 
-#### 2. TTS 口播产线（新技能，建议名 `vo-pipeline`，或并入 speech-visual-html 作 Phase 0）
+#### 2. ✅ TTS 口播产线 `vo-pipeline`（阶段1 已建成并实测通过 2026-08-28）
 
-定稿文案一键产出 `口播.MP3 + 口播.srt`，直接可喂给 speech-visual-html。
+技能落在仓库 `vo-pipeline/`（SKILL.md + 三只脚本 + 音色速查表），并安装到 `~/.agents/skills/`。
 
-- **阶段 1 · 零成本立即可做**：文案 → 口语化分句（句长控制、停顿标注、数字读法/多音字处理）
-  → `edge-tts` 合成（音色库清单+试听对比表，rate/pitch/volume 参数化）
-  → 用 edge-tts 的 WordBoundary 事件直接生成 SRT（无需 ASR，时间轴精度高）
-  → ffmpeg 响度归一、首尾静音修剪
-- **阶段 2 · 音色克隆选型**（学习"我的音色"）：
-  - 本地路线：GPT-SoVITS / CosyVoice2 / F5-TTS / IndexTTS（几秒参考音频零样本克隆，中文效果好；
-    需要 ≥6–8GB 显存的 NVIDIA GPU，Windows 有整合包）
-  - API 路线（无 GPU 备选）：fish-audio / MiniMax / Azure 自定义神经语音（注意成本与隐私合规）
-  - 克隆音色输出 WAV 后，用 whisperX / faster-whisper 做强制对齐生成 SRT
-- **阶段 3 · 去AI味持续迭代**：语气词注入、break 停顿、逐句 rate 微调、情感参数、批量试听评分表
-
-卡点/决策点：两台机器有无 NVIDIA GPU 决定走本地克隆还是 API。
+- ✅ **阶段1 edge-tts 引擎（默认）**：Phase0 文案口语化打磨指引 → 合成 → **WordBoundary 字级时间戳直接出 SRT**
+  （对齐回原文保留标点、按标点自然断条）→ 响度归一 -16 LUFS → 段落间隙 → 试听选音色 → 语速体检（字/秒）。
+  零系统依赖（uv 按需拉 edge-tts/mutagen/imageio-ffmpeg）。实测：97字 → 21.9s MP3 + 6条 SRT，时间轴误差 <0.1s
+- 🚧 **阶段2 音色克隆（已选型：GPT-SoVITS，1660S 6GB 可跑）**：
+  - 硬件结论：推理 ≈4GB 显存可用；1~5 分钟素材微调 batch=1 可行，走 Windows 整合包
+  - 引擎脚本 `tts_gptsovits.py` 已就位（逐句调 api_v2、句时长直接出 SRT，无需 ASR），**待部署整合包后端到端联调**
+  - 兜底对齐工具 `srt_whisper.py`（faster-whisper，small/medium int8 均可跑）已就位
+  - 无 GPU 备选 API 路线：fish-audio / MiniMax（注意成本与隐私）
+- ✅ 阶段3 去AI味清单已写入 SKILL.md（文案层打磨为收益最大项）
 
 #### 3. 动画扩充（两档实现，契约同步升级）
 
