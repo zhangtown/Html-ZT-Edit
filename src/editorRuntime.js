@@ -1481,11 +1481,27 @@
     post({ type: 'bindingConfirmed', subtitleIndex: idx, targetSelector: '[data-zt-id="' + targetId + '"]' })
   }
 
-  // 解除绑定：移除选中字幕的 data-zt-bound-to
+  // 解除绑定：移除指定字幕的 data-zt-bound-to
+  // subtitleIndex 是父端基于当前页 subtitles 数组的索引；
+  // 若当前页找不到（切页后父端索引滞后导致 silent return），则遍历所有 slide 兜底查找
   function unbindSubtitle(subtitleIndex) {
+    var subtitleEl = null
     var els = getSubtitleElements()
-    var subtitleEl = els[subtitleIndex]
-    if (!subtitleEl) return
+    subtitleEl = els[subtitleIndex] || null
+    if (!subtitleEl) {
+      // 跨页兜底：按索引遍历所有 slide 的字幕集合
+      for (var si = 0; si < slides.length; si++) {
+        if (si === current) continue
+        var pageEls = Array.prototype.slice.call(
+          slides[si].querySelectorAll('[data-zt-role="subtitle"]')
+        ).filter(function (el) { return el.parentNode && isEditable(el) })
+        if (pageEls[subtitleIndex]) { subtitleEl = pageEls[subtitleIndex]; break }
+      }
+    }
+    if (!subtitleEl) {
+      post({ type: 'unbindFailed', subtitleIndex: subtitleIndex, reason: 'subtitle not found in any slide' })
+      return
+    }
     var before = snapStyle(subtitleEl)
     subtitleEl.removeAttribute('data-zt-bound-to')
     var after = snapStyle(subtitleEl)

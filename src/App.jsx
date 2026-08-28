@@ -602,6 +602,10 @@ export default function App() {
         setSubBindingMode(false)
         setBindingTarget(null)
       }
+      if (m.type === 'unbindFailed') {
+        console.warn('[ZT-Edit] 解除绑定失败:', m)
+        alert('解除绑定失败：未找到对应字幕。\n可能原因：字幕已被删除或页面结构变化，请刷新后再试。')
+      }
       // 拖拽放置：iframe 告知坐标，我方回传素材信息
       if (m.type === 'assetDropPosition') {
         const d = dragDataRef.current
