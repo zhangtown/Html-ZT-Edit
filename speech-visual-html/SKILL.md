@@ -14,14 +14,14 @@ triggers:
   - "国风"
   - "视频脚本"
   - "MG动画"
-version: 5.3
+version: 5.4
 defaultTemplate: 模板-唐朝不存在风格-v5.1.html
 ---
 
-# Speech Visual HTML Generator v5.3
+# Speech Visual HTML Generator v5.4
 
 > **默认风格**：基于"唐朝不存在"项目（2026.07.31 最终版），包含分批飞入封面、内容优先聚焦系统、左文右图布局。
-> 旧版风格（毒教材项目、mg-hide 模式）已归档，新项目优先使用 v5.3（ztEdit 原生格式）。
+> 旧版风格（毒教材项目、mg-hide 模式）已归档，新项目优先使用 v5.4（ztEdit 原生格式）。
 
 ## 技能概述
 
@@ -520,6 +520,159 @@ cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
 // showSlide() 翻页时清除 animDone/focusDone + 移除 zt-focus-active/dim-others
 ```
 
+#### 最小可复用播放脚本模板
+
+下面是一段可直接嵌入 HTML 的完整播放脚本（ztEdit 原生格式），行为与 `模板-唐朝不存在风格-v5.1.html` 一致。生成新页面时应以此为基础，避免自行简化导致切页/动画行为不一致。
+
+```html
+<script>
+(function(){
+  const audio = document.getElementById('bgAudio');
+  const slides = document.querySelectorAll('.slide');
+  const subtitleEl = document.getElementById('subtitleCurrent');
+  const progressBar = document.getElementById('progressBar');
+  let currentSlide = 0, currentSubtitle = -1, isPlaying = false, manualOverrideUntil = 0;
+
+  // 构建全局 subtitles 数组（从 DOM 字幕 + slideTimings 计算绝对时间）
+  const subtitles = [];
+  slides.forEach(function(sl, si){
+    const st = slideTimings[si]; if(!st) return;
+    sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(el){
+      const rStart = parseFloat(el.getAttribute('data-zt-subtitle-start')) || 0;
+      const rEnd = parseFloat(el.getAttribute('data-zt-subtitle-end')) || 0;
+      subtitles.push({ startSec: st.start + rStart, endSec: st.start + rEnd, text: el.textContent });
+    });
+  });
+
+  function showSlide(idx, seekAudio){
+    slides.forEach(function(s, i){ s.classList.toggle('active', i === idx); });
+    currentSlide = idx;
+    // 翻页时重置本页 focus 状态，保证每次进入都能重播强调动画
+    document.querySelectorAll('.focus-item').forEach(function(el){
+      delete el.dataset.animDone; delete el.dataset.focusDone;
+      el.classList.remove('zt-focus-active');
+    });
+    document.querySelectorAll('.focus-group').forEach(function(g){ g.classList.remove('dim-others'); });
+    // 只有在已播放状态下才同步音频时间
+    if(seekAudio && isPlaying && audio){
+      const st = slideTimings.find(function(t){ return t.slide === idx; });
+      if(st) audio.currentTime = st.start;
+    }
+  }
+
+  function updateSubtitle(time){
+    let ns = -1;
+    for(let i = 0; i < subtitles.length; i++){
+      if(time >= subtitles[i].startSec && time < subtitles[i].endSec){ ns = i; break; }
+    }
+    if(ns !== currentSubtitle && ns !== -1){
+      subtitleEl.classList.add('is-changing');
+      setTimeout(function(){ subtitleEl.textContent = subtitles[ns].text; subtitleEl.classList.remove('is-changing'); }, 350);
+      currentSubtitle = ns;
+    }
+  }
+
+  function updateSlide(time){
+    if(Date.now() < manualOverrideUntil) return;
+    for(let i = slideTimings.length - 1; i >= 0; i--){
+      if(time >= slideTimings[i].start){
+        if(currentSlide !== slideTimings[i].slide) showSlide(slideTimings[i].slide);
+        break;
+      }
+    }
+  }
+
+  function playAnimation(el, effect, duration, delay, returnSec, easing){
+    // 入场动画实现（可选：focus-* 以外效果才需要）
+    if(!el) return;
+    const kfMap = {
+      'zoom-in': { from:{transform:'scale(0.6)',opacity:0}, to:{transform:'scale(1.3)',opacity:1} },
+      'fade-in': { from:{opacity:0}, to:{opacity:1} },
+      'fly-left': { from:{transform:'translateX(-120px)',opacity:0}, to:{transform:'translateX(0)',opacity:1} },
+      'fly-right': { from:{transform:'translateX(120px)',opacity:0}, to:{transform:'translateX(0)',opacity:1} },
+      'fly-top': { from:{transform:'translateY(-120px)',opacity:0}, to:{transform:'translateY(0)',opacity:1} },
+      'fly-bottom': { from:{transform:'translateY(120px)',opacity:0}, to:{transform:'translateY(0)',opacity:1} }
+    };
+    const kf = kfMap[effect] || { from:{transform:'scale(0.8)',opacity:0}, to:{transform:'scale(1)',opacity:1} };
+    const dur = parseFloat(duration) || 0.8, dly = parseFloat(delay) || 0;
+    el.animate([kf.from, kf.to], { duration: dur * 1000, delay: dly * 1000, easing: easing || 'ease', fill:'forwards' });
+  }
+
+  function loop(){
+    if(!isPlaying) return;
+    const t = audio.currentTime;
+    updateSlide(t);
+    updateSubtitle(t);
+    const cur = slides[currentSlide];
+    if(cur){
+      const slideStart = slideTimings[currentSlide] ? slideTimings[currentSlide].start : 0;
+      cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
+        const boundSel = subEl.getAttribute('data-zt-bound-to');
+        if(!boundSel) return;
+        const boundEl = document.querySelector(boundSel);
+        if(!boundEl) return;
+        const effect = boundEl.getAttribute('data-zt-anim-effect') || '';
+        const absStart = slideStart + parseFloat(subEl.getAttribute('data-zt-subtitle-start') || 0);
+        if(effect.indexOf('focus-') === 0){
+          if(!boundEl.dataset.focusDone && t >= absStart){
+            boundEl.dataset.focusDone = '1';
+            const grp = boundEl.closest('.focus-group');
+            if(grp) grp.classList.add('dim-others');
+            boundEl.classList.add('zt-focus-active');
+          }
+        } else {
+          if(!boundEl.dataset.animDone && t >= absStart && t < absStart + 0.5){
+            boundEl.dataset.animDone = '1';
+            playAnimation(boundEl, effect, boundEl.getAttribute('data-zt-anim-duration'), boundEl.getAttribute('data-zt-anim-delay'), boundEl.getAttribute('data-zt-anim-return'), boundEl.getAttribute('data-zt-anim-easing'));
+          }
+        }
+      });
+    }
+    if(audio.duration) progressBar.style.width = (t / audio.duration * 100) + '%';
+    requestAnimationFrame(loop);
+  }
+
+  function startPlayback(){
+    if(isPlaying) return;
+    audio.play().then(function(){ isPlaying = true; loop(); }).catch(function(){});
+  }
+
+  // 关键：document 监听键盘，确保 file:// 下未 focus 也能响应
+  document.addEventListener('keydown', function(e){
+    if(e.key === 'ArrowRight'){
+      e.preventDefault();
+      if(currentSlide < slides.length - 1){ showSlide(currentSlide + 1, true); manualOverrideUntil = Date.now() + 3000; }
+    } else if(e.key === 'ArrowLeft'){
+      e.preventDefault();
+      if(currentSlide > 0){ showSlide(currentSlide - 1, true); manualOverrideUntil = Date.now() + 3000; }
+    } else if(e.key === ' ' || e.code === 'Space'){
+      e.preventDefault();
+      if(!isPlaying) startPlayback();
+    }
+  });
+
+  document.addEventListener('click', function(e){
+    if(!isPlaying){ startPlayback(); return; }
+    const x = e.clientX / window.innerWidth;
+    if(x > 0.5){ if(currentSlide < slides.length - 1){ showSlide(currentSlide + 1, true); manualOverrideUntil = Date.now() + 3000; }}
+    else { if(currentSlide > 0){ showSlide(currentSlide - 1, true); manualOverrideUntil = Date.now() + 3000; }}
+  });
+
+  // 页面加载后自动开始播放（录屏场景需要）
+  window.addEventListener('load', function(){ setTimeout(startPlayback, 300); });
+
+  // 初始化显示第一页
+  showSlide(0);
+})();
+</script>
+```
+
+> **关键约定**：
+> 1. 键盘事件必须绑定到 `document`（不是 `window`），否则 `file://` 下窗口未 focus 时方向键不生效。
+> 2. `showSlide(idx, true)` 的音频 seek **只在 `isPlaying` 为 true 时执行**，保证未播放时也能自由翻页。
+> 3. 翻页后必须重置 `animDone`/`focusDone`/`zt-focus-active`/`dim-others`，否则再次进入该页时强调动画不会重播。
+> 4. `slideTimings` 数组字段统一为 `{slide, start, end}`；DOM 字幕时间为相对当前 slide 起始的秒数。
+
 ### Phase 5: 聚焦强调效果（v5.3，ztEdit 原生 focus-zoom）
 
 > 替代旧的 `data-focus`/`m5-focus`/`m5-blur` 方案。现在统一用 `focus-zoom` 效果 + `focus-group` 分组，由字幕绑定触发，导入 ztEdit 后可编辑绑定关系与动画。
@@ -593,6 +746,39 @@ clip-path: polygon(0% 8%, 8% 0%, 92% 0%, 100% 8%, 100% 78%,
 3. ← → 方向键切换画面（音频跳转）
 4. 点击右半屏前进/左半屏后退
 5. MG动画在每次进入滑页时重置重播
+
+#### 素材与格式必检项
+
+| 检查项 | 合格标准 | 常见问题 |
+|:---|:---|:---|
+| PNG 图片格式 | 文件头 `89 50 4E 47`、IHDR 块长度为 13 字节、CRC 校验通过 | 用错误脚本生成的 PNG 可能出现 IHDR 长度=14、CRC 错误，导致浏览器显示占位符 |
+| 图片路径 | 与 HTML 同目录，相对路径引用；避免中文文件名在不同 HTTP 服务/预览环境下解析失败 | 中文路径在部分静态服务器或内置预览面板下会 404 |
+| Slide 显示机制 | 建议用 `opacity/visibility/transform` 切换，不用 `display:none ↔ flex` | `display:none` 会强制子元素动画重置，可能导致封面拼贴飞入动画异常或 iframe/编辑器中无法截图 |
+| 键盘事件绑定 | 必须绑定到 `document`（而非 `window`） | `file://` 下窗口未获得焦点时 `window` 监听不生效 |
+| 自动播放 | 页面 `load` 后延迟 300ms 调用 `audio.play()` | 浏览器策略下首次交互前可能静音，但录屏/导出场景通常允许 |
+
+**PNG 快速自检命令（Python）**：
+```python
+import struct, binascii, zlib
+
+def check_png(path):
+    data = open(path, 'rb').read()
+    if data[:8] != b'\x89PNG\r\n\x1a\n': return False, 'bad signature'
+    pos = 8
+    while pos < len(data):
+        length = struct.unpack('>I', data[pos:pos+4])[0]
+        ctype = data[pos+4:pos+8]
+        chunk = data[pos+8:pos+8+length]
+        crc_given = struct.unpack('>I', data[pos+8+length:pos+12+length])[0]
+        crc_calc = binascii.crc32(ctype + chunk) & 0xffffffff
+        if crc_given != crc_calc: return False, f'{ctype.decode()} crc error'
+        if ctype == b'IHDR' and length != 13: return False, f'IHDR len={length} (must be 13)'
+        if ctype == b'IEND': break
+        pos += 12 + length
+    return True, 'ok'
+
+print(check_png('red.png'))
+```
 
 ## 关键参数速查
 
@@ -897,6 +1083,10 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
   - 新增：封面切页时机原则（对齐具体台词）
   - 新增：短字幕合并规则
   - 新增：封面底部精简建议
+- v5.4: 播放脚本模板化 + 素材格式必检（基于测试工程两处行为不一致修复）
+  - 新增：最小可复用播放脚本模板——完整 JS 可直接嵌入，明确 document 绑定键盘事件、未播放时也能切页、showSlide() 重置 zt-focus-active/dim-others、加载后自动播放
+  - 新增：素材与格式必检项——PNG 自检代码（IHDR 必须 13 字节/CRC 校验）、slide 切换建议用 opacity/visibility/transform、避免中文路径在 HTTP 服务下 404
+  - 原因：v5.3 仅描述播放逻辑、未给完整脚本，导致手写简化版出现方向键不响应、图片显示占位符等行为不一致
 - v5.3: ztEdit 原生格式对齐（本次更新）
   - 新增：ztEdit 原生格式规范章节——DOM 字幕(data-zt-role+相对时间) + data-zt-id + data-zt-bound-to 绑定 + data-zt-anim-effect 动画 + focus-group 分组
   - 改造：动画模型从 data-trigger/mg-hide/data-focus 统一迁移到 ztEdit 原生（focus-zoom 强调为默认，入场类为辅）
