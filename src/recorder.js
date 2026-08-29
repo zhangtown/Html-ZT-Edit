@@ -39,35 +39,56 @@ function mixInAudio(stream, iframeEl) {
     const doc = iframeEl && iframeEl.contentDocument
     const audioEl = doc && (doc.getElementById('bgAudio') || doc.querySelector('audio'))
     if (!audioEl) {
-      console.warn('[ZT-Edit] 页面里没找到 <audio>，本次录制将无声')
+      console.warn(
+        '[ZT-Edit] 页面里没找到 <audio>，本次录制将无声。' +
+          '诊断：iframe doc=' + !!doc + '，body子元素数=' + (doc && doc.body ? doc.body.children.length : -1)
+      )
       return
     }
+    console.warn(
+      '[ZT-Edit] 音频元素已找到 src=' + (audioEl.currentSrc || audioEl.src || '(空)') +
+        ' paused=' + audioEl.paused + ' readyState=' + audioEl.readyState +
+        ' 已有缓存dest=' + !!audioEl.__ztRecDest
+    )
     // 首选 WebAudio 管线：元素一播放就出数据帧，可控性最好。
     // （实测 element.captureStream() 在元素尚未播放时拿到的轨不会产出数据帧，
     //   mp4 里连音轨 box 都不会写——它是踩过坑的兜底，不再是首选。）
     try {
       if (audioEl.__ztRecDest) {
-        // createMediaElementSource 对同一元素只能调一次：复用首次建好的 destination
+        // createMediaElementSource 对同一元素只能调一次：复用首次建好的 destination。
+        // context 必须强引用+复用时 resume：录制结束后失去引用可能被 GC/自动挂起，
+        // 挂起状态下音轨无数据（"第一次录有声、编辑后再录无声"的实证形态）。
+        const ctx = audioEl.__ztRecCtx
+        if (ctx && ctx.state === 'suspended') {
+          ctx.resume().catch((e) => console.warn('[ZT-Edit] AudioContext resume 失败：' + (e && e.message)))
+        }
+        const st2 = ctx ? ctx.state : 'unknown'
         audioEl.__ztRecDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
-        console.warn('[ZT-Edit] 音轨(WebAudio·复用)已接入')
+        console.warn('[ZT-Edit] 音轨(WebAudio·复用)已接入, ctxState=' + st2 + ', tracks=' + stream.getAudioTracks().length)
         return
       }
       const actx = new (window.AudioContext || window.webkitAudioContext)()
-      if (actx.state === 'suspended') actx.resume().catch(() => {})
+      console.warn('[ZT-Edit] AudioContext 已创建 state=' + actx.state)
+      const resumeP = actx.state === 'suspended' ? actx.resume().catch((e) => console.warn('[ZT-Edit] AudioContext resume 失败：' + (e && e.message))) : null
       const src = actx.createMediaElementSource(audioEl)
       const dest = actx.createMediaStreamDestination()
       src.connect(dest)
       // createMediaElementSource 会把元素输出改道 WebAudio，必须接回扬声器，否则编辑器里没声
       src.connect(actx.destination)
       audioEl.__ztRecDest = dest
-      dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
-      console.warn('[ZT-Edit] 音轨(WebAudio)已接入')
+      audioEl.__ztRecCtx = actx // 强引用防 GC；下次录制复用时按需 resume
+      dest.stream.getAudioTracks().forEach((t) => {
+        stream.addTrack(t)
+        console.warn('[ZT-Edit] 音轨(WebAudio)已接入 track=' + t.readyState + ' muted=' + t.muted)
+      })
+      if (resumeP) resumeP.then(() => console.warn('[ZT-Edit] AudioContext resume 后 state=' + actx.state)).catch(() => {})
       return
     } catch (e) {
       console.warn('[ZT-Edit] WebAudio 音轨接入失败，退回 captureStream：' + (e && e.message))
     }
     if (audioEl.captureStream) {
       audioEl.captureStream().getAudioTracks().forEach((t) => stream.addTrack(t))
+      console.warn('[ZT-Edit] 音轨(captureStream兜底)已接入')
     }
   } catch (e) {}
 }

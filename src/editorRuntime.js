@@ -1189,6 +1189,8 @@
       '.zt-hl-sweep{position:relative}',
       '.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}',
       '.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}',
+      // 组外被绑元素的独立强调（绑定不一定发生在 focus-group 内）
+      '.zt-focus-active{outline:3px solid rgba(196,30,36,.85);outline-offset:3px;opacity:1!important;filter:brightness(1)!important}',
     ].join('\n')
     document.head.appendChild(sweepStyleEl)
   }
@@ -1520,10 +1522,16 @@
     if (!subtitleEl || !targetEl) { cancelBinding(); return }
     var targetId = targetEl.getAttribute('data-zt-id')
     if (!targetId) { cancelBinding(); return }
-    var before = snapStyle(subtitleEl)
+    // 元素侧补全契约属性（对齐 ztEdit 原生格式）：只写字幕侧绑定而不给元素动画类型，
+    // 播放时 effect 为空什么都不会触发——同组原有元素被 dim 压暗后，被绑元素却不亮，
+    // 用户视角就是"元素消失了/绑定没反应"。
+    var hadEffect = !!targetEl.getAttribute('data-zt-anim-effect')
+    var before = [snapStyle(subtitleEl), snapStyle(targetEl)]
     subtitleEl.setAttribute('data-zt-bound-to', '[data-zt-id="' + targetId + '"]')
-    var after = snapStyle(subtitleEl)
-    pushHistory([before], [after], [subtitleEl])
+    if (!hadEffect) targetEl.setAttribute('data-zt-anim-effect', 'focus-zoom')
+    targetEl.classList.add('focus-item')
+    var after = [snapStyle(subtitleEl), snapStyle(targetEl)]
+    pushHistory(before, after, [subtitleEl, targetEl])
     targetEl.classList.remove('zt-binding-target')
     bindingMode = null
     document.body.style.cursor = ''
