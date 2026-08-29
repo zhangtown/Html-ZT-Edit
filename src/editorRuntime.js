@@ -2146,6 +2146,9 @@
 
   function nativeTick() {
     if (!nativeMode) return
+    // 音频播完 → 通知父层收尾（reason=ended，录屏据此延时停录）；原生脚本自身没有结束回调
+    var pa = getPlayAudio()
+    if (pa && pa.ended) { stopPlay(false, 'ended'); return }
     var slides = document.querySelectorAll('.slide')
     var idx = -1
     for (var i = 0; i < slides.length; i++) {
@@ -2221,14 +2224,14 @@
           playAudioOk = true
         }
       } catch (e) { playAudioOk = false }
-      // 音频自然播完 → 自动停止并返回编辑模式
-      playAudio.onended = function () { stopPlay() }
+      // 音频自然播完 → 自动停止并返回编辑模式（带 reason，录屏据此延时 2s 收录）
+      playAudio.onended = function () { stopPlay(false, 'ended') }
     }
     post({ type: 'playState', playing: true, current: current })
     playRaf = requestAnimationFrame(playLoop)
   }
 
-  function stopPlay(silent) {
+  function stopPlay(silent, reason) {
     if (playRaf) { cancelAnimationFrame(playRaf); playRaf = null }
     if (nativeRaf) { cancelAnimationFrame(nativeRaf); nativeRaf = null }
     nativeMode = false
@@ -2254,7 +2257,7 @@
     if (editorStyle2 && editorStyle2.sheet) editorStyle2.sheet.disabled = false
     playSubIndex = -1
     resetPlayAnimState()
-    if (!silent) post({ type: 'playState', playing: false, current: lastIdx })
+    if (!silent) post({ type: 'playState', playing: false, current: lastIdx, reason: reason || 'manual' })
   }
 
   function playGoto(idx) {

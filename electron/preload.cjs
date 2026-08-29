@@ -11,9 +11,10 @@ contextBridge.exposeInMainWorld('ztPick', {
 })
 
 contextBridge.exposeInMainWorld('ztRec', {
-  // 保存录屏视频：data 为 ArrayBuffer，ext 不带点（如 'webm'/'mp4'）
-  saveRecording: (data, ext, suggestedName) =>
-    ipcRenderer.invoke('zt:save-recording', { data, ext, suggestedName }),
+  // 保存录屏视频：data 为 ArrayBuffer，ext 不带点（如 'webm'/'mp4'）；
+  // 传 dir（HTML 所在目录绝对路径）时免弹窗直接落盘
+  saveRecording: (data, ext, suggestedName, dir) =>
+    ipcRenderer.invoke('zt:save-recording', { data, ext, suggestedName, dir }),
 })
 
 // 录制会话控制（离屏录制窗口 + 主窗口共用）

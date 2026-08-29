@@ -182,6 +182,7 @@ export default function App() {
   const pendingExportRef = useRef(null) // 等待 iframe 回传 HTML 的 Promise（录制取页用）
   const recRootRef = useRef('') // 资源根目录磁盘绝对路径；随草稿存取，保证刷新后仍能离屏录制
   const directRecRef = useRef(false) // 与 directRec state 同步：消息回调/事件监听里读 ref 拿到最新值
+  const recFinishTimerRef = useRef(null) // 「音频播完延时 2s 收录」的定时器；手动 Esc 时要取消它立即收
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -609,6 +610,11 @@ export default function App() {
   async function finishRecording() {
     const session = recRef.current
     if (!session) return
+    // 「播完延时 2s」的定时器还没到就手动收（Esc/换文件）→ 撤掉定时器，只走这一次
+    if (recFinishTimerRef.current) {
+      clearTimeout(recFinishTimerRef.current)
+      recFinishTimerRef.current = null
+    }
     recRef.current = null
     setRecording(false)
     setSavingRec(true)
@@ -663,11 +669,16 @@ export default function App() {
         )
       }
       const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
-      const name = `录屏-${stamp}.${ext}`
+      const base = String(activeHtmlRef.current || '').replace(/\.html?$/i, '')
+      const name = `${base ? base + '-' : ''}录屏-${stamp}.${ext}`
       if (window.ztRec && window.ztRec.saveRecording) {
         const buf = await blob.arrayBuffer()
-        const r = await window.ztRec.saveRecording(buf, ext, name)
+        // 桌面端且知道 HTML 所在目录 → 免弹窗直接落盘；否则退回手动保存框
+        const r = recRootRef.current
+          ? await window.ztRec.saveRecording(buf, ext, name, recRootRef.current)
+          : await window.ztRec.saveRecording(buf, ext, name)
         if (r && r.canceled) return // 用户取消保存
+        if (r && r.filePath) console.warn('[ZT-Edit] 录屏已保存：' + r.filePath)
       } else {
         download(name, blob)
       }
@@ -737,7 +748,16 @@ export default function App() {
           // 回到编辑模式：重新拉取页面信息，确保面板同步
           setSelected(null)
           setSelCount(0)
-          finishRecording() // 播放结束/停止 → 输出录屏
+          if (recRef.current && m.reason === 'ended') {
+            // 音频播完：画面在最后一页停留 2 秒再停录收尾（手动 Esc 走 reason=manual，立即收）
+            if (recFinishTimerRef.current) clearTimeout(recFinishTimerRef.current)
+            recFinishTimerRef.current = setTimeout(() => {
+              recFinishTimerRef.current = null
+              finishRecording()
+            }, 2000)
+          } else {
+            finishRecording() // 播放结束/停止 → 输出录屏
+          }
         }
       } else if (m.type === 'playProgress') {
         setPlayCurrent(m.current)

@@ -130,6 +130,7 @@ HTML-ZtEdit/
 ## 五、当前进度快照（2026-08-29）
 
 **已完成**：
+- **录屏自动收尾 + 免弹窗落盘**（2026-08-29）：音频播完 → 画面在最后一页停留 2 秒 → 自动停录并直接保存到 HTML 所在目录（文件名 `页面名-录屏-时间戳.mp4`），全程无保存对话框；手动 Esc 仍立即停录。实现：原生播放路径此前**没有**结束信号（nativeTick 只回报页码），在 nativeTick 里检测 `audio.ended` 补上；编辑器引擎路径走 `onended`；playState 消息带 `reason`（ended/manual）区分；`zt:save-recording` 支持 `dir` 直写（目录不可写时自动退回保存框，成片不丢）
 - **直接全屏录屏模式**（2026-08-29）：勾选录屏→模式选「直接全屏」，点播放后窗口自动全屏、编辑器 UI/鼠标/弹窗全部隐藏、页面不响应点击，全程只响应 Esc（Esc 或播完自动结束并保存）；画面=窗口内容=屏幕原生分辨率（4K 屏直出 4K 片），音画同源取自全屏窗口，码率随分辨率自适应（4K≈48Mbps 封顶）。实现：`recorder.js` direct 分支 + `zt:set-fullscreen` IPC + `zt-direct-rec` CSS 类（iframe 不重挂，纯 CSS 覆盖）。离屏定分辨率模式保留为默认
 - **动画扩充 CSS 档（P0-3 第一档）**：新增 `wipe`/`flip`/`blur-in`/`slide-spin` 入场 + `highlight-sweep` 划线强调；关键帧模型扩展 clipPath/filter 属性；契约 v5.3→v5.4 两仓同发（编辑器下拉/预览/导出 + SKILL.md 动画清单）
 - 播放预览模式：从头/本页播放，音频 seek + 字幕 + 绑定动画同步，停止返回编辑态

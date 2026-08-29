@@ -436,11 +436,22 @@ function registerIpc() {
   })
 
   // 录屏：保存视频文件（渲染进程录好 blob 后传 ArrayBuffer 过来落盘）
+  // 带 dir（HTML 所在目录）时免弹窗直接写入该目录；否则弹保存框让用户挑位置
   ipcMain.handle('zt:save-recording', async (event, payload) => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    const { data, ext, suggestedName } = payload || {}
+    const { data, ext, suggestedName, dir } = payload || {}
     if (!data) return { canceled: true, error: '无数据' }
     const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
+    if (dir && typeof dir === 'string' && path.isAbsolute(dir) && fs.existsSync(dir)) {
+      try {
+        const autoPath = path.join(dir, suggestedName || `录屏-${stamp}.${ext || 'webm'}`)
+        fs.writeFileSync(autoPath, Buffer.from(data))
+        return { canceled: false, filePath: autoPath, auto: true }
+      } catch (e) {
+        // 目录写入失败（只读/被占用）→ 退回保存框，别让成片丢掉
+        console.warn('[rec] 自动落盘失败，退回保存框：' + String(e && e.message))
+      }
+    }
     const result = await dialog.showSaveDialog(win, {
       title: '保存录屏视频',
       defaultPath: suggestedName || `录屏-${stamp}.${ext || 'webm'}`,
