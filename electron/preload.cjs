@@ -15,3 +15,27 @@ contextBridge.exposeInMainWorld('ztRec', {
   saveRecording: (data, ext, suggestedName) =>
     ipcRenderer.invoke('zt:save-recording', { data, ext, suggestedName }),
 })
+
+// 录制会话控制（离屏录制窗口 + 主窗口共用）
+contextBridge.exposeInMainWorld('ztRecSession', {
+  // 把自包含 HTML 交给主进程：写临时文件 + 开定尺寸隐藏窗口加载，页面播放被拦住待发令
+  prepare: (html, width, height) =>
+    ipcRenderer.invoke('zt:rec-prepare', { html, width, height }),
+  // 放行离屏页的自动播放，与编辑器内播放同时起步
+  start: () => ipcRenderer.invoke('zt:rec-start'),
+  // 结束录制：销毁离屏窗口、删除临时文件
+  close: () => ipcRenderer.invoke('zt:rec-close'),
+  // 当前编辑 HTML 所在文件夹的绝对路径（桌面端才有，浏览器模式返回空串）
+  getRoot: () => ipcRenderer.invoke('zt:get-root'),
+  // 从草稿恢复后回填根目录，保证刷新页面仍能走离屏录制
+  setRoot: (root) => ipcRenderer.invoke('zt:set-root', root),
+  // 屏幕可用区域（CSS 像素）：离屏窗口不能比它大，否则页面根本渲染不出来
+  getScreen: () => ipcRenderer.invoke('zt:get-screen'),
+  // 诊断用：取离屏页里 audio 的真实状态（排查"有音轨却静音"）
+  getState: () => ipcRenderer.invoke('zt:rec-state'),
+})
+
+// 离屏录制窗口专用：接收主进程转发的「开始播放」信号
+contextBridge.exposeInMainWorld('ztRecCtl', {
+  onStart: (cb) => ipcRenderer.on('zt:rec-start', () => cb()),
+})

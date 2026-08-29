@@ -100,11 +100,23 @@
 - **自动生成播放脚本**：导出时若原页面有 `slideTimings` 数组，会重新生成一套播放脚本 —— 从 DOM 读取字幕与绑定，按 `slideTimings` 时间轴自动翻页、随字幕触发绑定元素的**入场动画**或**聚焦强调**，并支持方向键 / 点击切页、手动翻页后自动暂停数秒。
 - 编辑器足迹（`zt-*` 选择类、`zt-focus-active`、`dim-others` 等）在导出时自动剥离，保证导出页干净。
 
+### 录屏（桌面端）
+
+| 能力 | 说明 |
+| --- | --- |
+| 一键录制 | 勾选顶栏「录屏」后点播放即开始录制；停止播放或音频播完自动保存视频 |
+| 输出 MP4 | Electron 31（Chromium 126）起 MediaRecorder 原生支持 H.264 + AAC，成片可直接进剪映 / PR |
+| 分辨率与窗口无关 | 录制时主进程开一个**隐藏的定尺寸窗口**离屏跑时间轴，编辑器窗口拖多小都不影响成片 |
+| 分辨率档位 | 顶栏可切换 1080P / 2K / 4K |
+| 音轨 | 取自编辑器内正在播放的页面；离屏页静音，不会出现双声源 |
+| 浏览器兜底 | 纯浏览器模式（非 Electron）拿不到资源根目录，自动退回「捕获编辑器窗口 + 裁剪画布」方案，输出 webm、分辨率随窗口 |
+
 ---
 
 ## 技术栈
 
 - React 18 + Vite 5
+- Electron 31（Chromium 126）桌面壳 —— 提供文件夹级资源读取与原生 MP4 录屏
 - 纯前端，无后端依赖
 - 编辑器以 `iframe` 沙箱承载被编辑页面，父窗口（React）与 iframe 通过 `postMessage` 通信
 - 草稿持久化：`IndexedDB`
@@ -124,6 +136,7 @@ HTML-ZtEdit/
 │   ├── loadFolder.js     # 文件夹选择、相对路径解析
 │   ├── htmlProcess.js    # 剥离脚本 / 资源重写 blob / 导出还原 / 自动播放脚本生成
 │   ├── draftStore.js     # IndexedDB 草稿自动存 / 恢复
+│   ├── recorder.js       # 录屏管线：离屏窗口捕获 / 音轨混入 / MediaRecorder 输出
 │   └── index.css
 ├── electron/           # Electron 桌面壳（入口 / 镜像配置 / 开发调试）
 ├── scripts/            # 辅助脚本（如字幕转 DOM）
@@ -147,6 +160,14 @@ npm run dev
 
 用浏览器打开 `http://localhost:5173` 即可。
 
+### 桌面端调试
+
+双击 `start-dev.bat`（或 `npm run dev:electron`）进入桌面端调试：
+
+- **F12** 或 **Ctrl+Shift+I**：开合 DevTools
+- `src/` 下的代码改完自动热更新；改 `electron/` 主进程代码**需重启调试会话**
+- 进程残留导致端口占用时，运行 `stop-dev.bat` 一键释放
+
 ## 一键打包（Windows 桌面程序）
 
 直接**双击项目根目录的 `打包.bat`** 即可，它会自动完成三步：
@@ -164,7 +185,7 @@ Linux / macOS 或喜欢命令行的用户，手动执行：
 ```bash
 export npm_config_registry=https://registry.npmmirror.com
 export ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/
-export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binary/
+export ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/
 export NODE_TLS_REJECT_UNAUTHORIZED=0
 npm install
 npm run electron:build

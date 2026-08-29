@@ -8,10 +8,23 @@ import {
   dirOf,
   toRelativePath,
 } from './loadFolder.js'
-import { stripScripts, rewriteAssets, restoreAndWrap, stripEditorParts } from './htmlProcess.js'
+import {
+  stripScripts,
+  rewriteAssets,
+  restoreAndWrap,
+  stripEditorParts,
+  fileUrlMapper,
+} from './htmlProcess.js'
 import { saveDraft, loadDraft, clearDraft } from './draftStore.js'
 
-import { startRecording } from './recorder.js'
+import { startRecording, probeMime } from './recorder.js'
+
+// 录制分辨率档位
+const REC_SIZES = [
+  ['1920x1080', '1080P'],
+  ['2560x1440', '2K'],
+  ['3840x2160', '4K'],
+]
 const STYLE_TAG =
   '<style id="zt-editor-style">' +
   '*{animation:none!important;transition:none!important;}' + // 编辑态冻结 CSS 动画/过渡，避免播放干扰拖拽；导出/草稿时随之移除
@@ -153,10 +166,18 @@ export default function App() {
   const [recordOn, setRecordOn] = useState(false) // 播放时是否录屏
   const [recording, setRecording] = useState(false) // 正在录制
   const [savingRec, setSavingRec] = useState(false) // 正在保存录屏
+  const [recRes, setRecRes] = useState('1920x1080') // 录制分辨率档位（离屏窗口尺寸）
+  const [recFmt, setRecFmt] = useState('') // 当前内核支持的录制封装格式（MP4 / WEBM）
+  const [screenSize, setScreenSize] = useState(null) // 屏幕可用区域（CSS 像素），用于限制录制档位
+  const [recRoot, setRecRoot] = useState('') // 资源根目录（磁盘绝对路径）；为空则录制退回兜底模式
+  const [recDiag, setRecDiag] = useState(null) // 上一次录制的自检结果 { text, ok }，直接显示到顶栏
   const recRef = useRef(null) // 录制会话
+  const pendingExportRef = useRef(null) // 等待 iframe 回传 HTML 的 Promise（录制取页用）
+  const recRootRef = useRef('') // 资源根目录磁盘绝对路径；随草稿存取，保证刷新后仍能离屏录制
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
+  recRootRef.current = recRoot // ref 是异步回调里的真实来源，state 用于 UI 显示
 
   function send(msg) {
     iframeRef.current?.contentWindow?.postMessage(msg, '*')
@@ -174,6 +195,8 @@ export default function App() {
         const { mainKey, map } = await pickHtmlFolderBackend()
         fileMapRef.current = map
         setActiveHtml(mainKey)
+        // 记下资源根目录：离屏录制要用它把相对资源改写成 file:// 绝对地址
+        setRecRoot(await getResourceRoot())
         await loadHtml(mainKey, map)
       } else {
         const file = await pickHtmlFile()
@@ -222,6 +245,15 @@ export default function App() {
     }
     scriptsRef.current = d.scripts || []
     relMapRef.current = relMap
+    // 回填资源根目录：否则刷新恢复后录屏拿不到 root，会静默退回窗口捕获兜底方案
+    setRecRoot(d.root || '')
+    if (d.root) {
+      try {
+        if (window.ztRecSession && window.ztRecSession.setRoot) {
+          await window.ztRecSession.setRoot(recRootRef.current)
+        }
+      } catch (e) {}
+    }
     pendingCurrentRef.current = d.current || 0
     const subDataScript = buildSubtitleDataScript(d.scripts || [])
     const doc = html.replace('</body>', STYLE_TAG + subDataScript + SCRIPT_TAG + '</body>')
@@ -264,6 +296,7 @@ export default function App() {
         assets,
         scripts: scriptsRef.current,
         current: pageCurrent,
+        root: recRootRef.current, // 一并存下，刷新恢复后离屏录制仍可用
         savedAt: Date.now(),
       })
       lastSavedRef.current = Date.now()
@@ -312,13 +345,132 @@ export default function App() {
   }
 
   // ---------- 录屏 ----------
+  // 离屏窗口尺寸不能超过屏幕可用区域：超了 Chromium 根本不渲染页面
+  // （表现为页面加载 ERR_FAILED、录出来画面静止不动，4K 在 2K 屏上就是这么挂的）
+  const sizeFits = (v) => {
+    if (!screenSize) return true // 拿不到屏幕信息时不拦，避免误伤
+    const [w, h] = String(v).split('x').map(Number)
+    return screenSize.width >= w && screenSize.height >= h
+  }
+
+  // 当前编辑 HTML 所在文件夹的磁盘绝对路径（仅桌面端有；浏览器模式返回空串）
+  async function getResourceRoot() {
+    try {
+      if (window.ztRecSession && window.ztRecSession.getRoot) {
+        const r = await window.ztRecSession.getRoot()
+        return (r && r.root) || ''
+      }
+    } catch (e) {}
+    return ''
+  }
+
+  // 向 iframe 要一份当前页面 HTML。用 requestSerialize（非 requestExport），
+  // 因为 exportClean 会摘掉编辑器样式/脚本，破坏正在进行的编辑态。
+  function requestPageHtml() {
+    return new Promise((resolve, reject) => {
+      pendingExportRef.current = { resolve, reject }
+      send({ type: 'requestSerialize' })
+      setTimeout(() => {
+        if (pendingExportRef.current) {
+          pendingExportRef.current = null
+          reject(new Error('获取页面内容超时'))
+        }
+      }, 15000)
+    })
+  }
+
+  // 生成供离屏录制窗口用的自包含 HTML：
+  // 与导出唯一的区别是资源指向磁盘绝对地址（file://），因为临时文件落在系统临时目录。
+  async function buildRecordingHtml(iframeHtml) {
+    let html = stripEditorParts(iframeHtml)
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    // 移除编辑器运行时动态创建的浮层
+    ;['zt-resize-overlay', 'zt-guide-overlay', 'zt-box-select'].forEach((id) => {
+      const el = doc.getElementById(id)
+      if (el && el.parentNode) el.parentNode.removeChild(el)
+    })
+    if (doc.body) doc.body.classList.remove('zt-grid')
+    // 与导出一致：开场页重置到第一屏，否则自动播放时首屏不出现
+    const allSlides = doc.querySelectorAll('.slide')
+    allSlides.forEach((s) => s.classList.remove('active'))
+    if (allSlides.length) allSlides[0].classList.add('active')
+    doc
+      .querySelectorAll('[data-zt-original-style], [data-zt-ff], [data-zt-fs], [data-zt-fw]')
+      .forEach((el) => {
+        el.removeAttribute('data-zt-original-style')
+        el.removeAttribute('data-zt-ff')
+        el.removeAttribute('data-zt-fs')
+        el.removeAttribute('data-zt-fw')
+      })
+    const root = await getResourceRoot()
+    return restoreAndWrap(
+      doc.documentElement.outerHTML,
+      relMapRef.current,
+      scriptsRef.current,
+      fileUrlMapper(root)
+    )
+  }
+
+  // 录制时把编辑器内的页面静音：声音改由离屏页出（并且正是从它那里捕获进成片），
+  // 两边同时播放却不静音就会出现双声源。
+  function setEditorAudioMuted(muted) {
+    try {
+      const doc = iframeRef.current && iframeRef.current.contentDocument
+      const a = doc && (doc.getElementById('bgAudio') || doc.querySelector('audio'))
+      if (a) a.muted = !!muted
+    } catch (e) {}
+  }
+
   async function handleStartPlay(from) {
     const nativeScript = getNativePlayerScript()
     if (recordOn && !recRef.current) {
       try {
-        const session = await startRecording(iframeRef.current)
+        // 档位超出屏幕可用区域时自动降级：否则离屏页渲染不出来，录出来是静止画面
+        let sizeKey = String(recRes || '1920x1080')
+        if (!sizeFits(sizeKey)) {
+          const usable = REC_SIZES.filter(([v]) => sizeFits(v))
+          const fallback = usable.length ? usable[usable.length - 1][0] : '1920x1080'
+          alert(
+            `${sizeKey} 超出当前屏幕可用区域（${screenSize.width}×${screenSize.height}），\n` +
+              `已自动降为 ${fallback}。\n要录 4K 需要一块 4K 分辨率的显示器。`
+          )
+          sizeKey = fallback
+        }
+        const [w, h] = sizeKey.split('x').map(Number)
+        const root = await getResourceRoot()
+        // 离屏录制需要桌面端 + 资源根目录；否则退回捕获编辑器窗口
+        const offscreen = !!(window.ztRecSession && window.ztRecSession.prepare) && !!root
+        if (recordOn && !offscreen) {
+          // 静默退回兜底不容易被发现，这里留痕：root 为空多半是刷新后从旧草稿恢复的
+          console.warn(
+            '[ZT-Edit] 录制未走离屏模式（offscreen=false）。' +
+              '原因：资源根目录为空=' + !root + '，桌面端=' + !!(window.ztRecSession && window.ztRecSession.prepare) +
+              '。此时音轨取自编辑器内页面，分辨率随窗口。'
+          )
+        }
+        if (offscreen) {
+          const html = await requestPageHtml()
+          const prep = await window.ztRecSession.prepare(html, w, h)
+          if (!prep || !prep.ok) throw new Error((prep && prep.error) || '离屏录制窗口准备失败')
+        }
+        const session = await startRecording(iframeRef.current, { offscreen, width: w, height: h })
         recRef.current = session
         setRecording(true)
+        if (offscreen) {
+          setEditorAudioMuted(true) // 声音交给离屏页，编辑器这份只作画面预览
+          // 离屏页放行播放，紧接着编辑器内也起播，两边时间轴对齐
+          await window.ztRecSession.start()
+          // 3 秒后复查离屏页音频是否真在走 —— 排查"有音轨却静音"的第一手证据。
+          // 看 playCalls（播放脚本有没有调 play）、released（放行收到没）、currentTime（真的在走没）。
+          setTimeout(async () => {
+            try {
+              if (window.ztRecSession && window.ztRecSession.getState) {
+                const st = await window.ztRecSession.getState()
+                console.warn('[ZT-Edit] 离屏页音频状态 ' + JSON.stringify(st))
+              }
+            } catch (e) {}
+          }, 3000)
+        }
         // 用户在系统层面停止共享时：兜底结束录制并停止播放
         session.onExternalStop.then(() => {
           if (recRef.current === session) {
@@ -326,10 +478,70 @@ export default function App() {
           }
         })
       } catch (e) {
+        // 半途失败也要收掉离屏窗口：否则它会一直霸占捕获源，后续录制全指向它
+        try {
+          if (window.ztRecSession && window.ztRecSession.close) await window.ztRecSession.close()
+        } catch (e2) {}
+        setEditorAudioMuted(false) // 录制没起来，编辑器照常出声
         alert('录屏启动失败：' + ((e && e.message) || e) + '\n将继续播放（不录屏）。')
       }
     }
     send({ type: 'startPlay', from, nativeScript })
+  }
+
+  // 检查录制产物是否真的带音轨（MP4 找 mp4a/soun，webm 找 opus/vorbis）
+  // moov 在文件开头，只读前 512KB 就足够命中 codec box
+  async function probeAudioTrack(blob, ext) {
+    try {
+      const buf = await blob.slice(0, 512 * 1024).arrayBuffer()
+      const s = new TextDecoder('latin1').decode(new Uint8Array(buf))
+      if (ext === 'mp4') return /mp4a|soun/.test(s)
+      return /opus|vorbis/i.test(s)
+    } catch (e) {
+      return null
+    }
+  }
+
+  // 进一步测电平，区分「有音轨且有声」和「有音轨却是静音数据」。
+  // 把产物喂给 <audio> 回放，用 AnalyserNode 采峰值——只连到 analyser 不连 destination，
+  // 所以检测过程不会出声。
+  async function probeAudioLevel(blob) {
+    let a = null
+    try {
+      const url = URL.createObjectURL(blob)
+      a = new Audio()
+      a.src = url
+      const actx = new AudioContext()
+      if (actx.state === 'suspended') {
+        try { await actx.resume() } catch (e) {}
+      }
+      const src = actx.createMediaElementSource(a)
+      const an = actx.createAnalyser()
+      an.fftSize = 2048
+      src.connect(an)
+      await new Promise((resolve, reject) => {
+        a.onloadedmetadata = resolve
+        a.onerror = () => reject(new Error('产物无法解码'))
+        setTimeout(() => reject(new Error('解码超时')), 8000)
+      })
+      await a.play()
+      const data = new Float32Array(an.fftSize)
+      let peak = 0
+      for (let i = 0; i < 8; i++) {
+        await new Promise((r) => setTimeout(r, 100))
+        an.getFloatTimeDomainData(data)
+        for (let j = 0; j < data.length; j++) {
+          const v = Math.abs(data[j])
+          if (v > peak) peak = v
+        }
+      }
+      try { a.pause() } catch (e) {}
+      URL.revokeObjectURL(url)
+      return { peak, duration: a.duration }
+    } catch (e) {
+      if (a) { try { a.pause() } catch (e2) {} }
+      return { error: String(e && e.message) }
+    }
   }
 
   async function finishRecording() {
@@ -340,7 +552,52 @@ export default function App() {
     setSavingRec(true)
     try {
       const { blob, ext } = await session.stop()
+      // 离屏录制窗口用完即毁（顺带删掉临时 HTML）
+      try {
+        if (window.ztRecSession && window.ztRecSession.close) await window.ztRecSession.close()
+      } catch (e) {}
+      setEditorAudioMuted(false) // 恢复编辑器内页面的声音
       if (!blob.size) return
+      // 自检：产物到底带不带音轨。没录到声音时把关键信息一次性摆出来，省得靠猜
+      const hasAudio = await probeAudioTrack(blob, ext)
+      // 光有音轨不算数，还得测出电平：静音轨道同样会让成片没声音
+      const level = hasAudio ? await probeAudioLevel(blob) : null
+      const silent = !!level && !level.error && level.peak < 0.005
+      const diag = [
+        ['录制模式', session.offscreen ? '离屏窗口（音画同源）' : '窗口捕获兜底'],
+        ['封装格式', ext.toUpperCase()],
+        ['送入音轨数', String(session.audioTrackCount)],
+        ['产物含音轨', hasAudio === null ? '未知' : hasAudio ? '是' : '否'],
+        [
+          '音轨峰值',
+          !level ? '—' : level.error ? '检测失败：' + level.error : level.peak.toFixed(4) + (silent ? '（静音！）' : '（有声）'),
+        ],
+        ['资源根目录', recRootRef.current ? '已获取' : '空'],
+      ]
+      const diagText = diag.map(([k, v]) => `  ${k}：${v}`).join('\n')
+      console.warn('[ZT-Edit] 录屏自检\n' + diagText) // 用 warn：在 DevTools 里是黄色，不会被一堆日志淹掉
+      // 同时显示到顶栏：不必人人都会开 DevTools，结果就该摆在能看到的地方
+      setRecDiag({
+        ok: !silent && hasAudio !== false,
+        text: !level
+          ? hasAudio === false
+            ? '无音轨'
+            : '未检出音轨'
+          : level.error
+            ? '电平检测失败'
+            : `音轨峰值 ${level.peak.toFixed(3)}${silent ? '（静音）' : ''}`,
+      })
+      if (hasAudio === false || silent) {
+        alert(
+          (silent ? '录到了音轨，但里面是静音数据。\n\n' : '这次录制没有录到声音。\n\n') +
+            diagText +
+            '\n\n常见原因：\n' +
+            '1) 「资源根目录」为空 → 退回兜底模式，音轨改从编辑器内页面取\n' +
+            '   （多为刷新后从旧草稿恢复，重新点一次「选择 HTML 文件」即可）\n' +
+            '2) 页面里没有 <audio> 元素，或音频文件没加载成功\n' +
+            '3) 录制期间页面音频处于静音状态'
+        )
+      }
       const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
       const name = `录屏-${stamp}.${ext}`
       if (window.ztRec && window.ztRec.saveRecording) {
@@ -386,6 +643,12 @@ export default function App() {
       } else if (m.type === 'changed') {
         scheduleSave()
       } else if (m.type === 'serialize') {
+        // 录制取页与草稿保存共用同一份回包，两条链路互不干扰
+        const p = pendingExportRef.current
+        if (p) {
+          pendingExportRef.current = null
+          p.resolve(m.html)
+        }
         if (pendingSaveRef.current) {
           pendingSaveRef.current = false
           actuallySave(m.html, m.current)
@@ -644,6 +907,25 @@ export default function App() {
     return () => window.removeEventListener('message', onMessage)
   }, [])
 
+  // 探测当前内核能录出什么封装格式（Chromium 126 / Electron 31 起支持 MP4）
+  useEffect(() => {
+    try {
+      setRecFmt(probeMime().ext.toUpperCase())
+    } catch (e) {}
+  }, [])
+
+  // 读取屏幕可用区域：离屏窗口不能比它大，否则 Chromium 拒绝渲染画面
+  useEffect(() => {
+    ;(async () => {
+      try {
+        if (window.ztRecSession && window.ztRecSession.getScreen) {
+          const s = await window.ztRecSession.getScreen()
+          if (s && s.width) setScreenSize({ width: s.width, height: s.height })
+        }
+      } catch (e) {}
+    })()
+  }, [])
+
   // 锁定纵横比变化时同步到 iframe
   useEffect(() => {
     send({ type: 'setAspectLock', locked: aspectLock })
@@ -783,7 +1065,7 @@ export default function App() {
             </button>
             <label
               style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#d1d5db', cursor: 'pointer' }}
-              title="播放时录制画布区域，停止或播完后自动保存视频"
+              title="播放时录制：桌面端会开一个定尺寸离屏窗口渲染，输出与编辑器窗口大小无关；停止或播完后自动保存视频"
             >
               <input
                 type="checkbox"
@@ -793,6 +1075,68 @@ export default function App() {
               />
               录屏
             </label>
+            {recordOn && (
+              <>
+                <select
+                  value={recRes}
+                  onChange={(e) => setRecRes(e.target.value)}
+                  title={
+                    screenSize
+                      ? `录制输出分辨率（离屏窗口尺寸）。当前屏幕可用区域 ${screenSize.width}×${screenSize.height}，超过的档位渲染不出来`
+                      : '录制输出分辨率（离屏窗口尺寸，与编辑器窗口大小无关）'
+                  }
+                  style={{
+                    fontSize: 12,
+                    padding: '3px 6px',
+                    borderRadius: 6,
+                    border: '1px solid #4b5563',
+                    background: '#374151',
+                    color: '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  {REC_SIZES.map(([v, label]) => {
+                    const ok = sizeFits(v)
+                    return (
+                      <option key={v} value={v} disabled={!ok}>
+                        {ok ? label : `${label}（超出屏幕）`}
+                      </option>
+                    )
+                  })}
+                </select>
+                {recFmt && (
+                  <span style={{ fontSize: 11, color: '#9ca3af' }} title="当前内核支持的录制封装格式">
+                    {recFmt}
+                  </span>
+                )}
+                {/* 一眼看出走没走离屏：兜底模式等于白升级，声音来源也完全不同 */}
+                <span
+                  title={
+                    recRoot
+                      ? `离屏录制：画面与声音都取自隐藏的定尺寸窗口，音画零偏移，输出 ${recRes}`
+                      : '未走离屏：资源根目录为空，会退回窗口捕获兜底（分辨率随窗口、音轨取自编辑器页面）。\n重新点一次「选择 HTML 文件」即可修复。'
+                  }
+                  style={{
+                    fontSize: 11,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: recRoot ? '#065f46' : '#7f1d1d',
+                    color: recRoot ? '#a7f3d0' : '#fecaca',
+                    cursor: 'help',
+                  }}
+                >
+                  {recRoot ? '离屏' : '兜底'}
+                </span>
+              </>
+            )}
+            {recDiag && (
+              <span
+                title="上一次录制的自检结果（音轨电平）"
+                style={{ fontSize: 11, color: recDiag.ok ? '#9ca3af' : '#fca5a5' }}
+              >
+                上次自检：{recDiag.text}
+              </span>
+            )}
           </>
         )}
         <span style={{ width: 1, height: 22, background: '#374151' }} />

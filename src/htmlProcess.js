@@ -69,10 +69,28 @@ export function stripEditorParts(html) {
 // 并把脚本片段还原回 body，最后包裹成完整文档
 const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n'
 
-export function restoreAndWrap(iframeHtml, relMap, scripts) {
+// 录屏专用 mapper：把相对引用改写成 file:// 绝对地址。
+// 录屏页是系统临时目录里的 HTML，只有指回磁盘原位置才能加载到图片/音频。
+// rootDir 为空（浏览器模式）时原样返回，调用方会退回窗口捕获方案。
+export function fileUrlMapper(rootDir) {
+  const base = String(rootDir || '').replace(/\\/g, '/').replace(/\/+$/, '')
+  return function (rel) {
+    if (!base) return rel
+    if (/^(https?:|data:|blob:|#|mailto:|\/)/i.test(rel || '')) return rel
+    const segs = String(rel).replace(/\\/g, '/').split('/').filter(Boolean)
+    if (!segs.length) return rel
+    const full = base + '/' + segs.join('/')
+    return 'file:///' + full.split('/').map((s, i) => (i === 0 ? s : encodeURIComponent(s))).join('/')
+  }
+}
+
+// mapValue 可选：把「原始相对引用」改写后再回填，用于录屏页把资源指向磁盘绝对地址。
+// 不传则原样还原为相对引用（导出行为，保证 edited.html 可独立分发）。
+export function restoreAndWrap(iframeHtml, relMap, scripts, mapValue) {
   let html = iframeHtml
   for (const [blob, rel] of relMap.entries()) {
-    html = html.split(blob).join(rel)
+    const target = typeof mapValue === 'function' ? mapValue(rel) : rel
+    html = html.split(blob).join(target)
   }
   const doc = new DOMParser().parseFromString(html, 'text/html')
   const body = doc.body || doc.documentElement
@@ -147,10 +165,12 @@ function playAnimation(el, effect, duration, delay, returnSec, easing) {
 
 ${slideTimingsStr}
 
-const audio=document.getElementById('bgAudio');
+// 别写死 bgAudio：页面可能用别的 id，取不到 audio 就会整条时间轴哑掉
+// （此时画面靠 CSS 动画仍在动，很容易被误判成"录屏没声音"）
+var audio=document.getElementById('bgAudio')||document.querySelector('audio');
 const slides=document.querySelectorAll('.slide');
-const subtitleEl=document.getElementById('subtitleCurrent');
-const progressBar=document.getElementById('progressBar');
+var subtitleEl=document.getElementById('subtitleCurrent');
+var progressBar=document.getElementById('progressBar');
 let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0;
 
 function showSlide(idx,seekAudio){

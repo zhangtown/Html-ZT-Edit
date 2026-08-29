@@ -127,30 +127,53 @@ HTML-ZtEdit/
 
 **已完成**：
 - 播放预览模式：从头/本页播放，音频 seek + 字幕 + 绑定动画同步，停止返回编辑态
-- 录制管线 v1：getDisplayMedia 捕获窗口 → 实时裁剪 iframe → 混入页面音轨 → MediaRecorder
+- **录制升级（P0-1）达成验收**：Electron 31 原生 MP4 + 离屏定尺寸窗口，窗口任意大小都出 1080P/2K/4K MP4（详见 P0-1）
+- 录制管线 v2：捕获隐藏的定尺寸离屏窗口；v1（捕获编辑器窗口 + canvas 裁剪 iframe）保留为纯浏览器兜底
 - 字幕绑定/解绑稳定性修复 ×2（跨页兜底查找；selection 消息误清空字幕选中态）
 - 工作区清理：调试代码、临时诊断文件、设计素材移出 git
 - **vo-pipeline 口播产线技能 v1.1**（edge-tts 引擎全链路实测通过；GPT-SoVITS 克隆路线实测效果不佳，已裁撤）
 
 **已知卡点（即下面 P0 的来源）**：
-1. 录制输出 webm 而非 MP4 —— Electron 29（Chromium 120）的 MediaRecorder 不支持 video/mp4，`pickMime()` 的 mp4 候选全部落空
-2. 录制分辨率随窗口尺寸走 —— 画布按 iframe 在窗口内的实际显示大小裁剪，窗口小则成片小
-3. 动画只有 11 种整元素变换（zoom×2/fade/fly×4/bounce/rotate/focus-zoom），缺文字类效果
-4. ~~定稿文案 → MP3+SRT 没有自动化产线~~ → vo-pipeline 已建成（纯 edge-tts，克隆路线已裁撤）
+1. 动画只有 11 种整元素变换（zoom×2/fade/fly×4/bounce/rotate/focus-zoom），缺文字类效果
+2. ~~定稿文案 → MP3+SRT 没有自动化产线~~ → vo-pipeline 已建成（纯 edge-tts，克隆路线已裁撤）
 
 ## 六、路线图 TODO
 
 ### P0 · 出片质量三件套（下一阶段主线）
 
-#### 1. 录制升级：固定分辨率 + MP4 输出
+#### 1. ✅ 录制升级：固定分辨率 + MP4 输出（2026-08-28 完成，A+B 双方案落地）
 
-| 方案 | 做法 | 代价/风险 |
-| --- | --- | --- |
-| A. 升级 Electron ≥31（推荐先做） | Chromium 126+ 的 MediaRecorder 原生支持 `video/mp4`（avc1+aac），`pickMime()` 无需改动即可命中 | 需回归测试录制/播放；打包体积略增 |
-| B. 录制与窗口解耦（根治分辨率） | 隐藏的定尺寸 iframe（1920×1080，可选 4K）离屏播放时间轴，`captureStream` 固定分辨率，码率提到 12–20 Mbps | 中等工作量，需复用播放引擎在隐藏页跑时间轴 |
-| C. ffmpeg 兜底转码 | `ffmpeg-static` 依赖：webm → MP4 (H.264/AAC)，顺带做响度归一 loudnorm | 依赖体积 +80MB；作为 A 不可用时的后备 |
+验收已达成：窗口任意大小都能录出 1080P MP4，成片可直接进剪映/PR。
 
-验收：窗口任意大小都能录出 1080p MP4，成片可直接进剪映/PR。
+| 原先方案 | 结论 |
+| --- | --- |
+| A. 升级 Electron 29 → **31.7.7** | ✅ Chromium 126 起 MediaRecorder 原生支持 MP4。实测 `video/mp4;codecs=avc1.42E01E,mp4a.40.2` 命中，产物文件头 `ftyp mp41` |
+| B. 录制与窗口解耦 | ✅ 改为主进程开**隐藏 BrowserWindow**（非 iframe）离屏跑时间轴，实测捕获流精确 1920×1080，与编辑器窗口大小无关 |
+| C. ffmpeg 兜底转码 | ⛔ 未采纳，A 已原生支持，省下 80MB 依赖体积 |
+
+实现要点（**改这块代码前必读**）：
+
+- `electron/main.cjs`：`recWin` 为隐藏窗口（`show:false` + `backgroundThrottling:false`），
+  用 `setContentSize()` 校准内容区；`setDisplayMediaRequestHandler` 优先返回它，没有则退回主窗口。
+- **必须加 `autoplay-policy=no-user-gesture-required`**：离屏页播放由 IPC 触发、无用户手势，
+  不加这条 Chromium 会拦掉 `audio.play()`，时间轴不走、只能录到静止首屏。
+- **音画同源（关键设计）**：`setDisplayMediaRequestHandler` 里 `callback({video: frame, audio: frame})`，
+  音视频都取自离屏窗口 → 偏移 0。最初做成「画面取离屏 + 声音取编辑器 iframe」，
+  实测两个独立播放实例有 **22~52ms 恒定偏移**（不累积但可感知），已废弃该做法。
+- 静音策略反直觉：离屏页**必须出声**（`muted` 会让 audio 帧捕获不到声音），
+  改由 `App.jsx` 在录制时把**编辑器内**那份页面静音（`setEditorAudioMuted`），避免双声源。
+- 音频约束：`echoCancellation/noiseSuppression/autoGainControl: false` + `channelCount: 2`。
+  默认会开 AGC/降噪把口播人声处理得发闷，且只给单声道。
+- `REC_GATE` 脚本注入到离屏页 `<head>` 最前：拦截 `HTMLMediaElement.prototype.play` 挂起自动播放，
+  等 `zt:rec-start` 才放行，让离屏页与编辑器内播放同时起步。
+- 取页面用 `requestSerialize` 而非 `requestExport`：后者会执行 `exportClean()` 摘掉编辑器样式/脚本，**破坏编辑态**。
+- 资源路径：录制 HTML 落在系统临时目录，故用 `fileUrlMapper` 把资源改写成 `file://` 绝对地址指回磁盘原位置；
+  导出仍用相对路径，保证 `edited.html` 可分发出去。
+- 性能实测（禁 GPU 软件渲染 + 双实例并行，属保守下限）：离屏页渲染 57fps、捕获流 27.2fps（目标 30）；
+  真机有 GPU 只会更好。v2 比 v1 更省 CPU，因为省掉了 canvas 逐帧 `drawImage`。
+- 实测结论：`show:false` 隐藏窗口能被捕获出真实帧（采样色正确）；
+  「窗口移到屏幕外 x=-4000」的方案实测帧宽被裁成 1868，**不可用**。
+- 浏览器（非 Electron）模式拿不到资源根目录，自动退回 v1 的窗口捕获 + canvas 裁剪方案。
 
 #### 2. ✅ TTS 口播产线 `vo-pipeline`（阶段1 已建成并实测通过 2026-08-28）
 
