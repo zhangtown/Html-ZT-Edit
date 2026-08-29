@@ -33,6 +33,8 @@ contextBridge.exposeInMainWorld('ztRecSession', {
   getScreen: () => ipcRenderer.invoke('zt:get-screen'),
   // 诊断用：取离屏页里 audio 的真实状态（排查"有音轨却静音"）
   getState: () => ipcRenderer.invoke('zt:rec-state'),
+  // 直接全屏录屏：主窗口进入/退出全屏
+  setFullscreen: (on) => ipcRenderer.invoke('zt:set-fullscreen', on),
 })
 
 // 离屏录制窗口专用：接收主进程转发的「开始播放」信号

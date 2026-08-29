@@ -172,6 +172,8 @@ export default function App() {
   const [recording, setRecording] = useState(false) // 正在录制
   const [savingRec, setSavingRec] = useState(false) // 正在保存录屏
   const [recRes, setRecRes] = useState('1920x1080') // 录制分辨率档位（离屏窗口尺寸）
+  const [recMode, setRecMode] = useState('offscreen') // 录制模式：offscreen 离屏定分辨率 | direct 直接全屏
+  const [directRec, setDirectRec] = useState(false) // 直接全屏录屏进行中：隐藏全部 UI/鼠标，只响应 Esc
   const [recFmt, setRecFmt] = useState('') // 当前内核支持的录制封装格式（MP4 / WEBM）
   const [screenSize, setScreenSize] = useState(null) // 屏幕可用区域（CSS 像素），用于限制录制档位
   const [recRoot, setRecRoot] = useState('') // 资源根目录（磁盘绝对路径）；为空则录制退回兜底模式
@@ -179,6 +181,7 @@ export default function App() {
   const recRef = useRef(null) // 录制会话
   const pendingExportRef = useRef(null) // 等待 iframe 回传 HTML 的 Promise（录制取页用）
   const recRootRef = useRef('') // 资源根目录磁盘绝对路径；随草稿存取，保证刷新后仍能离屏录制
+  const directRecRef = useRef(false) // 与 directRec state 同步：消息回调/事件监听里读 ref 拿到最新值
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -426,69 +429,123 @@ export default function App() {
     } catch (e) {}
   }
 
+  // 直接全屏录屏：隐藏 iframe 页面里的鼠标（捕获的是窗口内容，CSS 光标隐藏即成片无鼠标）
+  function hideIframeCursor(on) {
+    try {
+      const doc = iframeRef.current && iframeRef.current.contentDocument
+      if (!doc || !doc.head) return
+      let s = doc.getElementById('zt-rec-cursor')
+      if (on && !s) {
+        s = doc.createElement('style')
+        s.id = 'zt-rec-cursor'
+        s.textContent = 'html,body,*{cursor:none!important}'
+        doc.head.appendChild(s)
+      } else if (!on && s && s.parentNode) {
+        s.parentNode.removeChild(s)
+      }
+    } catch (e) {}
+  }
+
+  // 直接全屏录屏收尾：退出全屏、恢复 UI 与鼠标（保存/自检动作都放在恢复之后）
+  async function restoreDirectRec() {
+    directRecRef.current = false
+    setDirectRec(false)
+    hideIframeCursor(false)
+    try {
+      if (window.ztRecSession && window.ztRecSession.setFullscreen)
+        await window.ztRecSession.setFullscreen(false)
+    } catch (e) {}
+  }
+
   async function handleStartPlay(from) {
     const nativeScript = getNativePlayerScript()
     if (recordOn && !recRef.current) {
-      try {
-        // 档位超出屏幕可用区域时自动降级：否则离屏页渲染不出来，录出来是静止画面
-        let sizeKey = String(recRes || '1920x1080')
-        if (!sizeFits(sizeKey)) {
-          const usable = REC_SIZES.filter(([v]) => sizeFits(v))
-          const fallback = usable.length ? usable[usable.length - 1][0] : '1920x1080'
-          alert(
-            `${sizeKey} 超出当前屏幕可用区域（${screenSize.width}×${screenSize.height}），\n` +
-              `已自动降为 ${fallback}。\n要录 4K 需要一块 4K 分辨率的显示器。`
-          )
-          sizeKey = fallback
-        }
-        const [w, h] = sizeKey.split('x').map(Number)
-        const root = await getResourceRoot()
-        // 离屏录制需要桌面端 + 资源根目录；否则退回捕获编辑器窗口
-        const offscreen = !!(window.ztRecSession && window.ztRecSession.prepare) && !!root
-        if (recordOn && !offscreen) {
-          // 静默退回兜底不容易被发现，这里留痕：root 为空多半是刷新后从旧草稿恢复的
-          console.warn(
-            '[ZT-Edit] 录制未走离屏模式（offscreen=false）。' +
-              '原因：资源根目录为空=' + !root + '，桌面端=' + !!(window.ztRecSession && window.ztRecSession.prepare) +
-              '。此时音轨取自编辑器内页面，分辨率随窗口。'
-          )
-        }
-        if (offscreen) {
-          const html = await requestPageHtml()
-          const prep = await window.ztRecSession.prepare(html, w, h)
-          if (!prep || !prep.ok) throw new Error((prep && prep.error) || '离屏录制窗口准备失败')
-        }
-        const session = await startRecording(iframeRef.current, { offscreen, width: w, height: h })
-        recRef.current = session
-        setRecording(true)
-        if (offscreen) {
-          setEditorAudioMuted(true) // 声音交给离屏页，编辑器这份只作画面预览
-          // 离屏页放行播放，紧接着编辑器内也起播，两边时间轴对齐
-          await window.ztRecSession.start()
-          // 3 秒后复查离屏页音频是否真在走 —— 排查"有音轨却静音"的第一手证据。
-          // 看 playCalls（播放脚本有没有调 play）、released（放行收到没）、currentTime（真的在走没）。
-          setTimeout(async () => {
-            try {
-              if (window.ztRecSession && window.ztRecSession.getState) {
-                const st = await window.ztRecSession.getState()
-                console.warn('[ZT-Edit] 离屏页音频状态 ' + JSON.stringify(st))
-              }
-            } catch (e) {}
-          }, 3000)
-        }
-        // 用户在系统层面停止共享时：兜底结束录制并停止播放
-        session.onExternalStop.then(() => {
-          if (recRef.current === session) {
-            send({ type: 'stopPlay' })
-          }
-        })
-      } catch (e) {
-        // 半途失败也要收掉离屏窗口：否则它会一直霸占捕获源，后续录制全指向它
+      if (recMode === 'direct') {
+        // 直接全屏录屏：窗口全屏 → 画面即所得（屏幕原生分辨率），UI/鼠标/弹窗全部隐掉，
+        // 播放中只响应 Esc（iframe 内"播放模式仅放行 Esc" + 父窗口级 Esc 兜底）。
         try {
-          if (window.ztRecSession && window.ztRecSession.close) await window.ztRecSession.close()
-        } catch (e2) {}
-        setEditorAudioMuted(false) // 录制没起来，编辑器照常出声
-        alert('录屏启动失败：' + ((e && e.message) || e) + '\n将继续播放（不录屏）。')
+          if (!window.ztRecSession || !window.ztRecSession.setFullscreen)
+            throw new Error('直接全屏录屏需要桌面端（Electron），请用打包版或 dev:electron 运行')
+          await window.ztRecSession.setFullscreen(true)
+          directRecRef.current = true
+          setDirectRec(true) // CSS 类隐藏全部编辑器 UI + 鼠标
+          hideIframeCursor(true)
+          await new Promise((r) => setTimeout(r, 450)) // 等全屏布局稳定后再捕获，避免首帧带着旧窗口尺寸
+          const session = await startRecording(iframeRef.current, { direct: true })
+          recRef.current = session
+          setRecording(true)
+          // 用户在系统层面停止共享时：兜底结束录制并停止播放
+          session.onExternalStop.then(() => {
+            if (recRef.current === session) {
+              send({ type: 'stopPlay' })
+            }
+          })
+        } catch (e) {
+          await restoreDirectRec()
+          alert('全屏录屏启动失败：' + ((e && e.message) || e) + '\n将继续播放（不录屏）。')
+        }
+      } else {
+        try {
+          // 档位超出屏幕可用区域时自动降级：否则离屏页渲染不出来，录出来是静止画面
+          let sizeKey = String(recRes || '1920x1080')
+          if (!sizeFits(sizeKey)) {
+            const usable = REC_SIZES.filter(([v]) => sizeFits(v))
+            const fallback = usable.length ? usable[usable.length - 1][0] : '1920x1080'
+            alert(
+              `${sizeKey} 超出当前屏幕可用区域（${screenSize.width}×${screenSize.height}），\n` +
+                `已自动降为 ${fallback}。\n要录 4K 需要一块 4K 分辨率的显示器。`
+            )
+            sizeKey = fallback
+          }
+          const [w, h] = sizeKey.split('x').map(Number)
+          const root = await getResourceRoot()
+          // 离屏录制需要桌面端 + 资源根目录；否则退回捕获编辑器窗口
+          const offscreen = !!(window.ztRecSession && window.ztRecSession.prepare) && !!root
+          if (recordOn && !offscreen) {
+            // 静默退回兜底不容易被发现，这里留痕：root 为空多半是刷新后从旧草稿恢复的
+            console.warn(
+              '[ZT-Edit] 录制未走离屏模式（offscreen=false）。' +
+                '原因：资源根目录为空=' + !root + '，桌面端=' + !!(window.ztRecSession && window.ztRecSession.prepare) +
+                '。此时音轨取自编辑器内页面，分辨率随窗口。'
+            )
+          }
+          if (offscreen) {
+            const html = await requestPageHtml()
+            const prep = await window.ztRecSession.prepare(html, w, h)
+            if (!prep || !prep.ok) throw new Error((prep && prep.error) || '离屏录制窗口准备失败')
+          }
+          const session = await startRecording(iframeRef.current, { offscreen, width: w, height: h })
+          recRef.current = session
+          setRecording(true)
+          if (offscreen) {
+            setEditorAudioMuted(true) // 声音交给离屏页，编辑器这份只作画面预览
+            // 离屏页放行播放，紧接着编辑器内也起播，两边时间轴对齐
+            await window.ztRecSession.start()
+            // 3 秒后复查离屏页音频是否真在走 —— 排查"有音轨却静音"的第一手证据。
+            // 看 playCalls（播放脚本有没有调 play）、released（放行收到没）、currentTime（真的在走没）。
+            setTimeout(async () => {
+              try {
+                if (window.ztRecSession && window.ztRecSession.getState) {
+                  const st = await window.ztRecSession.getState()
+                  console.warn('[ZT-Edit] 离屏页音频状态 ' + JSON.stringify(st))
+                }
+              } catch (e) {}
+            }, 3000)
+          }
+          // 用户在系统层面停止共享时：兜底结束录制并停止播放
+          session.onExternalStop.then(() => {
+            if (recRef.current === session) {
+              send({ type: 'stopPlay' })
+            }
+          })
+        } catch (e) {
+          // 半途失败也要收掉离屏窗口：否则它会一直霸占捕获源，后续录制全指向它
+          try {
+            if (window.ztRecSession && window.ztRecSession.close) await window.ztRecSession.close()
+          } catch (e2) {}
+          setEditorAudioMuted(false) // 录制没起来，编辑器照常出声
+          alert('录屏启动失败：' + ((e && e.message) || e) + '\n将继续播放（不录屏）。')
+        }
       }
     }
     send({ type: 'startPlay', from, nativeScript })
@@ -557,6 +614,8 @@ export default function App() {
     setSavingRec(true)
     try {
       const { blob, ext } = await session.stop()
+      // 直接全屏录屏：先退出全屏、恢复 UI 与鼠标，再做自检/保存（弹窗都在恢复正常之后）
+      if (directRecRef.current) await restoreDirectRec()
       // 离屏录制窗口用完即毁（顺带删掉临时 HTML）
       try {
         if (window.ztRecSession && window.ztRecSession.close) await window.ztRecSession.close()
@@ -569,7 +628,7 @@ export default function App() {
       const level = hasAudio ? await probeAudioLevel(blob) : null
       const silent = !!level && !level.error && level.peak < 0.005
       const diag = [
-        ['录制模式', session.offscreen ? '离屏窗口（音画同源）' : '窗口捕获兜底'],
+        ['录制模式', session.direct ? '直接全屏（窗口原生分辨率）' : session.offscreen ? '离屏窗口（音画同源）' : '窗口捕获兜底'],
         ['封装格式', ext.toUpperCase()],
         ['送入音轨数', String(session.audioTrackCount)],
         ['产物含音轨', hasAudio === null ? '未知' : hasAudio ? '是' : '否'],
@@ -689,6 +748,15 @@ export default function App() {
       }
     }
     function onKey(e) {
+      // 直接全屏录屏进行中：只响应 Esc（焦点在父窗口时兜底；焦点在 iframe 内时
+      // 由 runtime 的"播放模式仅放行 Esc"走 playState → finishRecording，两条路都有双调保护）
+      if (directRecRef.current && recRef.current) {
+        if (e.key === 'Escape') {
+          e.preventDefault()
+          send({ type: 'stopPlay' })
+        }
+        return
+      }
       // 焦点在输入框 / 文本域 / 下拉框 / 可编辑元素内时，不拦截快捷键（否则属性面板无法正常输入）
       const t = e.target
       const tag = t && t.tagName
@@ -964,8 +1032,12 @@ export default function App() {
   const simH = simDim ? simDim[1] : null
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+    <div
+      className={directRec ? 'zt-direct-rec' : undefined}
+      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
+    >
       <div
+        className="zt-chrome"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -1083,6 +1155,24 @@ export default function App() {
             {recordOn && (
               <>
                 <select
+                  value={recMode}
+                  onChange={(e) => setRecMode(e.target.value)}
+                  title="录制模式：离屏=隐藏定尺寸窗口定分辨率输出；直接全屏=窗口全屏画面即所得，屏幕原生分辨率"
+                  style={{
+                    fontSize: 12,
+                    padding: '3px 6px',
+                    borderRadius: 6,
+                    border: '1px solid #4b5563',
+                    background: '#374151',
+                    color: '#fff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <option value="offscreen">离屏定分辨率</option>
+                  <option value="direct">直接全屏（原生分辨率）</option>
+                </select>
+                {recMode === 'offscreen' ? (
+                <select
                   value={recRes}
                   onChange={(e) => setRecRes(e.target.value)}
                   title={
@@ -1109,6 +1199,14 @@ export default function App() {
                     )
                   })}
                 </select>
+                ) : (
+                  <span
+                    style={{ fontSize: 11, color: '#fbbf24' }}
+                    title="点录制后窗口全屏、隐藏界面与鼠标，播完或按 Esc 结束；输出分辨率=屏幕原生分辨率"
+                  >
+                    全屏画面即所得（Esc 结束）
+                  </span>
+                )}
                 {recFmt && (
                   <span style={{ fontSize: 11, color: '#9ca3af' }} title="当前内核支持的录制封装格式">
                     {recFmt}
@@ -1161,6 +1259,7 @@ export default function App() {
       {/* 页面预览 tab 条：点击快速跳转；播放模式下点击从该页续播 */}
       {total > 0 && (
         <div
+          className="zt-chrome"
           style={{
             display: 'flex',
             alignItems: 'center',
@@ -1231,7 +1330,7 @@ export default function App() {
         </div>
       )}
 
-      <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+      <div className="zt-main" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
         <div
           style={{
             flex: 1,
@@ -1246,6 +1345,7 @@ export default function App() {
         >
           {srcdoc ? (
             <div
+              className="zt-canvas-box"
               style={
                 simW
                   ? {
@@ -1299,6 +1399,7 @@ export default function App() {
 
         {!playMode && (
         <div
+          className="zt-side"
           style={{
             width: 270,
             background: '#fff',

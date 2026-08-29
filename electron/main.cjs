@@ -364,6 +364,16 @@ function registerIpc() {
 
   // 屏幕可用区域：离屏窗口不能超过它，否则 Chromium 拒绝渲染（页面加载直接 ERR_FAILED）。
   // UI 靠这个把录不到的档位置灰。
+  // 直接全屏录屏：录制前主窗口全屏（画面=窗口内容，原生分辨率），结束后退出全屏
+  ipcMain.handle('zt:set-fullscreen', (event, on) => {
+    try {
+      if (mainWin && !mainWin.isDestroyed()) mainWin.setFullScreen(!!on)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, error: String(e && e.message) }
+    }
+  })
+
   ipcMain.handle('zt:get-screen', () => {
     try {
       // 用 bounds 而不是 workAreaSize：录制窗口是隐藏的，不受任务栏遮挡约束，

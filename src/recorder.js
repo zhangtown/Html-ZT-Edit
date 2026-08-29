@@ -43,26 +43,31 @@ function mixInAudio(stream, iframeEl) {
 
 // 开始录制
 // iframeEl：编辑器画布 iframe（提供音轨；兜底模式下同时决定裁剪区域）
-// opts：{ offscreen, width, height }
+// opts：{ offscreen, width, height, direct }
+//   direct：直接全屏录屏——主窗口先全屏，getDisplayMedia 捕获主窗口本身，
+//   画面=窗口内容=全屏页面（原生分辨率，4K 屏就是 4K 片），音画同源零偏移。
 export async function startRecording(iframeEl, opts) {
   if (!iframeEl) throw new Error('画布尚未加载')
   const o = opts || {}
   const offscreen = !!o.offscreen
+  const direct = !!o.direct
   const W = Math.round(Number(o.width) || 1920)
   const H = Math.round(Number(o.height) || 1080)
 
   const displayStream = await navigator.mediaDevices.getDisplayMedia({
-    video: { frameRate: 30, width: W, height: H },
-    // 离屏模式：音频随画面一起从离屏窗口捕获（音画同源，零偏移）。
+    // direct 模式不约束宽高：全屏窗口多大，捕获流就是多大（原生分辨率）
+    video: direct ? { frameRate: 30 } : { frameRate: 30, width: W, height: H },
+    // 离屏/直接模式：音频随画面一起从同一个窗口捕获（音画同源，零偏移）。
     // 关掉 AGC/降噪/回声消除，否则口播人声会被"处理"得发闷。
-    audio: offscreen
-      ? {
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-          channelCount: 2,
-        }
-      : false,
+    audio:
+      offscreen || direct
+        ? {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 2,
+          }
+        : false,
     // Chromium：优先当前标签页（Electron 中由主进程直接接管，不弹选择框）
     preferCurrentTab: true,
     selfBrowserSurface: 'include',
@@ -80,9 +85,9 @@ export async function startRecording(iframeEl, opts) {
   let stopped = false
   let canvas = null
 
-  if (offscreen && !needScale) {
-    // 理想路径：捕获尺寸就是目标分辨率，直接录，不建 video、不逐帧拷贝。
-    // 这里要带上 audio 轨——它就是离屏窗口的声音，与画面同源。
+  if ((offscreen && !needScale) || direct) {
+    // 理想路径：捕获尺寸就是目标分辨率（direct=全屏窗口原生尺寸），直接录，
+    // 不建 video、不逐帧拷贝。这里要带上 audio 轨——它就是同一窗口的声音，与画面同源。
     outStream = new MediaStream(displayStream.getTracks())
   } else {
     const video = document.createElement('video')
@@ -128,12 +133,18 @@ export async function startRecording(iframeEl, opts) {
   }
 
   // 仅兜底模式需要从编辑器 iframe 取音轨：那时捕获的是编辑器窗口，拿不到页面音频
-  if (!offscreen) mixInAudio(outStream, iframeEl)
+  if (!offscreen && !direct) mixInAudio(outStream, iframeEl)
 
   const mime = pickMime()
+  // 码率随分辨率走：1080p≈12Mbps 的经验值，按像素数放大（4K≈48Mbps 封顶），
+  // 否则 4K 片按 12Mbps 编码会糊成一片。
+  const px = srcW * srcH
+  const bitrate = direct
+    ? Math.min(48_000_000, Math.max(12_000_000, Math.round(px * 5.8)))
+    : 12_000_000
   const rec = new MediaRecorder(
     outStream,
-    mime ? { mimeType: mime, videoBitsPerSecond: 12_000_000 } : undefined
+    mime ? { mimeType: mime, videoBitsPerSecond: bitrate } : undefined
   )
   const chunks = []
   rec.ondataavailable = (e) => {
@@ -149,6 +160,7 @@ export async function startRecording(iframeEl, opts) {
   return {
     canvas,
     offscreen,
+    direct,
     // 真正送进 MediaRecorder 的音轨数：0 就说明这趟注定没声音，调用方据此告警
     audioTrackCount: outStream.getAudioTracks().length,
     // stop 返回最终视频；用户外部停止共享时也会自动走 stop 逻辑（由调用方兜底）
