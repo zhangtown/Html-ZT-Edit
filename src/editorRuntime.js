@@ -1273,49 +1273,89 @@
     post({ type: 'changed' })
   }
 
-  function getEffectKeyframes(effect) {
-    switch (effect) {
-      case 'zoom-in': return { from: { transform: 'scale(0.6)', opacity: 0 }, to: { transform: 'scale(1.3)', opacity: 1 } }
-      case 'zoom-out': return { from: { transform: 'scale(1)', opacity: 1 }, to: { transform: 'scale(0.6)', opacity: 0 } }
-      case 'fade-in': return { from: { opacity: 0 }, to: { opacity: 1 } }
-      case 'fly-left': return { from: { transform: 'translateX(-120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
-      case 'fly-right': return { from: { transform: 'translateX(120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
-      case 'fly-top': return { from: { transform: 'translateY(-120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
-      case 'fly-bottom': return { from: { transform: 'translateY(120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
-      case 'bounce': return { from: { transform: 'scale(0.8)', opacity: 0 }, to: { transform: 'scale(1.15)', opacity: 1 } }
-      case 'rotate': return { from: { transform: 'rotate(-15deg) scale(0.9)', opacity: 0 }, to: { transform: 'rotate(0deg) scale(1)', opacity: 1 } }
-      case 'wipe': return { from: { transform: 'translateX(-24px)', clipPath: 'inset(0 100% 0 0)', opacity: 1 }, to: { transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)', opacity: 1 } }
-      case 'flip': return { from: { transform: 'perspective(900px) rotateY(88deg) scale(0.94)', opacity: 0 }, to: { transform: 'perspective(900px) rotateY(0deg) scale(1)', opacity: 1 } }
-      case 'blur-in': return { from: { transform: 'scale(1.08)', filter: 'blur(14px)', opacity: 0 }, to: { transform: 'scale(1)', filter: 'blur(0px)', opacity: 1 } }
-      case 'slide-spin': return { from: { transform: 'translateX(-140px) rotate(-14deg) scale(0.85)', opacity: 0 }, to: { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 1 } }
-      default: return { from: { transform: 'scale(1)' }, to: { transform: 'scale(1.2)' } }
+  // ---- 动画引擎（单一真源 src/animEffects.js，由父窗口 postMessage 送达）----
+  // 关键帧表绝不能在这里再抄一份：曾经三处各存一份（本文件 / htmlProcess 导出脚本 /
+  // 页面自带的原生播放脚本），新增 wipe 只改了前两处，于是「预览对、导出对、播放录屏错」——
+  // 旧脚本 default 分支是 scale(1)→scale(1.2)，现象就是选了擦除滑入却录出放大。
+  var animEngine = null
+  var animEngineParts = null
+
+  function setAnimEngine(bootstrap, parts) {
+    animEngineParts = parts || null
+    if (!bootstrap) return
+    try {
+      animEngine = new Function('return ' + bootstrap)()
+    } catch (e) {
+      animEngine = null
+      if (window.console) console.error('[ztEdit] 动画引擎装载失败：', e)
     }
   }
-  // from/to 关键帧 → WAAPI 帧序列；支持 clipPath/filter 扩展属性（契约 v5.4）
-  function kfFrameEntries(kf, dly, dur, ret, baseTransform) {
-    var totalDur = dur + ret
-    var startOff = dly > 0 ? dly / totalDur : 0
-    var endOff = (dly + dur) / totalDur
-    var usesExtra = !!(kf.from.clipPath || kf.from.filter || kf.to.clipPath || kf.to.filter)
-    function frame(offset, src, reset) {
-      var f = {
-        offset: offset,
-        transform: baseTransform + (reset ? 'scale(1)' : (src.transform || 'none')),
-        opacity: reset ? 1 : (src.opacity != null ? src.opacity : 1)
+
+  // 用当前引擎整体替换第三方原生脚本里的旧动画实现（在注入前做）。
+  // 页面自带的播放脚本是「生成那一刻的引擎快照」，效果表永远停在旧版本 —— v5.4 新增的
+  // wipe / flip / blur-in / slide-spin / highlight-sweep 它都不认识，会落进 default 分支
+  // （旧版 default 恰好是 scale(1)→scale(1.2)），现象即「选了擦除滑入，播放和录屏却是放大」。
+  // playAnimation 必须一并换掉，原因有二：
+  //   1) 旧实现只取 transform/opacity，clipPath/filter 类效果（wipe / blur-in）根本无法表达；
+  //   2) 旧实现是 fill:'forwards'，没设恢复时长时元素会永久停在放大态不回来。
+  // 两个函数要么都换成功，要么一个都不换 —— 半吊子补丁会让新 keyframes 撞上旧 playAnimation，
+  // 取到 null 直接抛异常把整条播放循环打死，比动画不对更糟。
+  function patchNativeEngine(code) {
+    var parts = animEngineParts
+    if (!parts) return code
+    var core = parts.keyframes + '\n' + parts.frames + '\n' + parts.state
+    var hasKf = /function\s+getEffectKeyframes\s*\(/.test(code)
+    var hasPlay = /function\s+playAnimation\s*\(/.test(code)
+    if (!hasKf && !hasPlay) return code
+    var patched = code
+    if (hasPlay) {
+      var p = replaceFnSource(patched, 'playAnimation', hasKf ? parts.play : (core + '\n' + parts.play))
+      if (!p) {
+        if (window.console) console.warn('[ztEdit] 原生脚本 playAnimation 定位失败，放弃打补丁')
+        return code
       }
-      if (usesExtra) {
-        f.clipPath = reset ? 'none' : (src.clipPath || 'none')
-        f.filter = reset ? 'none' : (src.filter || 'none')
-      }
-      return f
+      patched = p
     }
-    var keyframes = []
-    if (dly > 0) keyframes.push(frame(0, null, true))
-    keyframes.push(frame(startOff, kf.from, false))
-    keyframes.push(frame(endOff, kf.to, false))
-    if (ret > 0) keyframes.push(frame(1, null, true))
-    return keyframes
+    if (hasKf) {
+      var k = replaceFnSource(patched, 'getEffectKeyframes', core)
+      if (!k) {
+        if (window.console) console.warn('[ztEdit] 原生脚本 getEffectKeyframes 定位失败，放弃打补丁')
+        return code
+      }
+      patched = k
+    }
+    return patched
   }
+
+  // 在一段第三方脚本里定位具名函数的完整函数体（括号配对，跳过字符串/模板串/转义），
+  // 用当前引擎源码整体替换。定位失败返回 null —— 调用方据此降级，绝不能因打补丁失败就不播放。
+  function replaceFnSource(code, fnName, newSource) {
+    var sig = new RegExp('function\\s+' + fnName + '\\s*\\(')
+    var m = sig.exec(code)
+    if (!m) return null
+    var start = code.indexOf('{', m.index)
+    if (start < 0) return null
+    var depth = 0
+    var quote = null
+    var i = start
+    for (; i < code.length; i++) {
+      var c = code.charAt(i)
+      if (quote) {
+        if (c === '\\') { i++; continue }
+        if (c === quote) quote = null
+        continue
+      }
+      if (c === '"' || c === "'" || c === '`') { quote = c; continue }
+      if (c === '{') depth++
+      else if (c === '}') {
+        depth--
+        if (depth === 0) break
+      }
+    }
+    if (depth !== 0) return null
+    return code.slice(0, m.index) + newSource + code.slice(i + 1)
+  }
+
   // 划线强调：类驱动（同 focus-），保证 ::after 基类先于激活类挂上才有过渡
   function ensureSweepBase(el) {
     if (el.classList.contains('zt-hl-sweep')) return true
@@ -1354,12 +1394,7 @@
       var delay = parseFloat(el.getAttribute('data-zt-anim-delay')) || 0
       var returnSec = parseFloat(el.getAttribute('data-zt-anim-return')) || 0
       var easing = el.getAttribute('data-zt-anim-easing') || 'ease'
-      var kf = getEffectKeyframes(effect)
-      var totalDur = duration + returnSec
-        var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
-        if (baseTransform) baseTransform += ' '
-        if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
-      el.animate(kfFrameEntries(kf, delay, duration, returnSec, baseTransform), { duration: totalDur * 1000, easing: easing, fill: 'none' })
+      playBoundAnimation(el, effect, duration, delay, returnSec, easing)
     })
   }
 
@@ -1535,6 +1570,11 @@
     targetEl.classList.remove('zt-binding-target')
     bindingMode = null
     document.body.style.cursor = ''
+    // 绑定确认后自动选中目标元素：动画面板立刻对准绑定目标，用户随后设置的动画
+    // 必然写在同一元素上。此前确认后清空选中，用户重新点选的元素可能与绑定目标
+    // 错位（绑定模式 closest 可能命中祖先），动画写错对象——实测"选了擦除滑入，
+    // 播放却是放大"。绑定目标可以是任意元素（容器/图片/装饰），无条件选中。
+    selectOnly(targetEl)
     postSelection()
     post({ type: 'changed' })
     // 立即回传最新字幕数据，让时间轴立刻显示“已绑定”颜色，并能再次点击选中绑定元素
@@ -2090,24 +2130,28 @@
           boundEl.dataset.animDone = '1'
           var grp2 = boundEl.closest('.focus-group')
           if (grp2) { grp2.classList.remove('dim-others'); boundEl.classList.remove('zt-focus-active') }
-          playBoundAnimation(boundEl, effect)
+          playBoundAnimation(
+            boundEl,
+            effect,
+            boundEl.getAttribute('data-zt-anim-duration'),
+            boundEl.getAttribute('data-zt-anim-delay'),
+            boundEl.getAttribute('data-zt-anim-return'),
+            boundEl.getAttribute('data-zt-anim-easing')
+          )
         }
       }
     })
   }
 
-  function playBoundAnimation(el, effect) {
+  // 所有入场动画的唯一出口：走单一真源引擎，本文件不再持有 keyframes 表
+  function playBoundAnimation(el, effect, duration, delay, returnSec, easing) {
     if (!el || !effect) return
-    var kf = getEffectKeyframes(effect || 'zoom-in')
-    var dur = parseFloat(el.getAttribute('data-zt-anim-duration')) || 1
-    var dly = parseFloat(el.getAttribute('data-zt-anim-delay')) || 0
-    var ret = parseFloat(el.getAttribute('data-zt-anim-return')) || 0
-    var ease = el.getAttribute('data-zt-anim-easing') || 'ease'
-    var totalDur = dur + ret
-    var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
-    if (baseTransform) baseTransform += ' '
-    if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
-    el.animate(kfFrameEntries(kf, dly, dur, ret, baseTransform), { duration: totalDur * 1000, easing: ease, fill: 'none' })
+    if (!animEngine) {
+      // 引擎未就绪（父窗口还没把源码送进来）时宁可不放，也不要退回到任何本地副本
+      if (window.console) console.warn('[ztEdit] 动画引擎未就绪，跳过：', effect)
+      return
+    }
+    animEngine.playAnimation(el, effect, duration, delay, returnSec, easing)
   }
 
   function playLoop() {
@@ -2131,6 +2175,8 @@
 
   function injectNativePlayer(code) {
     if (nativeScriptEl) return
+    // 先换掉脚本里的旧动画引擎，再做其它改写（见 patchNativeEngine 注释）
+    code = patchNativeEngine(code)
     // 去掉原生脚本里绑在 document/window 上的交互监听（前进/后退由编辑器 UI 负责），
     // 仅保留播放引擎本身，并把 startPlayback 暴露为全局以便外部启动；同时支持外部停止残留循环。
     code = code
@@ -2361,6 +2407,7 @@
       if (m.type === 'goto') show(m.index)
       else if (m.type === 'next') show(current + 1)
       else if (m.type === 'prev') show(current - 1)
+      else if (m.type === 'animEngine') setAnimEngine(m.bootstrap, m.parts)
       else if (m.type === 'startPlay') startPlay(m.from, m.nativeScript)
       else if (m.type === 'stopPlay') stopPlay()
       else if (m.type === 'playGoto') playGoto(m.index)

@@ -16,6 +16,9 @@ Vite 5 + React 18（纯前端无后端）+ Electron 29 桌面壳 + IndexedDB 草
   App.jsx 的 `onMessage` 与 runtime 的 `init()` 里（改动要两端同步）。
 - 辅助模块：`loadFolder.js`（文件夹选择/相对路径解析）、`htmlProcess.js`（剥脚本/资源 blob 重写/导出还原/播放脚本生成）、
   `draftStore.js`（IndexedDB）、`recorder.js`（getDisplayMedia → canvas 裁剪 → MediaRecorder）。
+- **`src/animEffects.js`（2026-08-29 新增）：动画效果清单 + 引擎源码的唯一出处。**
+  预览 / 导出脚本 / 播放录屏 三端全部消费它。改动画只改这个文件，改完跑 `npm run check:anim`。
+  引擎源码经 App postMessage 下发（runtime 是 `?raw` 注入的纯脚本，不能 import）。
 
 ## 数据流要点
 1. 加载：`stripScripts` 剥离脚本 → `rewriteAssets` 把相对资源转 blob 并记 `relMap(blob→原引用)` → 拼装注入 → iframe `srcdoc`。
@@ -31,6 +34,12 @@ Vite 5 + React 18（纯前端无后端）+ Electron 29 桌面壳 + IndexedDB 草
 - 全局时间轴：页面脚本里的 `subtitles[]` + `slideTimings[]`
 
 ## 已知坑
+- **播放/录屏不走编辑器的动画引擎，走页面自带的原生播放脚本**（`startPlay` 里
+  `if (nativeScript && hasAudio)` → `injectNativePlayer()`）。那段脚本是生成 HTML 那一刻的引擎快照，
+  效果表永远停在旧版本。曾因此出现「预览对、导出对、播放录屏错」（旧 default 分支 = scale(1.2) 放大）。
+  现由 `patchNativeEngine()` 在注入前把它的 `getEffectKeyframes`/`playAnimation` 整体换成当前引擎；
+  两个函数要么都换成功要么都不换 —— 只换一个会让新 keyframes 返回 null 撞上旧 playAnimation，
+  抛异常直接打死整条播放循环，比动画不对更糟。
 - `selection` 消息**不要**清空 `selectedSubIdx`，否则「解除绑定」会走 `unbindSelectedElement` 分支而失效。
 - 导出必须把 `.slide.active` 重置到第一页，否则自动播放时首屏不显示（脚本 currentSlide 与实际不一致）。
 - `vite.config.js` 设了 `emptyOutDir: false` → `dist/` 会堆积历史产物（曾累到 26 个 js / 5.6MB），

@@ -130,6 +130,21 @@ HTML-ZtEdit/
 ## 五、当前进度快照（2026-08-29）
 
 **已完成**：
+- **动画引擎收敛到单一真源 `src/animEffects.js`（2026-08-29，契约仍 v5.4）**：
+  修掉「选了擦除滑入，录出来却是放大」。根因不是绑定，是**播放/录屏根本没走编辑器的动画引擎**——
+  `startPlay` 里 `if (nativeScript && hasAudio)` 会 `injectNativePlayer()` 注入**页面自带的原始播放脚本**，
+  那是生成 HTML 那一刻的引擎快照，效果表永远停在旧版本。样例页（v5.1 生成）的 `getEffectKeyframes`
+  只有 9 种，`wipe` 落进 `default: scale(1)→scale(1.2)`，就是放大；且它 `fill:'forwards'`，
+  没设恢复时长时元素会**永久停在放大态**。所以现象是「预览对、导出对、唯独播放/录屏错」。
+  旧 `playAnimation` 还只取 transform/opacity，clipPath/filter 类效果（wipe / blur-in）物理上无法表达；
+  `highlight-sweep` 在旧 loop 里也没有分支，同样会掉进放大。
+  修复：`animEffects.js` 作为唯一出处（效果清单 + 引擎源码切片），三端消费——
+  htmlProcess 嵌入导出脚本、App 下拉清单 + postMessage 下发、editorRuntime 预览与**注入前替换原生脚本的旧引擎**
+  （`patchNativeEngine` 用括号配对定位函数体整体替换，两个函数要么都换成功要么都不换，
+  避免新 keyframes 撞上旧 playAnimation 取到 null 把播放循环打死）。
+  未知效果从「默默放大」改为返回 null + warn（`getEffectKeyframes` 现返回 null，非默认放大）。
+  回归：`npm run check:anim`（29 项，复现旧 bug + 校验补丁 + 导出脚本语法，直接抠 editorRuntime 真实函数体来跑）。
+  **未动契约版本**：效果名与 `data-zt-*` 格式都没变，只改实现与兜底行为，故仍 v5.4、`check:contract` 通过。
 - **编辑绑定后录屏两类问题的修复（2026-08-29）**：
   1) **绑定后元素"消失"/无动画**：`confirmBinding` 此前只写字幕侧 `data-zt-bound-to`，元素侧只有 id、没有动画类型——播放时 effect 为空不触发任何效果，而同组原有元素激活时 `dim-others` 把组员压暗到 0.35+模糊（持续态），视觉即"元素消失"。修复：绑定时给元素补 `data-zt-anim-effect`（默认 focus-zoom）+ `focus-item` 类（含撤销历史）；并新增**组外元素独立激活样式**（`.zt-focus-active` 红色 outline 提亮，不依赖 focus-group）。实测抽帧确认：组外绑定元素激活时红色描边高亮。
   2) **编辑后录屏无声**：WebAudio 管线的 `AudioContext` 在两次录制间失去引用可能被 GC/自动挂起，挂起后音轨无数据。修复：context 强引用缓存在元素上（`__ztRecCtx`）+ 每次复用强制 `resume()`；`mixInAudio` 全链路诊断日志（元素查找/AudioContext state/track 状态），再遇无声看 DevTools 即可定位。实测构造"编辑产物"页录制：音轨峰值 0.7360 有声。
@@ -210,8 +225,9 @@ HTML-ZtEdit/
   `wipe` 擦除滑入（clip-path）、`flip` 3D翻转（rotateY+perspective）、`blur-in` 虚化聚焦（filter blur）、
   `slide-spin` 旋转滑入（复合变换）、`highlight-sweep` 划线强调（**类驱动**，同 focus-* 持续态，不 dim 同组，
   元素挂 `zt-hl-sweep` 基类 + 触发加 `zt-hl-active`；CSS 由编辑器/导出脚本注入）
-  实现要点：from/to 模型扩展 `clipPath`/`filter`，延迟/回位帧自动补 `none` 复位（`kfFrameEntries` 公共构建器，
-  editorRuntime 与 htmlProcess 导出脚本各一份，改时必须同步）；导入清理正则需同时摘除 `zt-hl-sweep/zt-hl-active`。
+  实现要点：from/to 模型扩展 `clipPath`/`filter`，延迟/回位帧自动补 `none` 复位。
+  ⚠️ **引擎已收敛到 `src/animEffects.js` 单一真源（2026-08-29），上面「各一份、改时必须同步」的旧约定作废**
+  —— 新增/修改动画只改 `animEffects.js`，再加一条就跑 `npm run check:anim`。
 - **脚本驱动档**（待做，需扩展播放脚本 + 导出逻辑 + 技能生成端，即契约 v5.5+）：
   `typewriter` 打字机（按字符步进，步速对齐字幕时间轴）、`stagger` 逐字/逐行入场、
   `counter` 数字滚动、`motion-path` 路径移动

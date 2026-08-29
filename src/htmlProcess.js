@@ -2,6 +2,7 @@
 // 以及导出时恢复资源引用 + 还原脚本
 
 import { resolvePath } from './loadFolder.js'
+import { animEngineSource } from './animEffects.js'
 
 const ASSET_TAGS = [
   ['img', 'src'],
@@ -111,45 +112,6 @@ export function restoreAndWrap(iframeHtml, relMap, scripts, mapValue) {
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML
 }
 
-function getEffectKeyframesCode() {
-  return `
-function getEffectKeyframes(effect) {
-  switch (effect) {
-    case 'zoom-in': return { from: { transform: 'scale(0.6)', opacity: 0 }, to: { transform: 'scale(1.3)', opacity: 1 } }
-    case 'zoom-out': return { from: { transform: 'scale(1)', opacity: 1 }, to: { transform: 'scale(0.6)', opacity: 0 } }
-    case 'fade-in': return { from: { opacity: 0 }, to: { opacity: 1 } }
-    case 'fly-left': return { from: { transform: 'translateX(-120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
-    case 'fly-right': return { from: { transform: 'translateX(120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
-    case 'fly-top': return { from: { transform: 'translateY(-120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
-    case 'fly-bottom': return { from: { transform: 'translateY(120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
-    case 'bounce': return { from: { transform: 'scale(0.8)', opacity: 0 }, to: { transform: 'scale(1.15)', opacity: 1 } }
-    case 'rotate': return { from: { transform: 'rotate(-15deg) scale(0.9)', opacity: 0 }, to: { transform: 'rotate(0deg) scale(1)', opacity: 1 } }
-    case 'wipe': return { from: { transform: 'translateX(-24px)', clipPath: 'inset(0 100% 0 0)', opacity: 1 }, to: { transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)', opacity: 1 } }
-    case 'flip': return { from: { transform: 'perspective(900px) rotateY(88deg) scale(0.94)', opacity: 0 }, to: { transform: 'perspective(900px) rotateY(0deg) scale(1)', opacity: 1 } }
-    case 'blur-in': return { from: { transform: 'scale(1.08)', filter: 'blur(14px)', opacity: 0 }, to: { transform: 'scale(1)', filter: 'blur(0px)', opacity: 1 } }
-    case 'slide-spin': return { from: { transform: 'translateX(-140px) rotate(-14deg) scale(0.85)', opacity: 0 }, to: { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 1 } }
-    default: return { from: { transform: 'scale(1)' }, to: { transform: 'scale(1.2)' } }
-  }
-}
-function kfFrameEntries(kf, dly, dur, ret, baseTransform) {
-  var totalDur = dur + ret
-  var startOff = dly > 0 ? dly / totalDur : 0
-  var endOff = (dly + dur) / totalDur
-  var usesExtra = !!(kf.from.clipPath || kf.from.filter || kf.to.clipPath || kf.to.filter)
-  function frame(offset, src, reset) {
-    var f = { offset: offset, transform: baseTransform + (reset ? 'scale(1)' : (src.transform || 'none')), opacity: reset ? 1 : (src.opacity != null ? src.opacity : 1) }
-    if (usesExtra) { f.clipPath = reset ? 'none' : (src.clipPath || 'none'); f.filter = reset ? 'none' : (src.filter || 'none') }
-    return f
-  }
-  var keyframes = []
-  if (dly > 0) keyframes.push(frame(0, null, true))
-  keyframes.push(frame(startOff, kf.from, false))
-  keyframes.push(frame(endOff, kf.to, false))
-  if (ret > 0) keyframes.push(frame(1, null, true))
-  return keyframes
-}`
-}
-
 function generatePlaybackScript(scripts, iframeHtml) {
   // 从原脚本中提取 slideTimings
   let slideTimingsStr = ''
@@ -161,22 +123,7 @@ function generatePlaybackScript(scripts, iframeHtml) {
 
   return `
 (function(){
-${getEffectKeyframesCode()}
-
-function playAnimation(el, effect, duration, delay, returnSec, easing) {
-  if (!el) return
-  if (!effect) return
-  var kf = getEffectKeyframes(effect || 'zoom-in')
-  var dur = parseFloat(duration) || 1
-  var dly = parseFloat(delay) || 0
-  var ret = parseFloat(returnSec) || 0
-  var ease = easing || 'ease'
-  var totalDur = dur + ret
-  var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
-  if (baseTransform) baseTransform += ' '
-  if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
-  el.animate(kfFrameEntries(kf, dly, dur, ret, baseTransform), { duration: totalDur * 1000, easing: ease, fill: 'none' })
-}
+${animEngineSource()}
 
 ${slideTimingsStr}
 

@@ -16,6 +16,7 @@ import {
   fileUrlMapper,
 } from './htmlProcess.js'
 import { saveDraft, loadDraft, clearDraft } from './draftStore.js'
+import { ANIM_EFFECTS, ANIM_ENGINE_PARTS, animEngineBootstrap } from './animEffects.js'
 
 import { startRecording, probeMime } from './recorder.js'
 
@@ -92,25 +93,6 @@ const SHADOW_PRESETS = [
   ['0 2px 8px rgba(0,0,0,.12)', '轻微'],
   ['0 4px 20px rgba(0,0,0,.15)', '中等'],
   ['0 8px 30px rgba(0,0,0,.25)', '较重'],
-]
-
-const ANIM_EFFECTS = [
-  ['zoom-in', '放大1.2倍'],
-  ['zoom-out', '缩小'],
-  ['fade-in', '淡入'],
-  ['fly-left', '飞入左侧'],
-  ['fly-right', '飞入右侧'],
-  ['fly-top', '飞入上方'],
-  ['fly-bottom', '飞入下方'],
-  ['bounce', '弹跳'],
-  ['rotate', '旋转'],
-  ['wipe', '擦除滑入'],
-  ['flip', '3D翻转'],
-  ['blur-in', '虚化聚焦'],
-  ['slide-spin', '旋转滑入'],
-  ['highlight-sweep', '划线强调（强调）'],
-  ['focus-zoom', '聚焦放大（强调）'],
-  ['', '（无动画）'],
 ]
 
 const RESOLUTIONS = [
@@ -579,6 +561,9 @@ export default function App() {
       const m = e.data || {}
       if (m.type === 'ready') {
         setReady(true)
+        // 把动画引擎源码下发给 iframe：预览、播放、以及注入原生脚本前的引擎替换都靠它。
+        // 引擎只在这里传一份，iframe 内不再自带 keyframes 表（避免三处副本再次漂移）。
+        send({ type: 'animEngine', bootstrap: animEngineBootstrap(), parts: ANIM_ENGINE_PARTS })
         if (gridOnRef.current) send({ type: 'toggleGrid', on: true, size: 20 })
         if (pendingCurrentRef.current) {
           send({ type: 'goto', index: pendingCurrentRef.current })
