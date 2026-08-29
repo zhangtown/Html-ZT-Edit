@@ -65,7 +65,7 @@ MP3 音频 + SRT/时间轴字幕 + 素材图片(素材1.png…)
 
 - 页面脚本内 `subtitles[]` + `slideTimings[]` 驱动全局时间轴
 - 聚焦强调：`focus-zoom` 元素置于 `focus-group` 容器内，触发时同组其余元素变暗
-- 当前契约版本 v5.3（技能文档 v5.4）；新增动画类型时需同步升级（见 P0-3）
+- 当前契约版本 v5.4（技能文档 v5.5）；新增动画类型时需同步升级（见 P0-3）
 
 > **跨仓库契约同步（重要）**：技能文档已迁至私有仓库 `zhangtown/my-skills`（`speech-visual-html/SKILL.md`）。
 > 本节是契约**正本**；修改本节数据模型/动画清单后，必须同版本更新 my-skills 的 SKILL.md 并推送两仓。
@@ -127,9 +127,10 @@ HTML-ZtEdit/
 └── 设计素材/              # UI设计参考图（gitignore）
 ```
 
-## 五、当前进度快照（2026-08-28）
+## 五、当前进度快照（2026-08-29）
 
 **已完成**：
+- **动画扩充 CSS 档（P0-3 第一档）**：新增 `wipe`/`flip`/`blur-in`/`slide-spin` 入场 + `highlight-sweep` 划线强调；关键帧模型扩展 clipPath/filter 属性；契约 v5.3→v5.4 两仓同发（编辑器下拉/预览/导出 + SKILL.md 动画清单）
 - 播放预览模式：从头/本页播放，音频 seek + 字幕 + 绑定动画同步，停止返回编辑态
 - **录制升级（P0-1）达成验收**：Electron 31 原生 MP4 + 离屏定尺寸窗口，窗口任意大小都出 1080P/2K/4K MP4（详见 P0-1）
 - 录制管线 v2：捕获隐藏的定尺寸离屏窗口；v1（捕获编辑器窗口 + canvas 裁剪 iframe）保留为纯浏览器兜底
@@ -193,9 +194,13 @@ HTML-ZtEdit/
 
 #### 3. 动画扩充（两档实现，契约同步升级）
 
-- **CSS 关键帧档**（低成本，适配现有 from/to 模型）：
-  `wipe` 擦除滑入、`flip` 3D翻转、`blur-in` 虚化聚焦、`highlight-sweep` 划线强调、`slide-spin` 旋转滑入
-- **脚本驱动档**（需扩展播放脚本 + 导出逻辑 + 技能生成端，即契约 v5.4+）：
+- **✅ CSS 关键帧档**（2026-08-29 完成，契约 v5.4）：
+  `wipe` 擦除滑入（clip-path）、`flip` 3D翻转（rotateY+perspective）、`blur-in` 虚化聚焦（filter blur）、
+  `slide-spin` 旋转滑入（复合变换）、`highlight-sweep` 划线强调（**类驱动**，同 focus-* 持续态，不 dim 同组，
+  元素挂 `zt-hl-sweep` 基类 + 触发加 `zt-hl-active`；CSS 由编辑器/导出脚本注入）
+  实现要点：from/to 模型扩展 `clipPath`/`filter`，延迟/回位帧自动补 `none` 复位（`kfFrameEntries` 公共构建器，
+  editorRuntime 与 htmlProcess 导出脚本各一份，改时必须同步）；导入清理正则需同时摘除 `zt-hl-sweep/zt-hl-active`。
+- **脚本驱动档**（待做，需扩展播放脚本 + 导出逻辑 + 技能生成端，即契约 v5.5+）：
   `typewriter` 打字机（按字符步进，步速对齐字幕时间轴）、`stagger` 逐字/逐行入场、
   `counter` 数字滚动、`motion-path` 路径移动
 - 两端同发：编辑器下拉/预览/导出 + `speech-visual-html/SKILL.md` 的动画清单同步更新

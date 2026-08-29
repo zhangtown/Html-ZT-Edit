@@ -104,6 +104,11 @@ const ANIM_EFFECTS = [
   ['fly-bottom', '飞入下方'],
   ['bounce', '弹跳'],
   ['rotate', '旋转'],
+  ['wipe', '擦除滑入'],
+  ['flip', '3D翻转'],
+  ['blur-in', '虚化聚焦'],
+  ['slide-spin', '旋转滑入'],
+  ['highlight-sweep', '划线强调（强调）'],
   ['focus-zoom', '聚焦放大（强调）'],
   ['', '（无动画）'],
 ]

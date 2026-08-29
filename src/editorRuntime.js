@@ -1181,6 +1181,19 @@
     ].join('\n')
     document.head.appendChild(fontStyleEl)
   }
+  // 划线强调（highlight-sweep）效果样式：页面自身通常没有这段 CSS，编辑器注入供预览/播放用
+  if (!document.getElementById('zt-anim-sweep')) {
+    var sweepStyleEl = document.createElement('style')
+    sweepStyleEl.id = 'zt-anim-sweep'
+    sweepStyleEl.textContent = [
+      '.zt-hl-sweep{position:relative}',
+      '.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}',
+      '.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}',
+    ].join('\n')
+    document.head.appendChild(sweepStyleEl)
+  }
+  // 给带划线强调效果的元素挂上基类（激活类由触发时再挂，保证有过渡）
+  document.querySelectorAll('[data-zt-anim-effect="highlight-sweep"]').forEach(function (el) { el.classList.add('zt-hl-sweep') })
 
   function setStyles(styles) {
     if (!selectedList.length) return
@@ -1269,9 +1282,50 @@
       case 'fly-bottom': return { from: { transform: 'translateY(120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
       case 'bounce': return { from: { transform: 'scale(0.8)', opacity: 0 }, to: { transform: 'scale(1.15)', opacity: 1 } }
       case 'rotate': return { from: { transform: 'rotate(-15deg) scale(0.9)', opacity: 0 }, to: { transform: 'rotate(0deg) scale(1)', opacity: 1 } }
+      case 'wipe': return { from: { transform: 'translateX(-24px)', clipPath: 'inset(0 100% 0 0)', opacity: 1 }, to: { transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)', opacity: 1 } }
+      case 'flip': return { from: { transform: 'perspective(900px) rotateY(88deg) scale(0.94)', opacity: 0 }, to: { transform: 'perspective(900px) rotateY(0deg) scale(1)', opacity: 1 } }
+      case 'blur-in': return { from: { transform: 'scale(1.08)', filter: 'blur(14px)', opacity: 0 }, to: { transform: 'scale(1)', filter: 'blur(0px)', opacity: 1 } }
+      case 'slide-spin': return { from: { transform: 'translateX(-140px) rotate(-14deg) scale(0.85)', opacity: 0 }, to: { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 1 } }
       default: return { from: { transform: 'scale(1)' }, to: { transform: 'scale(1.2)' } }
     }
   }
+  // from/to 关键帧 → WAAPI 帧序列；支持 clipPath/filter 扩展属性（契约 v5.4）
+  function kfFrameEntries(kf, dly, dur, ret, baseTransform) {
+    var totalDur = dur + ret
+    var startOff = dly > 0 ? dly / totalDur : 0
+    var endOff = (dly + dur) / totalDur
+    var usesExtra = !!(kf.from.clipPath || kf.from.filter || kf.to.clipPath || kf.to.filter)
+    function frame(offset, src, reset) {
+      var f = {
+        offset: offset,
+        transform: baseTransform + (reset ? 'scale(1)' : (src.transform || 'none')),
+        opacity: reset ? 1 : (src.opacity != null ? src.opacity : 1)
+      }
+      if (usesExtra) {
+        f.clipPath = reset ? 'none' : (src.clipPath || 'none')
+        f.filter = reset ? 'none' : (src.filter || 'none')
+      }
+      return f
+    }
+    var keyframes = []
+    if (dly > 0) keyframes.push(frame(0, null, true))
+    keyframes.push(frame(startOff, kf.from, false))
+    keyframes.push(frame(endOff, kf.to, false))
+    if (ret > 0) keyframes.push(frame(1, null, true))
+    return keyframes
+  }
+  // 划线强调：类驱动（同 focus-），保证 ::after 基类先于激活类挂上才有过渡
+  function ensureSweepBase(el) {
+    if (el.classList.contains('zt-hl-sweep')) return true
+    el.classList.add('zt-hl-sweep')
+    return false
+  }
+  function sweepActivate(el) {
+    var ready = ensureSweepBase(el)
+    if (ready) { el.classList.add('zt-hl-active'); return }
+    requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('zt-hl-active') }) })
+  }
+  function sweepDeactivate(el) { el.classList.remove('zt-hl-active') }
   function previewAnim() {
     if (!selectedList.length) return
     selectedList.forEach(function (el) {
@@ -1288,6 +1342,12 @@
         }, 1200)
         return
       }
+      // 划线强调：类驱动，预览 1.2s 后回落
+      if (effect === 'highlight-sweep') {
+        sweepActivate(el)
+        setTimeout(function () { sweepDeactivate(el) }, 1200)
+        return
+      }
       var duration = parseFloat(el.getAttribute('data-zt-anim-duration')) || 1
       var delay = parseFloat(el.getAttribute('data-zt-anim-delay')) || 0
       var returnSec = parseFloat(el.getAttribute('data-zt-anim-return')) || 0
@@ -1296,15 +1356,8 @@
       var totalDur = duration + returnSec
         var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
         if (baseTransform) baseTransform += ' '
-      var keyframes = []
-      if (delay > 0) keyframes.push({ offset: 0, transform: baseTransform + 'scale(1)', opacity: 1 })
-      var startOff = delay > 0 ? delay / totalDur : 0
-      var endOff = (delay + duration) / totalDur
-      keyframes.push({ offset: startOff, transform: baseTransform + kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
-      keyframes.push({ offset: endOff, transform: baseTransform + kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
-      if (returnSec > 0) keyframes.push({ offset: 1, transform: baseTransform + 'scale(1)', opacity: 1 })
         if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
-      el.animate(keyframes, { duration: totalDur * 1000, easing: easing, fill: 'none' })
+      el.animate(kfFrameEntries(kf, delay, duration, returnSec, baseTransform), { duration: totalDur * 1000, easing: easing, fill: 'none' })
     })
   }
 
@@ -1919,6 +1972,7 @@
       delete el.dataset.animDone
       delete el.dataset.focusDone
       el.classList.remove('zt-focus-active')
+      el.classList.remove('zt-hl-active')
       var g = el.closest('.focus-group')
       if (g) g.classList.remove('dim-others')
     })
@@ -2015,6 +2069,13 @@
           if (grp) grp.classList.add('dim-others')
           boundEl.classList.add('zt-focus-active')
         }
+      } else if (effect === 'highlight-sweep') {
+        // 划线强调：类驱动持续态，不 dim 同组
+        if (boundEl.dataset.focusDone) return
+        if (t >= absStart) {
+          boundEl.dataset.focusDone = '1'
+          sweepActivate(boundEl)
+        }
       } else {
         if (boundEl.dataset.animDone) return
         if (t >= absStart && t < absStart + 0.5) {
@@ -2037,14 +2098,8 @@
     var totalDur = dur + ret
     var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
     if (baseTransform) baseTransform += ' '
-    var keyframes = []
-    if (dly > 0) keyframes.push({ offset: 0, transform: baseTransform + 'scale(1)', opacity: 1 })
-    var startOff = dly > 0 ? dly / totalDur : 0
-    var endOff = (dly + dur) / totalDur
-    keyframes.push({ offset: startOff, transform: baseTransform + kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
-    keyframes.push({ offset: endOff, transform: baseTransform + kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
-    if (ret > 0) keyframes.push({ offset: 1, transform: baseTransform + 'scale(1)', opacity: 1 })
-    el.animate(keyframes, { duration: totalDur * 1000, easing: ease, fill: 'none' })
+    if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
+    el.animate(kfFrameEntries(kf, dly, dur, ret, baseTransform), { duration: totalDur * 1000, easing: ease, fill: 'none' })
   }
 
   function playLoop() {

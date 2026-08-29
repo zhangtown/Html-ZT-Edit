@@ -4,7 +4,7 @@ ztEdit：手写 HTML 页面的可视化编辑器（React + Vite + Electron）。
 
 ## ⚠️ 跨仓库契约同步（最重要规则）
 
-本仓库 WORKFLOW.md「二、数据模型」是 **ztEdit 原生格式契约的正本**（当前 v5.3）。该契约的另一个实现方在**另一个仓库**：
+本仓库 WORKFLOW.md「二、数据模型」是 **ztEdit 原生格式契约的正本**（当前 v5.4）。该契约的另一个实现方在**另一个仓库**：
 
 - 仓库：`https://github.com/zhangtown/my-skills`（本机主库 `~/.agents/skills/`）
 - 文件：`speech-visual-html/SKILL.md`「ztEdit 原生格式规范」章节

@@ -59,7 +59,7 @@ export function stripEditorParts(html) {
     .replace(/<script id="zt-editor-runtime">[\s\S]*?<\/script>/g, '')
     .replace(/\s+class="([^"]*)"/g, (m, cls) => {
       const cleaned = cls
-        .replace(/\s*\b(zt-grid|zt-selected|zt-focus-active|zt-bound-mark|zt-bound-highlight|zt-binding-target|dim-others)\b\s*/g, ' ')
+        .replace(/\s*\b(zt-grid|zt-selected|zt-focus-active|zt-hl-sweep|zt-hl-active|zt-bound-mark|zt-bound-highlight|zt-binding-target|dim-others)\b\s*/g, ' ')
         .trim()
       return cleaned ? ` class="${cleaned}"` : ''
     })
@@ -67,7 +67,7 @@ export function stripEditorParts(html) {
 
 // 导出：把 iframe 回传的 html 中的 blob URL 恢复为原始相对引用，
 // 并把脚本片段还原回 body，最后包裹成完整文档
-const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n'
+const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n.zt-hl-sweep{position:relative}\n.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}\n.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}\n'
 
 // 录屏专用 mapper：把相对引用改写成 file:// 绝对地址。
 // 录屏页是系统临时目录里的 HTML，只有指回磁盘原位置才能加载到图片/音频。
@@ -124,8 +124,29 @@ function getEffectKeyframes(effect) {
     case 'fly-bottom': return { from: { transform: 'translateY(120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
     case 'bounce': return { from: { transform: 'scale(0.8)', opacity: 0 }, to: { transform: 'scale(1.15)', opacity: 1 } }
     case 'rotate': return { from: { transform: 'rotate(-15deg) scale(0.9)', opacity: 0 }, to: { transform: 'rotate(0deg) scale(1)', opacity: 1 } }
+    case 'wipe': return { from: { transform: 'translateX(-24px)', clipPath: 'inset(0 100% 0 0)', opacity: 1 }, to: { transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)', opacity: 1 } }
+    case 'flip': return { from: { transform: 'perspective(900px) rotateY(88deg) scale(0.94)', opacity: 0 }, to: { transform: 'perspective(900px) rotateY(0deg) scale(1)', opacity: 1 } }
+    case 'blur-in': return { from: { transform: 'scale(1.08)', filter: 'blur(14px)', opacity: 0 }, to: { transform: 'scale(1)', filter: 'blur(0px)', opacity: 1 } }
+    case 'slide-spin': return { from: { transform: 'translateX(-140px) rotate(-14deg) scale(0.85)', opacity: 0 }, to: { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 1 } }
     default: return { from: { transform: 'scale(1)' }, to: { transform: 'scale(1.2)' } }
   }
+}
+function kfFrameEntries(kf, dly, dur, ret, baseTransform) {
+  var totalDur = dur + ret
+  var startOff = dly > 0 ? dly / totalDur : 0
+  var endOff = (dly + dur) / totalDur
+  var usesExtra = !!(kf.from.clipPath || kf.from.filter || kf.to.clipPath || kf.to.filter)
+  function frame(offset, src, reset) {
+    var f = { offset: offset, transform: baseTransform + (reset ? 'scale(1)' : (src.transform || 'none')), opacity: reset ? 1 : (src.opacity != null ? src.opacity : 1) }
+    if (usesExtra) { f.clipPath = reset ? 'none' : (src.clipPath || 'none'); f.filter = reset ? 'none' : (src.filter || 'none') }
+    return f
+  }
+  var keyframes = []
+  if (dly > 0) keyframes.push(frame(0, null, true))
+  keyframes.push(frame(startOff, kf.from, false))
+  keyframes.push(frame(endOff, kf.to, false))
+  if (ret > 0) keyframes.push(frame(1, null, true))
+  return keyframes
 }`
 }
 
@@ -153,14 +174,8 @@ function playAnimation(el, effect, duration, delay, returnSec, easing) {
   var totalDur = dur + ret
   var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
   if (baseTransform) baseTransform += ' '
-  var keyframes = []
-  if (dly > 0) keyframes.push({ offset: 0, transform: baseTransform + 'scale(1)', opacity: 1 })
-  var startOff = dly > 0 ? dly / totalDur : 0
-  var endOff = (dly + dur) / totalDur
-  keyframes.push({ offset: startOff, transform: baseTransform + kf.from.transform, opacity: kf.from.opacity != null ? kf.from.opacity : 1 })
-  keyframes.push({ offset: endOff, transform: baseTransform + kf.to.transform, opacity: kf.to.opacity != null ? kf.to.opacity : 1 })
-  if (ret > 0) keyframes.push({ offset: 1, transform: baseTransform + 'scale(1)', opacity: 1 })
-  el.animate(keyframes, { duration: totalDur * 1000, easing: ease, fill: 'none' })
+  if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
+  el.animate(kfFrameEntries(kf, dly, dur, ret, baseTransform), { duration: totalDur * 1000, easing: ease, fill: 'none' })
 }
 
 ${slideTimingsStr}
@@ -169,6 +184,7 @@ ${slideTimingsStr}
 // （此时画面靠 CSS 动画仍在动，很容易被误判成"录屏没声音"）
 var audio=document.getElementById('bgAudio')||document.querySelector('audio');
 const slides=document.querySelectorAll('.slide');
+document.querySelectorAll('[data-zt-anim-effect="highlight-sweep"]').forEach(function(el){el.classList.add('zt-hl-sweep')});
 var subtitleEl=document.getElementById('subtitleCurrent');
 var progressBar=document.getElementById('progressBar');
 let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0;
@@ -220,6 +236,9 @@ function loop(){
       if(effect.indexOf('focus-')===0){
         if(boundEl.dataset.focusDone)return;
         if(t>=absStart){boundEl.dataset.focusDone='1';var grp=boundEl.closest('.focus-group');if(grp)grp.classList.add('dim-others');boundEl.classList.add('zt-focus-active')}
+      }else if(effect==='highlight-sweep'){
+        if(boundEl.dataset.focusDone)return;
+        if(t>=absStart){boundEl.dataset.focusDone='1';if(!boundEl.classList.contains('zt-hl-sweep'))boundEl.classList.add('zt-hl-sweep');requestAnimationFrame(function(){requestAnimationFrame(function(){boundEl.classList.add('zt-hl-active')})})}
       }else{
         if(boundEl.dataset.animDone)return;
         if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';var duration=boundEl.getAttribute('data-zt-anim-duration');var delay=boundEl.getAttribute('data-zt-anim-delay');var returnSec=boundEl.getAttribute('data-zt-anim-return');var easing=boundEl.getAttribute('data-zt-anim-easing');var grp=boundEl.closest('.focus-group');if(grp){grp.classList.remove('dim-others');boundEl.classList.remove('zt-focus-active')}playAnimation(boundEl,effect,duration,delay,returnSec,easing)}
@@ -233,7 +252,7 @@ function loop(){
 function startPlayback(){if(isPlaying)return;audio.play().then(function(){isPlaying=true;loop()}).catch(function(){})}
 
 // 手动翻页时清除动画状态
-var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
+var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');el.classList.remove('zt-hl-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
 
 document.addEventListener('keydown',function(e){
   if(e.key==='ArrowRight'){e.preventDefault();if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}
