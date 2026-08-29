@@ -13,7 +13,8 @@
     "electron": "electron .",
     "dev:electron": "node electron/dev-runner.cjs",
     "electron:dev": "npm run build && electron .",
-    "electron:build": "npm run build && electron-builder --win"
+    "electron:build": "npm run build && electron-builder --win",
+    "check:contract": "node scripts/contract-check.cjs"
   },
   "dependencies": {
     "react": "^18.3.1",
