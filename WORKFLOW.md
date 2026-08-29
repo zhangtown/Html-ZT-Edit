@@ -84,8 +84,8 @@ npm run dev            # 纯 Web 调试（http://localhost:5173）
 npm run dev:electron   # Electron 桌面调试模式
 # 发布：双击 打包.bat（自动配国内镜像 + npm install + electron-builder）
 
-# 安装仓库内 AI 技能到 ZCode 技能目录（否则不会被自动触发）：
-cp -r vo-pipeline ~/.agents/skills/     # speech-visual-html 同理；装完新开会话生效
+# AI 技能（speech-visual-html / vo-pipeline 等）已迁到私有仓库统一维护：
+git clone https://github.com/zhangtown/my-skills.git ~/.agents/skills   # 主库；各 Agent 经 junction 共享
 ```
 
 ### 3. 不在 git 里的资产（换机器必须手动拷贝！）
@@ -117,7 +117,7 @@ HTML-ZtEdit/
 │   ├── recorder.js        # 录屏管线：getDisplayMedia→裁剪iframe→混音→MediaRecorder
 │   ├── loadFolder.js / draftStore.js
 ├── electron/              # 桌面壳（main/preload/dev-runner/sign）
-├── speech-visual-html/    # 生成端技能：SKILL.md v5.4 + 模板 + assets
+├── （AI 技能已迁至 my-skills 私有仓库，见「换环境恢复指南」）
 ├── 测试工程/              # v5.3 原生格式回归测试页（已入库）
 ├── 样例HTML工程/          # 完整样例：MP3+素材+成品（gitignore，换机要拷）
 └── 设计素材/              # UI设计参考图（gitignore）
@@ -177,7 +177,7 @@ HTML-ZtEdit/
 
 #### 2. ✅ TTS 口播产线 `vo-pipeline`（阶段1 已建成并实测通过 2026-08-28）
 
-技能落在仓库 `vo-pipeline/`（SKILL.md + 三只脚本 + 音色速查表），并安装到 `~/.agents/skills/`。
+技能源码在私有仓库 `my-skills`（github.com/zhangtown/my-skills，主库 `~/.agents/skills/vo-pipeline/`，含 SKILL.md + 两只脚本 + 音色速查表），不再随本仓库分发。
 
 - ✅ **阶段1 edge-tts 引擎（默认）**：Phase0 文案口语化打磨指引 → 合成 → **WordBoundary 字级时间戳直接出 SRT**
   （对齐回原文保留标点、按标点自然断条）→ 响度归一 -16 LUFS → 段落间隙 → 试听选音色 → 语速体检（字/秒）。
