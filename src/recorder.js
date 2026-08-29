@@ -1,8 +1,14 @@
-// 录屏管线
-// 主路径（Electron）：主进程开一个定尺寸的隐藏窗口跑时间轴，getDisplayMedia 直接捕获它，
-//   输出分辨率与编辑器窗口大小彻底解耦，也不再有 canvas 逐帧裁剪的开销。
-// 兜底路径（纯浏览器 / 拿不到资源根目录）：退回捕获编辑器窗口 + 按 iframe 位置裁剪。
-// 音频一律从编辑器 iframe 里的 <audio> 混入（离屏页那份被静音，只贡献画面）。
+// 录屏管线 v3：直接全屏 + 固定输出分辨率
+// 路线：点录制 → 编辑器窗口全屏（画面即所得）→ getDisplayMedia 捕获主窗口 →
+//   canvas 等比重采样到固定输出档位（默认 1920×1080）→ mp4(H.264+AAC)。
+//
+// 为什么不直录屏幕原始像素：H.264 硬编码器要求宽 16 对齐，屏幕分辨率五花八门
+//   （2520×1680 实测 "Video encoding failed"，1920×1080 正常）；固定 16 对齐的
+//   输出档位后，任何显示器/比例/DPI 行为完全一致，码率也恒定。
+// 为什么不用离屏定尺寸窗口：已弃用——离屏页里第三方播放脚本时序不可控（gate 放行后
+//   播放循环不启动，画面冻结在第一页），还多出临时文件/隐藏窗口两层复杂度。
+// 音轨：从编辑器 iframe 的 <audio> captureStream 直取——它就是屏幕上正在播放的
+//   同一实例，与画面同源；主窗口的音频捕获轨实测是静音数据，不可用。
 
 // 按浏览器支持度挑选封装格式（优先 mp4/H.264+AAC，退回 webm）
 // Chromium 126（Electron 31）起 MediaRecorder 原生支持 mp4 封装
@@ -32,42 +38,54 @@ function mixInAudio(stream, iframeEl) {
   try {
     const doc = iframeEl && iframeEl.contentDocument
     const audioEl = doc && (doc.getElementById('bgAudio') || doc.querySelector('audio'))
-    if (audioEl && audioEl.captureStream) {
-      audioEl
-        .captureStream()
-        .getAudioTracks()
-        .forEach((t) => stream.addTrack(t))
+    if (!audioEl) {
+      console.warn('[ZT-Edit] 页面里没找到 <audio>，本次录制将无声')
+      return
+    }
+    // 首选 WebAudio 管线：元素一播放就出数据帧，可控性最好。
+    // （实测 element.captureStream() 在元素尚未播放时拿到的轨不会产出数据帧，
+    //   mp4 里连音轨 box 都不会写——它是踩过坑的兜底，不再是首选。）
+    try {
+      if (audioEl.__ztRecDest) {
+        // createMediaElementSource 对同一元素只能调一次：复用首次建好的 destination
+        audioEl.__ztRecDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
+        console.warn('[ZT-Edit] 音轨(WebAudio·复用)已接入')
+        return
+      }
+      const actx = new (window.AudioContext || window.webkitAudioContext)()
+      if (actx.state === 'suspended') actx.resume().catch(() => {})
+      const src = actx.createMediaElementSource(audioEl)
+      const dest = actx.createMediaStreamDestination()
+      src.connect(dest)
+      // createMediaElementSource 会把元素输出改道 WebAudio，必须接回扬声器，否则编辑器里没声
+      src.connect(actx.destination)
+      audioEl.__ztRecDest = dest
+      dest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
+      console.warn('[ZT-Edit] 音轨(WebAudio)已接入')
+      return
+    } catch (e) {
+      console.warn('[ZT-Edit] WebAudio 音轨接入失败，退回 captureStream：' + (e && e.message))
+    }
+    if (audioEl.captureStream) {
+      audioEl.captureStream().getAudioTracks().forEach((t) => stream.addTrack(t))
     }
   } catch (e) {}
 }
 
 // 开始录制
-// iframeEl：编辑器画布 iframe（提供音轨；兜底模式下同时决定裁剪区域）
-// opts：{ offscreen, width, height, direct }
-//   direct：直接全屏录屏——主窗口先全屏，getDisplayMedia 捕获主窗口本身，
-//   画面=窗口内容=全屏页面（原生分辨率，4K 屏就是 4K 片），音画同源零偏移。
+// iframeEl：编辑器画布 iframe（音轨来源）
+// opts：{ width, height } 输出分辨率（默认 1920×1080，须为 16 对齐档位）
 export async function startRecording(iframeEl, opts) {
   if (!iframeEl) throw new Error('画布尚未加载')
   const o = opts || {}
-  const offscreen = !!o.offscreen
-  const direct = !!o.direct
-  const W = Math.round(Number(o.width) || 1920)
-  const H = Math.round(Number(o.height) || 1080)
+  const W = Math.max(16, Math.round(Number(o.width) || 1920))
+  const H = Math.max(16, Math.round(Number(o.height) || 1080))
 
   const displayStream = await navigator.mediaDevices.getDisplayMedia({
-    // direct 模式不约束宽高：全屏窗口多大，捕获流就是多大（原生分辨率）
-    video: direct ? { frameRate: 30 } : { frameRate: 30, width: W, height: H },
-    // 离屏/直接模式：音频随画面一起从同一个窗口捕获（音画同源，零偏移）。
-    // 关掉 AGC/降噪/回声消除，否则口播人声会被"处理"得发闷。
-    audio:
-      offscreen || direct
-        ? {
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false,
-            channelCount: 2,
-          }
-        : false,
+    // 不约束捕获尺寸：窗口多大捕多大，重采样交给 canvas
+    video: { frameRate: 30 },
+    // 窗口音轨实测是静音数据（原因未明，离屏窗口同写法则有声）；音轨走 mixInAudio
+    audio: false,
     // Chromium：优先当前标签页（Electron 中由主进程直接接管，不弹选择框）
     preferCurrentTab: true,
     selfBrowserSurface: 'include',
@@ -75,73 +93,41 @@ export async function startRecording(iframeEl, opts) {
 
   const vTrack = displayStream.getVideoTracks()[0]
   const st = vTrack && vTrack.getSettings ? vTrack.getSettings() : {}
-  const srcW = Math.round(st.width || 0)
-  const srcH = Math.round(st.height || 0)
-  // 系统缩放（DPR≠1）会让捕获尺寸偏离目标，此时才需要重采样兜底
-  const needScale = offscreen && (srcW !== W || srcH !== H)
 
-  let outStream
-  let raf = 0
-  let stopped = false
-  let canvas = null
-
-  if ((offscreen && !needScale) || direct) {
-    // 理想路径：捕获尺寸就是目标分辨率（direct=全屏窗口原生尺寸），直接录，
-    // 不建 video、不逐帧拷贝。这里要带上 audio 轨——它就是同一窗口的声音，与画面同源。
-    outStream = new MediaStream(displayStream.getTracks())
-  } else {
-    const video = document.createElement('video')
-    video.muted = true
-    video.srcObject = displayStream
-    await video.play()
-    if (video.readyState < 1) {
-      await new Promise((r) => { video.onloadedmetadata = r })
-    }
-    canvas = document.createElement('canvas')
-    const ctx = canvas.getContext('2d')
-    if (needScale) {
-      canvas.width = W
-      canvas.height = H
-    }
-    const draw = () => {
-      if (stopped) return
-      if (needScale) {
-        ctx.drawImage(video, 0, 0, W, H)
-      } else {
-        // 兜底：按 iframe 在视口中的位置裁出画布区域
-        const rect = iframeEl.getBoundingClientRect()
-        const vw = window.innerWidth || document.documentElement.clientWidth || video.videoWidth
-        const vh = window.innerHeight || document.documentElement.clientHeight || video.videoHeight
-        const kx = video.videoWidth / vw
-        const ky = video.videoHeight / vh
-        const w = Math.max(2, Math.round(rect.width * kx))
-        const h = Math.max(2, Math.round(rect.height * ky))
-        if (canvas.width !== w || canvas.height !== h) {
-          canvas.width = w
-          canvas.height = h
-        }
-        ctx.drawImage(video, rect.left * kx, rect.top * ky, w, h, 0, 0, w, h)
-      }
-      raf = requestAnimationFrame(draw)
-    }
-    draw()
-    outStream = canvas.captureStream(30)
-    if (offscreen) {
-      // 走了重采样兜底，画面重绘过，但音频仍是离屏页那份，直接接上
-      displayStream.getAudioTracks().forEach((t) => outStream.addTrack(t))
-    }
+  // 捕获流 → video 元素 → canvas 等比缩放居中（非 16:9 屏幕自动信箱）
+  const video = document.createElement('video')
+  video.muted = true
+  video.srcObject = displayStream
+  await video.play()
+  if (video.readyState < 1) {
+    await new Promise((r) => { video.onloadedmetadata = r })
   }
 
-  // 仅兜底模式需要从编辑器 iframe 取音轨：那时捕获的是编辑器窗口，拿不到页面音频
-  if (!offscreen && !direct) mixInAudio(outStream, iframeEl)
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+  let raf = 0
+  let stopped = false
+  const draw = () => {
+    if (stopped) return
+    const vw = video.videoWidth || W
+    const vh = video.videoHeight || H
+    const k = Math.min(W / vw, H / vh)
+    const dw = Math.max(2, Math.round(vw * k))
+    const dh = Math.max(2, Math.round(vh * k))
+    ctx.fillStyle = '#000'
+    ctx.fillRect(0, 0, W, H)
+    ctx.drawImage(video, Math.floor((W - dw) / 2), Math.floor((H - dh) / 2), dw, dh)
+    raf = requestAnimationFrame(draw)
+  }
+  draw()
+  const outStream = canvas.captureStream(30)
+  mixInAudio(outStream, iframeEl)
 
   const mime = pickMime()
-  // 码率随分辨率走：1080p≈12Mbps 的经验值，按像素数放大（4K≈48Mbps 封顶），
-  // 否则 4K 片按 12Mbps 编码会糊成一片。
-  const px = srcW * srcH
-  const bitrate = direct
-    ? Math.min(48_000_000, Math.max(12_000_000, Math.round(px * 5.8)))
-    : 12_000_000
+  // 码率按输出档位走：1080p≈12Mbps；20Mbps 封顶（再高部分硬编码器不认）
+  const bitrate = Math.min(20_000_000, Math.max(12_000_000, Math.round(W * H * 5.8)))
   const rec = new MediaRecorder(
     outStream,
     mime ? { mimeType: mime, videoBitsPerSecond: bitrate } : undefined
@@ -150,7 +136,19 @@ export async function startRecording(iframeEl, opts) {
   rec.ondataavailable = (e) => {
     if (e.data && e.data.size) chunks.push(e.data)
   }
+  rec.onerror = (e) => {
+    const err = e && e.error
+    console.error(
+      '[ZT-Edit] MediaRecorder 错误：' +
+        (err ? `${err.name}: ${err.message}` : String(e))
+    )
+  }
+  rec.onstop = () => console.warn(`[ZT-Edit] 录制器停止：共 ${chunks.length} 块数据`)
   rec.start(1000)
+  console.warn(
+    `[ZT-Edit] 录制器已启动 输出=${W}x${H} 源=${st.width || '?'}x${st.height || '?'} ` +
+      `mime=${mime || '默认'} bitrate=${bitrate}`
+  )
 
   // 用户在系统 UI 上主动停止了共享 → 视同停止录制
   let onInactive = null
@@ -159,11 +157,10 @@ export async function startRecording(iframeEl, opts) {
 
   return {
     canvas,
-    offscreen,
-    direct,
+    direct: true,
     // 真正送进 MediaRecorder 的音轨数：0 就说明这趟注定没声音，调用方据此告警
     audioTrackCount: outStream.getAudioTracks().length,
-    // stop 返回最终视频；用户外部停止共享时也会自动走 stop 逻辑（由调用方兜底）
+    // 用户在系统层面停止共享时轨道会 ended，调用方据此兜底结束录制
     onExternalStop: inactivePromise,
     stop: () =>
       new Promise((resolve) => {

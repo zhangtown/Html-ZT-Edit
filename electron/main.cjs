@@ -221,14 +221,23 @@ const REC_GATE = `
             window.startPlayback();
             window.__ztDiag.fallback = 'startPlayback';
           } else {
+            // 页面脚本多为 IIFE，startPlayback 不可达。裸 audio.play() 只出声不翻页
+            // （实测整段录像冻结在第一页）。模板脚本约定：首次点击 = startPlayback，
+            // 模拟一次点击把 isPlaying/loop 一起带起来。
+            document.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+            window.__ztDiag.fallback = 'click';
+          }
+          // 再兜一层：800ms 后音频仍是暂停态（页面没有 click 启动逻辑）才裸 play 保底出声
+          setTimeout(function(){
             var a = document.getElementById('bgAudio') || document.querySelector('audio');
             if (a && a.paused) {
-              a.play().then(function(){ window.__ztDiag.playOk++; }).catch(function(e){
+              var p = a.play();
+              if (p && p.then) p.then(function(){ window.__ztDiag.playOk++; }).catch(function(e){
                 window.__ztDiag.playErr.push(String(e && e.message));
               });
-              window.__ztDiag.fallback = 'audio.play';
+              window.__ztDiag.fallback2 = 'audio.play';
             }
-          }
+          }, 800);
         } catch (e) { window.__ztDiag.fallbackErr = String(e && e.message); }
       }, 60);
     }
@@ -364,10 +373,15 @@ function registerIpc() {
 
   // 屏幕可用区域：离屏窗口不能超过它，否则 Chromium 拒绝渲染（页面加载直接 ERR_FAILED）。
   // UI 靠这个把录不到的档位置灰。
-  // 直接全屏录屏：录制前主窗口全屏（画面=窗口内容，原生分辨率），结束后退出全屏
+  // 直接全屏录屏：录制前主窗口全屏（画面=窗口内容，原生分辨率），结束后退出全屏。
+  // 全屏时必须把菜单栏一并藏掉，否则 File/Edit 那条会被录进画面（Windows 实测踩坑）。
   ipcMain.handle('zt:set-fullscreen', (event, on) => {
     try {
-      if (mainWin && !mainWin.isDestroyed()) mainWin.setFullScreen(!!on)
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.setFullScreen(!!on)
+        mainWin.setMenuBarVisibility(!on)
+        if (on) mainWin.setAutoHideMenuBar(true)
+      }
       return { ok: true }
     } catch (e) {
       return { ok: false, error: String(e && e.message) }
