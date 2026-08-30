@@ -1,21 +1,27 @@
-// 录屏管线 v3：直接全屏 + 固定输出分辨率
+// 录屏管线 v3.1：直接全屏 + 原生分辨率优先
 // 路线：点录制 → 编辑器窗口全屏（画面即所得）→ getDisplayMedia 捕获主窗口 →
-//   canvas 等比重采样到固定输出档位（默认 1920×1080）→ mp4(H.264+AAC)。
+//   默认原生分辨率直出（仅补齐到 16 对齐，零缩放零黑边）→ mp4(H.264 High+AAC)。
 //
-// 为什么不直录屏幕原始像素：H.264 硬编码器要求宽 16 对齐，屏幕分辨率五花八门
-//   （2520×1680 实测 "Video encoding failed"，1920×1080 正常）；固定 16 对齐的
-//   输出档位后，任何显示器/比例/DPI 行为完全一致，码率也恒定。
+// 为什么默认原生：v3 固定 1080P 档在 2520×1680（3:2）屏上要缩小 ~35% 再加黑边，
+//   文字细节明显发虚（用户对标 Game Bar 实测结论）。原生直出 = Game Bar 同款清晰度。
+// 为什么仍过 canvas：H.264 硬编码器要求宽 16 对齐，屏幕分辨率五花八门
+//   （2520×1680 实测 "Video encoding failed"）；canvas 输出尺寸补齐到 16 后，
+//   任何显示器/比例/DPI 行为完全一致。原生档 1:1 直绘不经过缩放滤镜，无清晰度损失。
+// 固定档位（1080P/2K/4K）保留：想要小文件时手动选，行为同 v3（等比缩放+信箱）。
 // 为什么不用离屏定尺寸窗口：已弃用——离屏页里第三方播放脚本时序不可控（gate 放行后
 //   播放循环不启动，画面冻结在第一页），还多出临时文件/隐藏窗口两层复杂度。
 // 音轨：从编辑器 iframe 的 <audio> captureStream 直取——它就是屏幕上正在播放的
 //   同一实例，与画面同源；主窗口的音频捕获轨实测是静音数据，不可用。
 
-// 按浏览器支持度挑选封装格式（优先 mp4/H.264+AAC，退回 webm）
+// 按浏览器支持度挑选封装格式（优先 mp4/H.264 High Profile+AAC，退回 webm）
+// High(640028)/Main(4D4028) 带 CABAC，同码率下细节明显好于 Baseline(42E01E)；
+// Chromium 会按平台能力自动降级，链尾兜底保证总能起录
 // Chromium 126（Electron 31）起 MediaRecorder 原生支持 mp4 封装
 function pickMime() {
   const candidates = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1.640028,mp4a.40.2',
     'video/mp4;codecs=avc1.4D4028,mp4a.40.2',
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
     'video/mp4',
     'video/webm;codecs=vp9,opus',
     'video/webm',
@@ -95,15 +101,16 @@ function mixInAudio(stream, iframeEl) {
 
 // 开始录制
 // iframeEl：编辑器画布 iframe（音轨来源）
-// opts：{ width, height } 输出分辨率（默认 1920×1080，须为 16 对齐档位）
+// opts：{ width, height } 固定输出档位（须为 16 对齐）；不给或为 0 → 原生分辨率直出
 export async function startRecording(iframeEl, opts) {
   if (!iframeEl) throw new Error('画布尚未加载')
   const o = opts || {}
-  const W = Math.max(16, Math.round(Number(o.width) || 1920))
-  const H = Math.max(16, Math.round(Number(o.height) || 1080))
+  const tierW = Math.round(Number(o.width) || 0)
+  const tierH = Math.round(Number(o.height) || 0)
+  const fixedTier = tierW >= 16 && tierH >= 16
 
   const displayStream = await navigator.mediaDevices.getDisplayMedia({
-    // 不约束捕获尺寸：窗口多大捕多大，重采样交给 canvas
+    // 不约束捕获尺寸：窗口多大捕多大，输出尺寸在下方决定
     video: { frameRate: 30 },
     // 窗口音轨实测是静音数据（原因未明，离屏窗口同写法则有声）；音轨走 mixInAudio
     audio: false,
@@ -114,8 +121,10 @@ export async function startRecording(iframeEl, opts) {
 
   const vTrack = displayStream.getVideoTracks()[0]
   const st = vTrack && vTrack.getSettings ? vTrack.getSettings() : {}
+  // 细节优先：UI/文字画面告诉编码器把码率花在锐度上而不是运动平滑
+  try { vTrack.contentHint = 'detail' } catch (e) {}
 
-  // 捕获流 → video 元素 → canvas 等比缩放居中（非 16:9 屏幕自动信箱）
+  // 捕获流 → video 元素 → canvas 绘制（原生档 1:1 直绘；固定档等比缩放信箱）
   const video = document.createElement('video')
   video.muted = true
   video.srcObject = displayStream
@@ -123,6 +132,13 @@ export async function startRecording(iframeEl, opts) {
   if (video.readyState < 1) {
     await new Promise((r) => { video.onloadedmetadata = r })
   }
+  const vw = video.videoWidth || 1920
+  const vh = video.videoHeight || 1080
+
+  // 输出尺寸：固定档照旧；原生档 = 捕获原生像素向上补齐到 16（H.264 硬编对齐要求），
+  // 只加 ≤15px 黑边、内容零缩放——2520×1680 → 2528×1680
+  const W = fixedTier ? Math.max(16, tierW) : Math.max(16, Math.ceil(vw / 16) * 16)
+  const H = fixedTier ? Math.max(16, tierH) : Math.max(16, Math.ceil(vh / 16) * 16)
 
   const canvas = document.createElement('canvas')
   canvas.width = W
@@ -130,13 +146,12 @@ export async function startRecording(iframeEl, opts) {
   const ctx = canvas.getContext('2d')
   let raf = 0
   let stopped = false
+  // 原生档强制 k=1：绝不放大缩小；固定档维持 v3 等比信箱逻辑
+  const scale = fixedTier ? Math.min(W / vw, H / vh) : 1
   const draw = () => {
     if (stopped) return
-    const vw = video.videoWidth || W
-    const vh = video.videoHeight || H
-    const k = Math.min(W / vw, H / vh)
-    const dw = Math.max(2, Math.round(vw * k))
-    const dh = Math.max(2, Math.round(vh * k))
+    const dw = Math.max(2, Math.round(vw * scale))
+    const dh = Math.max(2, Math.round(vh * scale))
     ctx.fillStyle = '#000'
     ctx.fillRect(0, 0, W, H)
     ctx.drawImage(video, Math.floor((W - dw) / 2), Math.floor((H - dh) / 2), dw, dh)
@@ -147,8 +162,9 @@ export async function startRecording(iframeEl, opts) {
   mixInAudio(outStream, iframeEl)
 
   const mime = pickMime()
-  // 码率按输出档位走：1080p≈12Mbps；20Mbps 封顶（再高部分硬编码器不认）
-  const bitrate = Math.min(20_000_000, Math.max(12_000_000, Math.round(W * H * 5.8)))
+  // 码率按输出像素走：1080p≈17M、原生2.5K≈32M、4K 封顶 48M（对标 Game Bar 高码率；
+  // 硬编不认高码率时会被钳到编码器上限，不会失败）
+  const bitrate = Math.min(48_000_000, Math.max(12_000_000, Math.round(W * H * 8)))
   const rec = new MediaRecorder(
     outStream,
     mime ? { mimeType: mime, videoBitsPerSecond: bitrate } : undefined
@@ -167,7 +183,7 @@ export async function startRecording(iframeEl, opts) {
   rec.onstop = () => console.warn(`[ZT-Edit] 录制器停止：共 ${chunks.length} 块数据`)
   rec.start(1000)
   console.warn(
-    `[ZT-Edit] 录制器已启动 输出=${W}x${H} 源=${st.width || '?'}x${st.height || '?'} ` +
+    `[ZT-Edit] 录制器已启动 [${fixedTier ? '固定档' : '原生直出'}] 输出=${W}x${H} 源=${vw}x${vh} ` +
       `mime=${mime || '默认'} bitrate=${bitrate}`
   )
 

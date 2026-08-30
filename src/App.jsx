@@ -20,8 +20,9 @@ import { ANIM_EFFECTS, ANIM_ENGINE_PARTS, animEngineBootstrap } from './animEffe
 
 import { startRecording, probeMime } from './recorder.js'
 
-// 录制分辨率档位
+// 录制分辨率档位（native=捕获原生像素直出，零缩放最清晰；固定档=等比缩放+信箱）
 const REC_SIZES = [
+  ['native', '原生（最清晰）'],
   ['1920x1080', '1080P'],
   ['2560x1440', '2K'],
   ['3840x2160', '4K'],
@@ -153,7 +154,7 @@ export default function App() {
   const [recordOn, setRecordOn] = useState(false) // 播放时是否录屏
   const [recording, setRecording] = useState(false) // 正在录制
   const [savingRec, setSavingRec] = useState(false) // 正在保存录屏
-  const [recRes, setRecRes] = useState('1920x1080') // 输出分辨率档位（canvas 重采样目标，与屏幕无关）
+  const [recRes, setRecRes] = useState('native') // 输出分辨率：native=原生直出最清晰；固定档=缩放到该档位（小文件用）
   const [directRec, setDirectRec] = useState(false) // 直接全屏录屏进行中：隐藏全部 UI/鼠标，只响应 Esc
   const [recFmt, setRecFmt] = useState('') // 当前内核支持的录制封装格式（MP4 / WEBM）
   const [screenSize, setScreenSize] = useState(null) // 屏幕可用区域（CSS 像素），用于限制录制档位
@@ -383,9 +384,9 @@ export default function App() {
   async function handleStartPlay(from) {
     const nativeScript = getNativePlayerScript()
     if (recordOn && !recRef.current) {
-      // 直接全屏录屏（唯一录制路径）：窗口全屏 → 画面即所得 → canvas 重采样到固定输出
-      // 档位（recRes，默认 1080P，全 16 对齐）。UI/鼠标/弹窗全部隐掉，只响应 Esc。
-      // 输出分辨率与屏幕解耦：任何显示器/比例/DPI 行为一致（离屏定尺寸窗口方案已弃用）。
+      // 直接全屏录屏（唯一录制路径）：窗口全屏 → 画面即所得。默认原生分辨率直出
+      // （零缩放零黑边，仅补 16 对齐，清晰度对标 Game Bar）；选固定档则重采样到该档。
+      // UI/鼠标/弹窗全部隐掉，只响应 Esc。
       try {
         if (!window.ztRecSession || !window.ztRecSession.setFullscreen)
           throw new Error('全屏录屏需要桌面端（Electron），请用打包版或 dev:electron 运行')
@@ -394,8 +395,12 @@ export default function App() {
         setDirectRec(true) // CSS 类隐藏全部编辑器 UI + 鼠标
         hideIframeCursor(true)
         await new Promise((r) => setTimeout(r, 450)) // 等全屏布局稳定后再捕获，避免首帧带着旧窗口尺寸
-        const [w, h] = String(recRes || '1920x1080').split('x').map(Number)
-        const session = await startRecording(iframeRef.current, { width: w, height: h })
+        let recOpts = {}
+        if (recRes && recRes !== 'native') {
+          const [w, h] = String(recRes).split('x').map(Number)
+          recOpts = { width: w, height: h }
+        }
+        const session = await startRecording(iframeRef.current, recOpts)
         recRef.current = session
         setRecording(true)
         // 用户在系统层面停止共享时：兜底结束录制并停止播放
@@ -1046,7 +1051,7 @@ export default function App() {
                 <select
                   value={recRes}
                   onChange={(e) => setRecRes(e.target.value)}
-                  title="输出分辨率（画面重采样到该档位，与显示器分辨率/比例无关；全为 16 对齐档位）"
+                  title="输出分辨率：原生=按窗口实际像素直出、零缩放（最清晰，对标 Game Bar）；固定档=缩放到该档位并加黑边（想要小文件时用）"
                   style={{
                     fontSize: 12,
                     padding: '3px 6px',

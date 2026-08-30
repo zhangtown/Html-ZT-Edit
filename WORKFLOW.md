@@ -156,6 +156,7 @@ HTML-ZtEdit/
   4) 静音告警 alert 曾放在保存之前，阻塞导致无输出文件 → **保存必须先于任何告警弹窗**
   5) `activeHtml` 可能是相对路径，做文件名前缀前必须取 basename（曾致落盘目录不存在 ENOENT）
   6) 离屏 v2 弃用原因：REC_GATE 放行后第三方 IIFE 播放脚本的 loop 启动不了（`window.startPlayback` 不存在，裸 `audio.play()` 只出声不翻页，画面冻结第一页）——主进程 REC_GATE/离屏 IPC 代码保留未删，渲染层已不调用
+- **录屏清晰度 v3.1（2026-08-30，对标 Game Bar）**：用户实测 v3 固定 1080P 档在 2520×1680（3:2）屏上文字明显发虚（缩小 ~35% 再加黑边）。四项改动：① **默认原生分辨率直出**——输出=捕获原生像素向上补齐 16 对齐（2520×1680→2528×1680，≤15px 黑边、1:1 直绘零缩放），档位下拉新增「原生（最清晰）」默认项，1080P/2K/4K 固定档保留给要小文件的场景；② 码率封顶 20M→**48M**（按输出像素 W×H×8：1080p≈17M、原生2.5K≈32M；硬编不认高码率会被自动钳制，不会失败）；③ H.264 编码档 **High Profile 优先**（CABAC，同码率细节好于 Baseline；isTypeSupported 自动降级 Main→Baseline）；④ 捕获轨设 `contentHint='detail'`（编码器把码率花在锐度而非运动）。grill-me 决策：调优现有管线 / 默认原生+保留档位 / 封顶48M。注意坑 1 仍有效——原生档不是直录原始尺寸（那会 `Video encoding failed`），是 canvas 补齐 16 后 1:1 直绘
 - **录屏自动收尾 + 免弹窗落盘**（2026-08-29）：音频播完 → 画面在最后一页停留 2 秒 → 自动停录并直接保存到 HTML 所在目录（文件名 `页面名-录屏-时间戳.mp4`），全程无保存对话框；手动 Esc 仍立即停录。实现：原生播放路径此前**没有**结束信号（nativeTick 只回报页码），在 nativeTick 里检测 `audio.ended` 补上；编辑器引擎路径走 `onended`；playState 消息带 `reason`（ended/manual）区分；`zt:save-recording` 支持 `dir` 直写（目录不可写时自动退回保存框，成片不丢）
 - **动画扩充 CSS 档（P0-3 第一档）**：新增 `wipe`/`flip`/`blur-in`/`slide-spin` 入场 + `highlight-sweep` 划线强调；关键帧模型扩展 clipPath/filter 属性；契约 v5.3→v5.4 两仓同发（编辑器下拉/预览/导出 + SKILL.md 动画清单）
 - 播放预览模式：从头/本页播放，音频 seek + 字幕 + 绑定动画同步，停止返回编辑态
