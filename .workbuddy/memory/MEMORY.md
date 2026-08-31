@@ -15,7 +15,9 @@ Vite 5 + React 18（纯前端无后端）+ Electron 31.7.7 桌面壳 + IndexedDB
 - 二者通过 `postMessage` 通信；父端 `send(msg)`，iframe 内 `post(msg)`，消息类型集中在
   App.jsx 的 `onMessage` 与 runtime 的 `init()` 里（改动要两端同步）。
 - 辅助模块：`loadFolder.js`（文件夹选择/相对路径解析）、`htmlProcess.js`（剥脚本/资源 blob 重写/导出还原/播放脚本生成）、
-  `draftStore.js`（IndexedDB）、`recorder.js`（v3.1：主窗口全屏 → getDisplayMedia 捕获 → canvas 补 16 对齐 → MediaRecorder）。
+  `draftStore.js`（IndexedDB）、`recorder.js`（v3.3：主窗口全屏 → getDisplayMedia 捕获 → canvas 补 16 对齐
+  → WebCodecs VideoEncoder 编视频；音频走 `recAudio.js`）、`recAudio.js`（v3.3 新增：录屏音频链路，
+  WebAudio 图 → MediaRecorder 采集 → 解码 PCM → AAC，见「已知坑」的饿死条）。
 - **`src/animEffects.js`（2026-08-29 新增）：动画效果清单 + 引擎源码的唯一出处。**
   预览 / 导出脚本 / 播放录屏 三端全部消费它。改动画只改这个文件，改完跑 `npm run check:anim`。
   引擎源码经 App postMessage 下发（runtime 是 `?raw` 注入的纯脚本，不能 import）。
@@ -54,6 +56,33 @@ Vite 5 + React 18（纯前端无后端）+ Electron 31.7.7 桌面壳 + IndexedDB
   于是现象被误读成「音轨静音」，排查方向整个跑偏。
   正确做法是数 `hdlr` 的 handler_type（vide/soun）+ 读 `stsz` 的 sample_count。
   **排查录屏问题第一件事：解产物 MP4 看 mvhd duration 和 trak 列表。**
+  （现成工具：`scripts/mp4probe.py <file.mp4>`，直接打出每条 trak 的 handler/codec/样本数。）
+- **【录屏音频：凡在主线程读 PCM 的方案，都会被视频管线饿死】**（2026-08-31 定案）：
+  同一个 `createMediaElementSource` 源节点，三种消费方式实测——
+  MediaRecorder 消费 MediaStreamDestination 轨**有声**；MediaStreamTrackProcessor 读同一轨**全零**；
+  ScriptProcessor.onaudioprocess 读同一 src **一次回调都不触发**（成片音轨 sample_count=0）。
+  差别在于前两者要在主线程被调度，而录制时主线程被 rAF 重绘(原生档 2520×1680)+VideoEncoder+muxer 占满。
+  **结论：音频采集只能交给 MediaRecorder（浏览器内部线程）。** v3.3 起 WebCodecs 只管视频，
+  音频由 `src/recAudio.js` 用 MediaRecorder 采集、录完解码成 PCM 再编 AAC，最后交错封装。
+- **WebCodecs 的 `AudioData` 构造参数是 `numberOfFrames`，不是 `sampleFrames`**（2026-08-31 踩过）：
+  `sampleFrames` 是 AudioEncoder/VideoFrame 那侧的叫法。写错会抛
+  `Failed to read the 'numberOfFrames' property from 'AudioDataInit': Required member is undefined`，
+  异常被 catch 后表现是「音频链路 0 包 0 块、干脆不建音轨」，看不出错在哪一行。
+- **改 MP4 box 解析器后必须拿真实产物回归**：`hdlr` 在 `trak/mdia` 下、`stsz` 在 `trak/mdia/minf/stbl` 下，
+  只遍历 trak 的直接子 box 会一条 trak 都解不出来（曾因此把「视频轨正常」误报成「产物含视频轨:否」）。
+  回归工具：`scripts/probe-tracks-test.cjs <file.mp4>`（node 直接跑，不用开浏览器）。
+- **自检「音轨峰值」必须用 `decodeAudioData` 取全局峰值，不能实时回放只采开头**（2026-08-31 踩过）：
+  录制前导有 ~2~3s 静音（先起 MediaRecorder → 全屏切换 → 注入播放脚本），若把产物喂 `<audio>` 实时回放、
+  只在前 800ms 用 AnalyserNode 采样，会整段采到空白 → 把有声误报成「音轨峰值 0.0031(静音!)」。
+  正确做法：`decodeAudioData(blob)` 解出整段 PCM，跨所有声道/样本取 `Math.abs` 最大值（秒级、且不发声）。
+  v3.3 的 `probeAudioLevel`（App.jsx）已改成这样。判断静音的阈值仍是 `peak < 0.005`。
+- **`USE_WEBCODECS` 这类开关别写成 `!== '0'`**：没设过 localStorage 时 `getItem` 返回 `null`，
+  `null !== '0'` 为真，于是「默认开」——与注释/提交里写的「默认关」完全相反，
+  用户会静默跑在有缺陷的路径上（这个坑真的踩过一次）。要么写 `=== '1'`（默认关），
+  要么显式三元把默认意图写清楚。
+- **音视频必须同时停**：录屏收尾若先把视频 pump/flush 完（最多 4.5s）再停音频，
+  音轨会比画面长几秒、尾端拖一段空白。正确顺序：`audioCap.stop()` 先发起（rec.stop() 同步生效）
+  → 再 await 视频收尾 → 最后 await 音频解码编码（正好与视频收尾并行，不多等）。
 
 ## 调试方式
 - 桌面端窗口按 **F12** 或 **Ctrl+Shift+I** 开合 DevTools。快捷键在 `main.cjs` 的

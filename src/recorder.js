@@ -1,4 +1,4 @@
-// 录屏管线 v3.2：直接全屏 + 原生分辨率优先 + WebCodecs 编码引擎
+// 录屏管线 v3.3：直接全屏 + 原生分辨率优先 + WebCodecs 编码引擎 + MediaRecorder 音频链路
 // 路线：点录制 → 编辑器窗口全屏（画面即所得）→ getDisplayMedia 捕获主窗口 →
 //   默认原生分辨率直出（仅补齐到 16 对齐，零缩放零黑边）→ mp4(H.264 High+AAC)。
 //
@@ -19,14 +19,18 @@
 //   0.3~4.9Mbps，VP8/VP9/H.264 × var/constant 全部如此，25 秒成片仅 ~5MB，文字发虚。
 //   换 WebCodecs VideoEncoder（bitrateMode:'constant'）后同机实测：请求 16.7M
 //   实出 16.7M（静/动画面都兑现），AAC AudioEncoder 可用。
-// v3.2.1 回退默认引擎（2026-08-31）：WebCodecs 路径视频完美但音轨在本机全零静音
-//   （收包/AAC 块数正常、电平 0.0000；AudioContext 钉 48k 与默认采样率都复现），
-//   而 MediaRecorder 消费同一条 WebAudio 轨在另一台电脑有声。故默认引擎回退
-//   MediaRecorder（=fe38419 行为，有声保底），WebCodecs 留开关待查静音根因
-//   （localStorage.setItem('ztWebCodecs','1') 可临时打开；在别的机器上如有声，
-//   即可判定是本机音频环境问题而非代码问题）。
+// v3.2.1 曾回退默认引擎到 MediaRecorder：WebCodecs 路径视频完美但音轨全零静音。
+// v3.3 静音根因定案（2026-08-31）——不是音频环境问题，是采集方式选错了：
+//   静音的两版都用「主线程读 PCM」：先是 MediaStreamTrackProcessor 消费 WebAudio 轨
+//   （收包正常、内容全零），后是 ScriptProcessor.onaudioprocess（一次回调都没触发，
+//   实测成片音轨 stsz sample_count=0，见 scripts/mp4probe.py）。两者的共性是都要在
+//   主线程上被调度，而录制期间主线程被 rAF 重绘 + VideoEncoder.encode + muxer 占满，
+//   音频回调直接饿死。MediaRecorder 的采集在浏览器内部线程完成，不受影响，
+//   且这条链路本机已实锤有声。故 WebCodecs 只管视频（保清晰度），
+//   音频交给 MediaRecorder 独立采集、录完解码成 PCM 再编 AAC，最后交错封装。
 
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
+import { getAudioTrack, startAudioCapture, encodeAudioToAac } from './recAudio'
 
 // 按浏览器支持度挑选封装格式（优先 mp4/H.264 High Profile+AAC，退回 webm）
 // High(640028)/Main(4D4028) 带 CABAC，同码率下细节明显好于 Baseline(42E01E)；
@@ -49,12 +53,12 @@ function pickMime() {
   return ''
 }
 
-// WebCodecs 引擎开关：默认关闭（MediaRecorder 兜底成为默认引擎，行为=fe38419，有声有保证）。
-// 为什么默认关：本机实测 WebCodecs 路径视频 16.7M 足额、但音轨全零静音（收包/AAC 正常、电平 0.0000，
-// 48k/默认采样率都复现）；MediaRecorder 消费同一条 WebAudio 轨在另一台电脑有声。
-// 临时打开验证（DevTools Console）：localStorage.setItem('ztWebCodecs','1') 后刷新
+// WebCodecs 引擎开关：默认开启（清晰度是硬需求，v3.3 音频链路已修好，不再是「清晰度和声音二选一」）。
+// 关掉退回 MediaRecorder 兜底（DevTools Console）：localStorage.setItem('ztWebCodecs','0') 后刷新。
+// 注意判定只能写成 === '0'：早先误写成 !== '0'，导致没设过开关的默认情形反而是「开」，
+// 与注释和提交意图相反，用户因此静默跑在了当时还有静音缺陷的 WebCodecs 路径上。
 const USE_WEBCODECS = (() => {
-  try { return typeof localStorage !== 'undefined' && localStorage.getItem('ztWebCodecs') === '1' } catch (e) { return false }
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem('ztWebCodecs') === '0' ? false : true } catch (e) { return true }
 })()
 
 // 供 UI 显示当前能出什么格式
@@ -67,69 +71,6 @@ export function probeMime() {
   return { mime: m, ext: m && m.indexOf('mp4') >= 0 ? 'mp4' : 'webm', engine: 'mediarecorder' }
 }
 
-// 取可录制的音轨：WebAudio 管线（元素一播放就出数据帧，可控性最好）。
-// 返回 { track, sampleRate, channels, via }，找不到可用音频时返回 null。
-// （实测 element.captureStream() 在元素尚未播放时拿到的轨不会产出数据帧，
-//   mp4 里连音轨 box 都不会写——它只作为 MediaRecorder 兜底的最后手段，
-//   WebCodecs 路径不用它，因为拿不到确定的采样率/声道数，AAC 配置会错。）
-function getAudioTrack(iframeEl) {
-  try {
-    const doc = iframeEl && iframeEl.contentDocument
-    const audioEl = doc && (doc.getElementById('bgAudio') || doc.querySelector('audio'))
-    if (!audioEl) {
-      console.warn(
-        '[ZT-Edit] 页面里没找到 <audio>，本次录制将无声。' +
-          '诊断：iframe doc=' + !!doc + '，body子元素数=' + (doc && doc.body ? doc.body.children.length : -1)
-      )
-      return null
-    }
-    console.warn(
-      '[ZT-Edit] 音频元素已找到 src=' + (audioEl.currentSrc || audioEl.src || '(空)') +
-        ' paused=' + audioEl.paused + ' readyState=' + audioEl.readyState +
-        ' 已有缓存dest=' + !!audioEl.__ztRecDest
-    )
-    try {
-      if (audioEl.__ztRecDest) {
-        // createMediaElementSource 对同一元素只能调一次：复用首次建好的 destination。
-        // context 必须强引用+复用时 resume：录制结束后失去引用可能被 GC/自动挂起，
-        // 挂起状态下音轨无数据（"第一次录有声、编辑后再录无声"的实证形态）。
-        const ctx = audioEl.__ztRecCtx
-        if (ctx && ctx.state === 'suspended') {
-          ctx.resume().catch((e) => console.warn('[ZT-Edit] AudioContext resume 失败：' + (e && e.message)))
-        }
-        const track = audioEl.__ztRecDest.stream.getAudioTracks()[0]
-        console.warn('[ZT-Edit] 音轨(WebAudio·复用)已取得, ctxState=' + (ctx ? ctx.state : 'unknown'))
-        return track ? { track, sampleRate: ctx.sampleRate, channels: audioEl.__ztRecDest.channelCount || 2, via: 'webaudio' } : null
-      }
-      // 采样率用设备默认（与 v3.1 一致）：曾钉 48000 导致本机实录全零静音（另一台电脑默认采样率有声）；
-      // AAC/封装配置直接用 ctx 实际采样率，44.1k/48k 都合法
-      const actx = new (window.AudioContext || window.webkitAudioContext)()
-      console.warn('[ZT-Edit] AudioContext 已创建 state=' + actx.state + ' sampleRate=' + actx.sampleRate)
-      const resumeP = actx.state === 'suspended' ? actx.resume().catch((e) => console.warn('[ZT-Edit] AudioContext resume 失败：' + (e && e.message))) : null
-      const src = actx.createMediaElementSource(audioEl)
-      const dest = actx.createMediaStreamDestination()
-      src.connect(dest)
-      // createMediaElementSource 会把元素输出改道 WebAudio，必须接回扬声器，否则编辑器里没声
-      src.connect(actx.destination)
-      audioEl.__ztRecDest = dest
-      audioEl.__ztRecCtx = actx // 强引用防 GC；下次录制复用时按需 resume
-      const track = dest.stream.getAudioTracks()[0]
-      console.warn('[ZT-Edit] 音轨(WebAudio)已取得 track=' + (track && track.readyState) + ' muted=' + (track && track.muted))
-      if (resumeP) resumeP.then(() => console.warn('[ZT-Edit] AudioContext resume 后 state=' + actx.state)).catch(() => {})
-      return track ? { track, sampleRate: actx.sampleRate, channels: dest.channelCount || 2, via: 'webaudio' } : null
-    } catch (e) {
-      console.warn('[ZT-Edit] WebAudio 音轨取得失败：' + (e && e.message))
-    }
-    if (audioEl.captureStream) {
-      const t = audioEl.captureStream().getAudioTracks()[0]
-      if (t) {
-        console.warn('[ZT-Edit] 音轨(captureStream兜底)已取得，仅用于 MediaRecorder 路径')
-        return { track: t, sampleRate: 0, channels: 0, via: 'capture' }
-      }
-    }
-  } catch (e) {}
-  return null
-}
 
 // 开始录制
 // iframeEl：编辑器画布 iframe（音轨来源）
@@ -197,7 +138,6 @@ export async function startRecording(iframeEl, opts) {
   // 编码器初始化需要几百毫秒，这期间产不出任何样本；录制若在这之前就被停掉，
   // 成片只有骨架没有样本——录制时长必须作为自检第一项，它比音轨电平更能说明问题。
   const startedAt = performance.now()
-  const audioInfo = getAudioTrack(iframeEl)
 
   // 用户在系统 UI 上主动停止了共享 → 视同停止录制。
   // 带上"距启动多少毫秒"：全屏切换的余波会让捕获轨在录制刚起步时就 ended，
@@ -216,14 +156,15 @@ export async function startRecording(iframeEl, opts) {
     try { displayStream.getTracks().forEach((t) => t.stop()) } catch (e) {}
   }
 
-  // ① WebCodecs 引擎（可选，见 USE_WEBCODECS 注释）：视频 CBR 精确码率；音频在本机实测静音待查
+  // ① WebCodecs 引擎（默认）：视频 CBR 足额码率保清晰度；音频走 MediaRecorder 独立采集
   const wc = USE_WEBCODECS ? await canUseWebCodecs(W, H, bitrate) : null
   if (wc) {
-    return buildWebCodecsSession({ canvas, W, H, bitrate, codec: wc, audioInfo, startedAt, inactivePromise, cleanup })
+    return buildWebCodecsSession({ canvas, W, H, bitrate, codec: wc, iframeEl, startedAt, inactivePromise, cleanup })
   }
 
-  // ② MediaRecorder 兜底（无 WebCodecs 的环境）：码率是否兑现取决于内核，无法保证
+  // ② MediaRecorder 兜底（无 WebCodecs 或开关未开）：码率是否兑现取决于内核，无法保证
   const outStream = canvas.captureStream(30)
+  const audioInfo = getAudioTrack(iframeEl)
   if (audioInfo) {
     try { outStream.addTrack(audioInfo.track) } catch (e) {}
   }
@@ -300,30 +241,31 @@ async function canUseWebCodecs(W, H, bitrate) {
   return null
 }
 
-// WebCodecs 录制会话：canvas 轨 → VideoEncoder(H.264 CBR)，WebAudio 轨 → AudioEncoder(AAC)，
-// mp4-muxer 封装成单一 mp4。stop() 返回契约与 MediaRecorder 路径一致。
-function buildWebCodecsSession({ canvas, W, H, bitrate, codec, audioInfo, startedAt, inactivePromise, cleanup }) {
+
+// WebCodecs 录制会话：canvas 轨 → VideoEncoder(H.264 CBR)；
+// 音频走 MediaRecorder 独立采集（主线程读 PCM 的两种做法都会被视频管线饿死，见文件头 v3.3 注释）。
+// 音频必须录完才编得出来，所以视频 chunk 先缓存，stop() 时再与 AAC 交错封装成单一 mp4。
+function buildWebCodecsSession({ canvas, W, H, bitrate, codec, iframeEl, startedAt, inactivePromise, cleanup }) {
   let recError = null
   let firstChunkAt = 0
   const canvasTrack = canvas.captureStream(30).getVideoTracks()[0]
 
-  // 音频只收 WebAudio 来源（采样率/声道数确定，AAC 与封装配置才不会错）
-  const audio = audioInfo && audioInfo.via === 'webaudio' && window.AudioEncoder ? audioInfo : null
-  if (audioInfo && !audio) {
-    console.warn('[ZT-Edit] 音轨非 WebAudio 来源或无 AudioEncoder，本趟按无声处理')
-  }
+  // 视频 chunk 缓存（等音频编好一起交错封装）。内存代价 ≈ 成片大小，
+  // 超过 400MB 打个警告：再长就要考虑分片封装或降级 MediaRecorder 了。
+  const vChunks = []
+  let vBytes = 0
 
-  const muxer = new Muxer({
-    target: new ArrayBufferTarget(),
-    video: { codec: 'avc', width: W, height: H },
-    ...(audio ? { audio: { codec: 'aac', sampleRate: audio.sampleRate, numberOfChannels: audio.channels } } : {}),
-    fastStart: 'in-memory',
-  })
+  // 音频：MediaRecorder 采集在浏览器内部线程完成，不受主线程阻塞
+  const audioCap = startAudioCapture(iframeEl)
 
   const venc = new VideoEncoder({
     output: (chunk, meta) => {
       if (!firstChunkAt) firstChunkAt = performance.now()
-      muxer.addVideoChunk(chunk, meta)
+      vChunks.push({ chunk, meta })
+      vBytes += chunk.byteLength || 0
+      if (vBytes > 400 * 1024 * 1024) {
+        console.warn('[ZT-Edit] 视频 chunk 缓存已超过 400MB，长录制建议改选固定 1080P 档降低码率')
+      }
     },
     error: (e) => {
       recError = `VideoEncoder: ${e && e.message}`
@@ -358,42 +300,9 @@ function buildWebCodecsSession({ canvas, W, H, bitrate, codec, audioInfo, starte
     }
   })()
 
-  // 音频泵：WebAudio 轨 → AudioData → AAC
-  let aenc = null
-  let aPump = null
-  let audioDataCount = 0
-  let aacChunkCount = 0
-  if (audio) {
-    try {
-      aenc = new AudioEncoder({
-        output: (chunk, meta) => { aacChunkCount++; muxer.addAudioChunk(chunk, meta) },
-        error: (e) => console.error('[ZT-Edit] AudioEncoder 错误：' + (e && e.message)),
-      })
-      aenc.configure({ codec: 'mp4a.40.2', sampleRate: audio.sampleRate, numberOfChannels: audio.channels, bitrate: 192000 })
-      const aReader = new MediaStreamTrackProcessor({ track: audio.track }).readable.getReader()
-      aPump = (async () => {
-        try {
-          while (true) {
-            const { done, value } = await aReader.read()
-            if (done) break
-            if (aenc.state !== 'configured') { if (value.close) value.close(); break }
-            aenc.encode(value)
-            if (value.close) value.close()
-            audioDataCount++
-          }
-        } catch (e) {
-          console.warn('[ZT-Edit] 音频泵中断：' + (e && e.message))
-        }
-      })()
-    } catch (e) {
-      console.warn('[ZT-Edit] AAC 初始化失败，本趟无声：' + (e && e.message))
-      aenc = null
-    }
-  }
-
   console.warn(
     `[ZT-Edit] 录制器已启动 [WebCodecs] 输出=${W}x${H} codec=${codec} bitrate=${bitrate}(CBR)` +
-      ` 送入轨数(v/a)=1/${aenc ? 1 : 0}`
+      ` 音频采集=${audioCap ? audioCap.kind : '无（本趟无声）'}`
   )
 
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
@@ -401,31 +310,78 @@ function buildWebCodecsSession({ canvas, W, H, bitrate, codec, audioInfo, starte
     canvas,
     direct: true,
     engine: 'webcodecs',
-    audioTrackCount: aenc ? 1 : 0,
+    // 音频有没有轨要等录完编码完才知道，这里先标采集器是否挂上
+    audioTrackCount: audioCap ? 1 : 0,
     videoTrackCount: 1,
     onExternalStop: inactivePromise,
     stop: () =>
       new Promise((resolve) => {
         (async () => {
           try { canvasTrack.stop() } catch (e) {}
+          // 音频必须和视频同时停：晚停一秒，成片音轨就比画面长一秒（尾端拖一段空白）。
+          // 这里只发起停止（rec.stop() 是同步生效的），真正的解码+编码放到视频 flush 之后 await，
+          // 正好和视频收尾并行，不给用户多等。
+          const audioStopping = audioCap ? audioCap.stop() : null
+
           await Promise.race([vPump, sleep(1500)])
           try { await Promise.race([venc.flush(), sleep(3000)]); venc.close() } catch (e) {}
-          if (aPump) await Promise.race([aPump, sleep(1000)])
-          if (aenc) {
-            try { await Promise.race([aenc.flush(), sleep(3000)]); aenc.close() } catch (e) {}
+
+          // 音频收尾：MediaRecorder blob → 解码 PCM → AAC
+          let audio = { chunks: [], sampleRate: 0, channels: 0, pcmFrames: 0, error: '未挂音频采集器' }
+          if (audioStopping) {
+            try {
+              const aBlob = await audioStopping
+              audio = await encodeAudioToAac(aBlob)
+            } catch (e) {
+              audio = { chunks: [], sampleRate: 0, channels: 0, pcmFrames: 0, error: '音频收尾异常：' + (e && e.message) }
+            }
           }
-          try { muxer.finalize() } catch (e) { recError = recError || ('mp4 finalize: ' + (e && e.message)) }
+
+          // 封装：两条轨各自成 stbl，交错写入后 finalize。
+          // 音频一块都没有就别建音轨——空的 soun 轨会让「产物含音轨」误报成是。
+          let blob = new Blob([], { type: 'video/mp4' })
+          try {
+            const muxer = new Muxer({
+              target: new ArrayBufferTarget(),
+              video: { codec: 'avc', width: W, height: H },
+              ...(audio.chunks.length
+                ? { audio: { codec: 'aac', sampleRate: audio.sampleRate, numberOfChannels: audio.channels } }
+                : {}),
+              fastStart: 'in-memory',
+            })
+            // 按时间戳交错写入：mp4-muxer 非分片模式下两条轨各自累积，
+            // 调用顺序不影响正确性，但交错能让 mdat 里音视频数据交替排布，
+            // 播放器拖进度条时不用在文件头尾之间来回跳。
+            const all = [
+              ...vChunks.map((c) => ({ t: c.chunk.timestamp, video: true, c })),
+              ...audio.chunks.map((c) => ({ t: c.chunk.timestamp, video: false, c })),
+            ].sort((a, b) => a.t - b.t)
+            for (const it of all) {
+              if (it.video) muxer.addVideoChunk(it.c.chunk, it.c.meta)
+              else muxer.addAudioChunk(it.c.chunk, it.c.meta)
+            }
+            muxer.finalize()
+            blob = new Blob([muxer.target.buffer], { type: 'video/mp4' })
+          } catch (e) {
+            recError = recError || ('mp4 finalize: ' + (e && e.message))
+          }
           cleanup()
           if (dropped) console.warn(`[ZT-Edit] 编码背压丢帧 ${dropped} 帧`)
-          console.warn(`[ZT-Edit] 音频统计：AudioData收包=${audioDataCount} AAC块=${aacChunkCount}`)
+          console.warn(
+            `[ZT-Edit] 收尾统计：视频chunk=${vChunks.length}(${(vBytes / 1048576).toFixed(1)}MB) ` +
+              `音频PCM帧=${audio.pcmFrames} AAC块=${audio.chunks.length}${audio.error ? ' 音频错误=' + audio.error : ''}`
+          )
           resolve({
-            blob: new Blob([muxer.target.buffer], { type: 'video/mp4' }),
+            blob,
             ext: 'mp4',
             durationMs: Math.round(performance.now() - startedAt),
             recError,
             firstChunkMs: firstChunkAt ? Math.round(firstChunkAt - startedAt) : 0,
-            audioDataCount,
-            aacChunkCount,
+            // 诊断字段：PCM 帧数 / AAC 块数 / 音频链路状态
+            audioDataCount: audio.pcmFrames,
+            aacChunkCount: audio.chunks.length,
+            audioError: audio.error,
+            audioKind: audioCap ? audioCap.kind : 'none',
           })
         })()
       }),

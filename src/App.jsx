@@ -431,42 +431,94 @@ export default function App() {
     send({ type: 'startPlay', from, nativeScript })
   }
 
-  // 检查录制产物是否真的带音轨（MP4 找 mp4a/soun，webm 找 opus/vorbis）
-  // moov 在文件开头，只读前 512KB 就足够命中 codec box
+  // webm 没有 mp4 的 box 结构，只能靠 codec 字符串粗判（opus/vorbis）。
+  // mp4 不要用这个函数——见下方 probeTracks 的踩坑注释。
   async function probeAudioTrack(blob, ext) {
+    if (ext === 'mp4') return null
     try {
       const buf = await blob.slice(0, 512 * 1024).arrayBuffer()
       const s = new TextDecoder('latin1').decode(new Uint8Array(buf))
-      if (ext === 'mp4') return /mp4a|soun/.test(s)
       return /opus|vorbis/i.test(s)
     } catch (e) {
       return null
     }
   }
 
-  // 数产物里到底有几条轨、分别是什么类型。
-  // 踩过的坑：只按"字符串里出现 mp4a"判断音轨会误报——
+  // 数产物里每条轨的类型和实际写出的样本数（按 trak 分组，区分视频轨/音轨）。
+  // 踩过的坑（本机实测）：只按「字符串里出现 mp4a/soun」判断音轨会误报——
   // 编码器还没初始化就被停掉的录制，moov 里照样写着 mp4a 的 stsd 骨架，
-  // 但 sample_count 是 0，成片其实什么都没有。必须连 vide 轨和样本数一起看。
+  // 但那条轨的 stsz sample_count 是 0，成片其实一个音频样本都没有。
+  // 判据必须是：存在 handler_type=soun 的 trak，且该 trak 的 stsz count > 0。
+  // box 偏移备忘：hdlr 的 handler_type 在 'hdlr' 字符串位置 +12；
+  //   stsz 的 sample_count 在 'stsz' 字符串位置 +12（= type 后 version/flags 4 + sample_size 4）。
   async function probeTracks(blob) {
-    const res = { video: 0, soun: 0, samples: null }
+    const res = { video: 0, soun: 0, videoSamples: 0, audioSamples: 0 }
     try {
       const buf = await blob.slice(0, 512 * 1024).arrayBuffer()
       const u8 = new Uint8Array(buf)
-      const s = new TextDecoder('latin1').decode(u8)
-      let i = -1
-      // hdlr: size(4) type(4) version(1)+flags(3) predefined(4) handler_type(4)
-      while ((i = s.indexOf('hdlr', i + 1)) >= 0) {
-        const t = s.slice(i + 12, i + 16)
-        if (t === 'vide') res.video += 1
-        else if (t === 'soun') res.soun += 1
+      const dv = new DataView(buf)
+      const u32 = (i) => dv.getUint32(i)
+      const tagAt = (i) => String.fromCharCode(u8[i], u8[i + 1], u8[i + 2], u8[i + 3])
+      // 在某段区间内遍历 box。deep=true 时钻进容器 box 继续找下一层——
+      // hdlr 在 trak/mdia 下、stsz 在 trak/mdia/minf/stbl 下，只扫 trak 的直接子 box
+      // 是找不到的（这条踩过：结果 video/soun 都报 0，把「视频轨正常」误判成「无视频轨」）。
+      const CONTAINERS = new Set(['moov', 'trak', 'mdia', 'minf', 'stbl', 'edts', 'dinf', 'mvex', 'udta'])
+      const walkRange = (start, end, onBox, deep) => {
+        let i = start
+        while (i + 8 <= end) {
+          let size = u32(i)
+          let hdr = 8
+          if (size === 1) {
+            if (i + 16 > end) return
+            size = Number(dv.getBigUint64(i + 8))
+            hdr = 16
+          } else if (size === 0) {
+            size = end - i
+          }
+          if (size < hdr || i + size > end) return
+          const type = tagAt(i + 4)
+          const body = i + hdr
+          const boxEnd = i + size
+          onBox(type, body, boxEnd, i)
+          if (deep && CONTAINERS.has(type)) walkRange(body, boxEnd, onBox, true)
+          i += size
+        }
       }
-      // stsz 的 sample_count：sample_size(4)+sample_count(4) 在 stsz 体内，
-      // 即 type 结束(+4) 之后偏移 8 处。0 就说明这条轨一个样本都没写出。
-      const j = s.indexOf('stsz')
-      if (j >= 0 && j + 16 <= u8.length) {
-        res.samples = new DataView(buf).getUint32(j + 12)
-      }
+      // 定位 moov（ftyp 之后；fastStart 让它就在文件开头）
+      let moovStart = -1
+      let moovEnd = -1
+      walkRange(0, u8.length, (type, body, boxEnd) => {
+        if (type === 'moov' && moovStart < 0) {
+          moovStart = body
+          moovEnd = boxEnd
+        }
+      })
+      if (moovStart < 0) return res
+      walkRange(moovStart, moovEnd, (type, body, boxEnd) => {
+        if (type !== 'trak') return
+        let handler = null
+        let count = 0
+        // 递归进 trak 内部：mdia → hdlr，mdia/minf/stbl → stsz
+        walkRange(
+          body,
+          boxEnd,
+          (t2, b2, e2) => {
+            if (t2 === 'hdlr' && b2 + 12 <= e2) {
+              handler = String.fromCharCode(u8[b2 + 8], u8[b2 + 9], u8[b2 + 10], u8[b2 + 11])
+            } else if (t2 === 'stsz' && b2 + 12 <= e2) {
+              count = u32(b2 + 8)
+            }
+          },
+          true
+        )
+        if (handler === 'vide') {
+          res.video += 1
+          res.videoSamples += count
+        } else if (handler === 'soun') {
+          res.soun += 1
+          res.audioSamples += count
+        }
+      })
       return res
     } catch (e) {
       return res
@@ -474,52 +526,39 @@ export default function App() {
   }
 
   // 进一步测电平，区分「有音轨且有声」和「有音轨却是静音数据」。
-  // 把产物喂给 <audio> 回放，用 AnalyserNode 采峰值——只连到 analyser 不连 destination，
-  // 所以检测过程不会出声。
+  // 用 decodeAudioData 把整段 PCM 解出来取全局峰值——秒级完成且自检过程不出声。
+  // 关键：必须取「全局峰值」而非「开头片段峰值」。
+  //   录制前导有约 2~3s 静音（先起 MediaRecorder、再做全屏切换+注入播放脚本），
+  //   若只采开头 800ms 会整段采到空白，把有声误判成静音（曾因此误报过一次）。
   async function probeAudioLevel(blob) {
-    let a = null
     let actx = null
     try {
-      const url = URL.createObjectURL(blob)
-      a = new Audio()
-      a.src = url
+      const buf = await blob.arrayBuffer()
       actx = new AudioContext()
       if (actx.state === 'suspended') {
         try { await actx.resume() } catch (e) {}
       }
-      const src = actx.createMediaElementSource(a)
-      const an = actx.createAnalyser()
-      an.fftSize = 2048
-      src.connect(an)
-      const meta = await new Promise((resolve, reject) => {
-        a.onloadedmetadata = resolve
-        a.onerror = () => reject(new Error('产物无法解码'))
-        setTimeout(() => reject(new Error('解码超时')), 8000)
-      })
-      void meta
-      const dur = a.duration
+      const ab = await actx.decodeAudioData(buf)
+      const dur = ab.duration
       // 产物不到 0.5s 时测电平没有意义：编码器还没来得及吐出样本，
       // 这时"静音"是录制过短的果，不是因，别把它当成音频问题报给用户
-      if (dur && dur < 0.5) {
-        URL.revokeObjectURL(url)
+      if (!dur || dur < 0.5) {
         return { tooShort: true, duration: dur }
       }
-      await a.play()
-      const data = new Float32Array(an.fftSize)
+      // 全量 PCM 取全局峰值，避开前导静音段
+      const ch = ab.numberOfChannels
+      const len = ab.length
+      const tmp = new Float32Array(len)
       let peak = 0
-      for (let i = 0; i < 8; i++) {
-        await new Promise((r) => setTimeout(r, 100))
-        an.getFloatTimeDomainData(data)
-        for (let j = 0; j < data.length; j++) {
-          const v = Math.abs(data[j])
+      for (let c = 0; c < ch; c++) {
+        ab.copyFromChannel(tmp, c)
+        for (let i = 0; i < len; i++) {
+          const v = Math.abs(tmp[i])
           if (v > peak) peak = v
         }
       }
-      try { a.pause() } catch (e) {}
-      URL.revokeObjectURL(url)
       return { peak, duration: dur }
     } catch (e) {
-      if (a) { try { a.pause() } catch (e2) {} }
       return { error: String(e && e.message) }
     } finally {
       // AudioContext 不 close 会一直占着内核配额（约 6 个），录几次后就再也建不出来
@@ -539,7 +578,8 @@ export default function App() {
     setRecording(false)
     setSavingRec(true)
     try {
-      const { blob, ext, durationMs, recError, firstChunkMs } = await session.stop()
+      const { blob, ext, durationMs, recError, firstChunkMs, audioDataCount, aacChunkCount, audioError, audioKind } =
+        await session.stop()
       console.warn(`[ZT-Edit] 收录完成 blob=${blob.size}B ext=${ext} 时长=${durationMs}ms`)
       // 直接全屏录屏：先退出全屏、恢复 UI 与鼠标，再做自检/保存（弹窗都在恢复正常之后）
       if (directRecRef.current) await restoreDirectRec()
@@ -548,8 +588,11 @@ export default function App() {
         return
       }
       // 自检：产物到底带不带音轨。没录到声音时把关键信息一次性摆出来，省得靠猜
-      const hasAudio = await probeAudioTrack(blob, ext)
       const tracks = await probeTracks(blob)
+      // mp4 用 box 精判：必须存在 soun 轨且样本数 > 0（只有 stsd 骨架的空轨不算）。
+      // webm 没有 box 结构，退回 codec 字符串粗判。
+      const hasAudio =
+        ext === 'mp4' ? tracks.soun > 0 && tracks.audioSamples > 0 : await probeAudioTrack(blob, ext)
       // 光有音轨不算数，还得测出电平：静音轨道同样会让成片没声音
       const level = hasAudio ? await probeAudioLevel(blob) : null
       const silent = !!level && !level.error && level.peak < 0.005
@@ -558,12 +601,29 @@ export default function App() {
       const tooShort = typeof durationMs === 'number' && durationMs < 1500
       const diag = [
         ['录制时长', `${((durationMs || 0) / 1000).toFixed(2)}s${tooShort ? '（过短！）' : ''}`],
+        ['编码引擎', session.engine === 'webcodecs' ? 'WebCodecs(H.264 CBR)' : session.engine === 'mediarecorder' ? 'MediaRecorder(兜底·码率受限)' : '未知'],
         ['录制模式', '直接全屏（固定输出档位）'],
         ['封装格式', ext.toUpperCase()],
         ['送入轨数(视/音)', `${session.videoTrackCount || 0}/${session.audioTrackCount}`],
-        ['产物含视频轨', tracks.video > 0 ? '是' : '否'],
-        ['产物含音轨', hasAudio === null ? '未知' : hasAudio ? '是' : '否'],
-        ['首个样本数(stsz)', tracks.samples === null ? '—' : String(tracks.samples)],
+        [
+          '音频链路',
+          audioKind === 'mediarecorder'
+            ? 'MediaRecorder采集→解码→AAC'
+            : audioKind === 'none'
+              ? '未挂载采集器'
+              : String(audioKind ?? '—'),
+        ],
+        ['音频PCM帧/AAC块', `${audioDataCount ?? '—'}/${aacChunkCount ?? '—'}`],
+        ['音频链路错误', audioError || '无'],
+        ['产物含视频轨', tracks.video > 0 ? `是（${tracks.videoSamples} 样本）` : '否'],
+        [
+          '产物含音轨',
+          hasAudio === null
+            ? '未知'
+            : hasAudio
+              ? `是（${tracks.audioSamples} 样本）`
+              : `否（soun轨=${tracks.soun} 样本=${tracks.audioSamples}）`,
+        ],
         [
           '音轨峰值',
           !level
@@ -629,9 +689,8 @@ export default function App() {
             '2) 按了 Esc / 系统层停止共享，录制随之结束\n' +
             '3) MediaRecorder 启动即报错（见上方「录制器错误」）\n\n'
           : '常见原因：\n' +
-            '1) 「资源根目录」为空 → 退回兜底模式，音轨改从编辑器内页面取\n' +
-            '   （多为刷新后从旧草稿恢复，重新点一次「选择 HTML 文件」即可）\n' +
-            '2) 页面里没有 <audio> 元素，或音频文件没加载成功\n' +
+            '1) 页面里没有 <audio> 元素，或音频文件没加载成功（看上方「音频链路」）\n' +
+            '2) 音频链路报错（看上方「音频链路错误」，多为 webm 解码失败或 AAC 编码不可用）\n' +
             '3) 录制期间页面音频处于静音状态\n\n'
         alert(
           head + diagText + '\n\n' + tips +
