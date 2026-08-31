@@ -4,6 +4,9 @@
 // ES 模块 / blob URL / iframe 的兼容问题。
 
 const { app, BrowserWindow, ipcMain, dialog, session, screen } = require('electron')
+// OBS 录制后端（方案 A）：系统级录屏，主进程只经 obs-websocket 触发起停。
+// 依赖在连接时才 lazy require，缺依赖不会拖垮编辑器启动。
+const obsRecorder = require('./obsRecorder.cjs')
 const http = require('http')
 const fs = require('fs')
 const os = require('os')
@@ -517,6 +520,35 @@ function registerIpc() {
     } catch (e) {
       return { canceled: true, error: String(e && e.message) }
     }
+  })
+
+  // ------------------------------------------------------------
+  // OBS 录制后端（方案 A）：连接 OBS → 开始/停止录制 → 查状态
+  // 渲染端 window.ztRecSession.startOBS/stopOBS/obsStatus 对应此处
+  // ------------------------------------------------------------
+  ipcMain.handle('zt:obs-connect', async () => {
+    try { const r = await obsRecorder.connect(); return r } catch (e) { return { ok: false, error: String(e && e.message) } }
+  })
+
+  ipcMain.handle('zt:obs-start', async (event, opts) => {
+    try { return await obsRecorder.start(opts || {}) } catch (e) { return { ok: false, error: String(e && e.message) } }
+  })
+
+  ipcMain.handle('zt:obs-stop', async () => {
+    try { return await obsRecorder.stop() } catch (e) { return { ok: false, error: String(e && e.message) } }
+  })
+
+  ipcMain.handle('zt:obs-status', async () => {
+    try { return await obsRecorder.status() } catch (e) { return { connected: obsRecorder.isConnected(), error: String(e && e.message) } }
+  })
+
+  ipcMain.handle('zt:obs-scenes', async () => {
+    try { return await obsRecorder.listScenes() } catch (e) { return { ok: false, error: String(e && e.message) } }
+  })
+
+  // OBS 能捕获的窗口列表：给 UI 下拉选择 ztEdit 主窗口（自动建窗口捕获源，避免录出黑屏）
+  ipcMain.handle('zt:obs-windows', async () => {
+    try { return await obsRecorder.listWindows() } catch (e) { return { ok: false, error: String(e && e.message) } }
   })
 }
 

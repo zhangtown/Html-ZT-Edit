@@ -160,9 +160,17 @@ export default function App() {
   const [screenSize, setScreenSize] = useState(null) // 屏幕可用区域（CSS 像素），用于限制录制档位
   const [recRoot, setRecRoot] = useState('') // 资源根目录（磁盘绝对路径）；为空则录制退回兜底模式
   const [recDiag, setRecDiag] = useState(null) // 上一次录制的自检结果 { text, ok }，直接显示到顶栏
-  const recRef = useRef(null) // 录制会话
+  const recRef = useRef(null) // 录制会话（v3.3 时为真实 session，OBS 接管时为 {obs:true} 占位）
+  const recBackendRef = useRef(null) // 录制后端标记：'obs' | null；play 流程用 OBS 接管时置 'obs'，finishRecording 据此分流
   const pendingExportRef = useRef(null) // 等待 iframe 回传 HTML 的 Promise（录制取页用）
   const recRootRef = useRef('') // 资源根目录磁盘绝对路径；随草稿存取，保证刷新后仍能离屏录制
+  // OBS 录制后端（方案 A）UI 状态：手动起停，成片在 OBS 输出目录
+  const [obsRec, setObsRec] = useState({ recording: false, msg: '', filePath: '' })
+  const [obsScene, setObsScene] = useState('') // 用户在 OBS 预建的「窗口捕获/显示器捕获」场景名
+  const [useObs, setUseObs] = useState(false) // 播放时是否用 OBS 系统级录制接管 v3.3（默认关：需本机 OBS 在跑且已建窗口捕获场景）
+  const [obsScenes, setObsScenes] = useState([]) // OBS 真实场景名列表（下拉选择用，杜绝手打错/场景不在当前场景集合）
+  const [obsWindow, setObsWindow] = useState('') // 选中要捕获的窗口（OBS 内部标识串）；为空则不自动建源
+  const [obsWindows, setObsWindows] = useState([]) // OBS 可捕获窗口列表 {name,value}（下拉选择用）
   const directRecRef = useRef(false) // 与 directRec state 同步：消息回调/事件监听里读 ref 拿到最新值
   const recFinishTimerRef = useRef(null) // 「音频播完延时 2s 收录」的定时器；手动 Esc 时要取消它立即收
 
@@ -384,9 +392,13 @@ export default function App() {
   async function handleStartPlay(from) {
     const nativeScript = getNativePlayerScript()
     if (recordOn && !recRef.current) {
-      // 直接全屏录屏（唯一录制路径）：窗口全屏 → 画面即所得。默认原生分辨率直出
-      // （零缩放零黑边，仅补 16 对齐，清晰度对标 Game Bar）；选固定档则重采样到该档。
-      // UI/鼠标/弹窗全部隐掉，只响应 Esc。
+      // 直接全屏录屏（窗口全屏 → 画面即所得，UI/鼠标/弹窗隐掉，只响应 Esc）。
+      // 两条捕获后端二选一，由顶栏「OBS 接管」复选框切换：
+      //   useObs=false（默认）：v3.3 内建捕获+编码（WebCodecs/MediaRecorder 自编码），离线/无 OBS 可兜底；
+      //   useObs=true（高清路线）：经主进程 window.ztRecSession.startOBS() 走 OBS 系统级
+      //     DXGI→硬件编码 NVENC CQP18/50Mbps，录 OBS 里预建的「窗口捕获」场景（指向此时已全屏的 ztEdit 主窗口），
+      //     清晰度同 Win+Shift+R、上限更高，且「桌面音频」源默认就抓系统声，一次绕开所有 WebCodecs 音频坑。
+      //   播放引擎/字幕/动画/原生播放脚本一律不动，只换捕获后端。集成细节见《录屏方案调研-高质量路线.md》第 3 节。
       try {
         if (!window.ztRecSession || !window.ztRecSession.setFullscreen)
           throw new Error('全屏录屏需要桌面端（Electron），请用打包版或 dev:electron 运行')
@@ -399,37 +411,128 @@ export default function App() {
         // 再留一拍：全屏后 React 的 UI 重排与画布铺满也要走一帧，
         // 让首帧带着最终布局进编码器，同时避开全屏切换的最后一点余波
         await new Promise((r) => setTimeout(r, 300))
-        let recOpts = {}
-        if (recRes && recRes !== 'native') {
-          const [w, h] = String(recRes).split('x').map(Number)
-          recOpts = { width: w, height: h }
-        }
-        const session = await startRecording(iframeRef.current, recOpts)
-        recRef.current = session
-        setRecording(true)
-        // 用户在系统层面停止共享时：兜底结束录制并停止播放
-        session.onExternalStop.then((at) => {
-          if (recRef.current !== session) return
-          // 保护窗：录制起步 1.5 秒内轨就 ended，几乎可以确定是全屏切换的余波把捕获打掉了，
-          // 不可能是用户在系统层手动停止共享（人反应没这么快）。
-          // 这种情况绝不能当成"结束录制"处理——否则成片只有几十毫秒，
-          // 编码器连初始化都来不及，产出一个几 KB 的空壳文件，
-          // 而且自检只会报"音轨静音"，把排查方向彻底带偏（实测踩坑）。
-          if (typeof at === 'number' && at < 1500) {
-            console.warn(
-              `[ZT-Edit] 捕获轨在启动 ${at}ms 时失效，判定为全屏余波误触发，已忽略并继续录制`
-            )
-            return
+        if (useObs) {
+          // 方案 A：OBS 系统级录屏接管（高清路线）。录 OBS 里预建的「窗口捕获」场景（指向 ztEdit 主窗口，
+          // 此时已全屏）→ 清晰度同 Win+Shift+R、上限更高；音频走 OBS「桌面音频」源抓系统声，
+          // 一次性绕开 v3.3 所有 WebCodecs 音频坑。成片由 OBS 直接写到输出目录（默认 D:/obs-recordings）。
+          const r = await window.ztRecSession.startOBS({ mode: 'scene', sceneName: obsScene || undefined, window: obsWindow || undefined })
+          if (!r || !r.ok) throw new Error((r && r.error) || 'OBS 录制启动失败（未知原因）')
+          recBackendRef.current = 'obs'
+          recRef.current = { obs: true } // 占位：仅用于让 finishRecording 走 OBS 分流分支
+          setRecording(true)
+          // 体检回传：场景没有音频源 → 画面正常但成片无声，提前告警而不是录完才发现
+          const noAudio = r.health && !r.health.hasAudio
+          setObsRec({ recording: true, msg: noAudio ? '录制中（⚠场景无音频源，成片可能无声）' : '录制中（OBS 系统级）', filePath: '' })
+        } else {
+          // v3.3 内建捕获+编码（WebCodecs/MediaRecorder 自编码，离线/无 OBS 时可兜底）
+          let recOpts = {}
+          if (recRes && recRes !== 'native') {
+            const [w, h] = String(recRes).split('x').map(Number)
+            recOpts = { width: w, height: h }
           }
-          send({ type: 'stopPlay' })
-        })
+          const session = await startRecording(iframeRef.current, recOpts)
+          recRef.current = session
+          setRecording(true)
+          // 用户在系统层面停止共享时：兜底结束录制并停止播放
+          session.onExternalStop.then((at) => {
+            if (recRef.current !== session) return
+            // 保护窗：录制起步 1.5 秒内轨就 ended，几乎可以确定是全屏切换的余波把捕获打掉了，
+            // 不可能是用户在系统层手动停止共享（人反应没这么快）。
+            // 这种情况绝不能当成"结束录制"处理——否则成片只有几十毫秒，
+            // 编码器连初始化都来不及，产出一个几 KB 的空壳文件，
+            // 而且自检只会报"音轨静音"，把排查方向彻底带偏（实测踩坑）。
+            if (typeof at === 'number' && at < 1500) {
+              console.warn(
+                `[ZT-Edit] 捕获轨在启动 ${at}ms 时失效，判定为全屏余波误触发，已忽略并继续录制`
+              )
+              return
+            }
+            send({ type: 'stopPlay' })
+          })
+        }
       } catch (e) {
         await restoreDirectRec()
-        alert('全屏录屏启动失败：' + ((e && e.message) || e) + '\n将继续播放（不录屏）。')
+        alert('录屏启动失败：' + ((e && e.message) || e) + '\n将继续播放（不录屏）。')
       }
     }
     send({ type: 'startPlay', from, nativeScript })
   }
+
+  // OBS 录制后端（方案 A）：系统级录屏，手动起停。
+  // 默认 scene 模式——录 OBS 里预建的「窗口捕获」场景（指向 ztEdit 主窗口，播放时全屏），
+  // 清晰度同 Win+Shift+R、上限更高，且「桌面音频」源默认就抓系统声，绕开所有 WebCodecs 音频坑。
+  // 成片由 OBS 直接写到输出目录（默认 D:/obs-recordings），不走 v3.3 的 blob/保存对话框。
+  async function startObsRec() {
+    setObsRec({ recording: false, msg: '连接 OBS…', filePath: '' })
+    const r = await window.ztRecSession.startOBS({ mode: 'scene', sceneName: obsScene || undefined, window: obsWindow || undefined })
+    if (r && r.ok) {
+      // 体检回传：场景没有音频源 → 画面正常但成片无声，提前告警而不是录完才发现
+      const noAudio = r.health && !r.health.hasAudio
+      setObsRec({ recording: true, msg: noAudio ? '录制中（⚠场景无音频源，成片可能无声）' : '录制中（OBS 系统级）', filePath: '' })
+    } else setObsRec({ recording: false, msg: String((r && r.error) || '启动失败').slice(0, 120), filePath: '' })
+  }
+  async function stopObsRec() {
+    const r = await window.ztRecSession.stopOBS()
+    recBackendRef.current = null // 手动停时清标记，避免 play 流程 finishRecording 再误走 OBS 分支
+    if (r && r.ok) setObsRec({ recording: false, msg: r.skipped ? '未录制' : '已停止', filePath: r.filePath || '' })
+    else setObsRec({ recording: false, msg: String((r && r.error) || '停止失败').slice(0, 80), filePath: '' })
+  }
+
+  // 从 OBS 拉真实场景列表：下拉选择而不是手打场景名。
+  // （此前手打/留空会 fallback 到硬编码的 HTML-Recorder，而它常不在当前场景集合 → 录制启动失败）
+  async function loadObsScenes() {
+    if (!window.ztRecSession || !window.ztRecSession.obsScenes) return
+    setObsRec((p) => ({ ...p, msg: '读取 OBS 场景…' }))
+    let r
+    try {
+      r = await window.ztRecSession.obsScenes()
+    } catch (e) {
+      setObsRec((p) => ({ ...p, msg: '读取场景失败：' + ((e && e.message) || e) }))
+      return
+    }
+    if (r && r.ok) {
+      setObsScenes(r.scenes || [])
+      if (!obsScene && r.current) setObsScene(r.current) // 默认选中 OBS 当前场景
+      setObsRec((p) => ({ ...p, msg: `场景已刷新（${(r.scenes || []).length} 个）` }))
+    } else {
+      setObsRec((p) => ({ ...p, msg: String((r && r.error) || '读取场景失败').slice(0, 100) }))
+    }
+  }
+  // 从 OBS 拉「可捕获窗口」列表：选 ztEdit 主窗口后，控制器会在场景里自动建/更新窗口捕获源。
+  // 没有这一步场景里就没有视频源 → StartRecord 照样成功，但成片全是黑屏（用户实测踩坑）。
+  async function loadObsWindows() {
+    if (!window.ztRecSession || !window.ztRecSession.obsWindows) return
+    setObsRec((p) => ({ ...p, msg: '读取可捕获窗口…' }))
+    let r
+    try {
+      r = await window.ztRecSession.obsWindows()
+    } catch (e) {
+      setObsRec((p) => ({ ...p, msg: '读取窗口失败：' + ((e && e.message) || e) }))
+      return
+    }
+    if (r && r.ok) {
+      const list = r.windows || []
+      setObsWindows(list)
+      // 智能预选：名字里含当前 HTML 名或 ztEdit 的窗口，省得手动翻
+      if (!obsWindow) {
+        const key = String(activeHtmlRef.current || '').split(/[\\/]/).pop().replace(/\.html?$/i, '')
+        const hit =
+          list.find((w) => key && w.name.indexOf(key) >= 0) ||
+          list.find((w) => /ztedit|zt-edit|html/i.test(w.name))
+        if (hit) setObsWindow(hit.value)
+      }
+      setObsRec((p) => ({ ...p, msg: `窗口已刷新（${list.length} 个）` }))
+    } else {
+      setObsRec((p) => ({ ...p, msg: String((r && r.error) || '读取窗口失败').slice(0, 100) }))
+    }
+  }
+  // 勾上「OBS 接管」时自动拉一次场景 + 窗口列表，省得再手动点 ↻
+  useEffect(() => {
+    if (!useObs) return
+    loadObsScenes()
+    loadObsWindows()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useObs])
 
   // webm 没有 mp4 的 box 结构，只能靠 codec 字符串粗判（opus/vorbis）。
   // mp4 不要用这个函数——见下方 probeTracks 的踩坑注释。
@@ -567,15 +670,41 @@ export default function App() {
   }
 
   async function finishRecording() {
+    const isObs = recBackendRef.current === 'obs'
     const session = recRef.current
-    if (!session) return
+    if (!session && !isObs) return
     // 「播完延时 2s」的定时器还没到就手动收（Esc/换文件）→ 撤掉定时器，只走这一次
     if (recFinishTimerRef.current) {
       clearTimeout(recFinishTimerRef.current)
       recFinishTimerRef.current = null
     }
     recRef.current = null
+    recBackendRef.current = null
     setRecording(false)
+    // 方案 A：OBS 系统级录屏接管 → 停止 + 回传成片路径，不走 v3.3 的 blob 自检/保存对话框
+    if (isObs) {
+      setSavingRec(true)
+      try {
+        const r = await window.ztRecSession.stopOBS()
+        if (directRecRef.current) await restoreDirectRec()
+        if (r && r.ok && r.filePath) {
+          setObsRec({ recording: false, msg: '已停止', filePath: r.filePath })
+          setRecDiag({ ok: true, text: 'OBS 成片：' + r.filePath })
+        } else if (r && r.skipped) {
+          setObsRec({ recording: false, msg: '未录制', filePath: '' })
+          setRecDiag({ ok: true, text: '本次未录制（OBS 未激活）' })
+        } else {
+          setObsRec({ recording: false, msg: String((r && r.error) || '停止失败').slice(0, 80), filePath: '' })
+          setRecDiag({ ok: false, text: 'OBS 停止失败' })
+        }
+      } catch (e) {
+        setObsRec({ recording: false, msg: 'OBS 停止异常', filePath: '' })
+        setRecDiag({ ok: false, text: 'OBS 停止异常：' + ((e && e.message) || e) })
+      } finally {
+        setSavingRec(false)
+      }
+      return
+    }
     setSavingRec(true)
     try {
       const { blob, ext, durationMs, recError, firstChunkMs, audioDataCount, aacChunkCount, audioError, audioKind } =
@@ -1218,6 +1347,18 @@ export default function App() {
                   >
                     全屏录制（Esc 结束）
                   </span>
+                  <label
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: useObs ? '#fca5a5' : '#d1d5db', cursor: 'pointer' }}
+                    title="勾选后，点播放即由 OBS 系统级录制接管（高清路线：录 OBS 里预建的「窗口捕获」场景，清晰度同 Win+Shift+R、上限更高，音频走桌面音频源）。需本机 OBS 已启动并启用 websocket，且下方已填窗口捕获场景名。不勾则用内建 v3.3 录制兜底。"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={useObs}
+                      onChange={(e) => setUseObs(e.target.checked)}
+                      style={{ accentColor: '#C41E24' }}
+                    />
+                    OBS 接管
+                  </label>
                 {recFmt && (
                   <span style={{ fontSize: 11, color: '#9ca3af' }} title="当前内核支持的录制封装格式">
                     {recFmt}
@@ -1243,6 +1384,59 @@ export default function App() {
                 </span>
               </>
             )}
+            {/* OBS 录制后端（方案 A）：系统级录屏，手动起停，成片在 OBS 输出目录 */}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              <select
+                value={obsScene}
+                onChange={(e) => setObsScene(e.target.value)}
+                title="OBS 场景：选一个含「窗口捕获 ztEdit 主窗口」的场景（最清晰）。点 ↻ 从 OBS 读取真实场景列表；选「(用 OBS 当前场景)」则录 OBS 此刻显示的场景。"
+                style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: '1px solid #4b5563', background: '#374151', color: '#fff', cursor: 'pointer', maxWidth: 150 }}
+              >
+                <option value="">(用 OBS 当前场景)</option>
+                {obsScenes.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => { loadObsScenes(); loadObsWindows() }}
+                title="从 OBS 读取场景列表 + 可捕获窗口列表（需 OBS 已启动且已启用 websocket）"
+                style={btn('#4b5563')}
+              >
+                ↻
+              </button>
+              <select
+                value={obsWindow}
+                onChange={(e) => setObsWindow(e.target.value)}
+                title="要捕获的窗口：选 ztEdit 主窗口，开始录制时会自动在场景里建/更新一个「窗口捕获」源并铺满画布。没有它场景里就没有视频源 → 成片黑屏。选「(不自动建源)」则完全用你在 OBS 里手动配好的源。"
+                style={{ fontSize: 11, padding: '3px 6px', borderRadius: 6, border: '1px solid #4b5563', background: '#374151', color: '#fff', cursor: 'pointer', maxWidth: 170 }}
+              >
+                <option value="">(不自动建源)</option>
+                {obsWindows.map((w) => (
+                  <option key={w.value} value={w.value}>
+                    {w.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={obsRec.recording ? stopObsRec : startObsRec}
+                style={btn(obsRec.recording ? '#7f1d1d' : '#1d4ed8')}
+                title="开始/停止 OBS 系统级录制（需本机 OBS 已启动且启用 websocket）"
+              >
+                {obsRec.recording ? '■ 停止 OBS' : '● OBS 录制'}
+              </button>
+              {obsRec.msg && (
+                <span style={{ fontSize: 11, color: obsRec.recording ? '#fca5a5' : '#9ca3af' }} title={obsRec.msg}>
+                  {obsRec.msg}
+                </span>
+              )}
+              {obsRec.filePath && (
+                <span style={{ fontSize: 11, color: '#a7f3d0' }} title={obsRec.filePath}>
+                  {obsRec.filePath.split(/[\\/]/).pop()}
+                </span>
+              )}
+            </span>
             {recDiag && (
               <span
                 title="上一次录制的自检结果（音轨电平）"

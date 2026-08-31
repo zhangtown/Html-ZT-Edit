@@ -36,6 +36,14 @@ contextBridge.exposeInMainWorld('ztRecSession', {
   getState: () => ipcRenderer.invoke('zt:rec-state'),
   // 直接全屏录屏：主窗口进入/退出全屏
   setFullscreen: (on) => ipcRenderer.invoke('zt:set-fullscreen', on),
+  // OBS 录制后端（方案 A）触发点：连接 OBS 并开始/停止录制，或查状态
+  startOBS: (opts) => ipcRenderer.invoke('zt:obs-start', opts),
+  stopOBS: () => ipcRenderer.invoke('zt:obs-stop'),
+  obsStatus: () => ipcRenderer.invoke('zt:obs-status'),
+  // 读取 OBS 真实场景列表（UI 下拉选择，避免手打场景名 / 场景不在当前集合）
+  obsScenes: () => ipcRenderer.invoke('zt:obs-scenes'),
+  // 读取 OBS 可捕获窗口列表（选 ztEdit 主窗口 → 自动建窗口捕获源，杜绝黑屏）
+  obsWindows: () => ipcRenderer.invoke('zt:obs-windows'),
 })
 
 // 离屏录制窗口专用：接收主进程转发的「开始播放」信号
