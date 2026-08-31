@@ -18,9 +18,13 @@
 //   （Electron 31 / Chromium 126，硬编软编都试过）：H.264 请求 1M~16.7M 实际只出
 //   0.3~4.9Mbps，VP8/VP9/H.264 × var/constant 全部如此，25 秒成片仅 ~5MB，文字发虚。
 //   换 WebCodecs VideoEncoder（bitrateMode:'constant'）后同机实测：请求 16.7M
-//   实出 16.7M（静/动画面都兑现），AAC AudioEncoder 可用。因此主路径改为
-//   VideoEncoder(H.264 High CBR) + AudioEncoder(AAC) + mp4-muxer 手工封装，
-//   MediaRecorder 整体降级为兜底（浏览器/旧内核环境），其码率上限照旧受限。
+//   实出 16.7M（静/动画面都兑现），AAC AudioEncoder 可用。
+// v3.2.1 回退默认引擎（2026-08-31）：WebCodecs 路径视频完美但音轨在本机全零静音
+//   （收包/AAC 块数正常、电平 0.0000；AudioContext 钉 48k 与默认采样率都复现），
+//   而 MediaRecorder 消费同一条 WebAudio 轨在另一台电脑有声。故默认引擎回退
+//   MediaRecorder（=fe38419 行为，有声保底），WebCodecs 留开关待查静音根因
+//   （localStorage.setItem('ztWebCodecs','1') 可临时打开；在别的机器上如有声，
+//   即可判定是本机音频环境问题而非代码问题）。
 
 import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 
@@ -45,14 +49,22 @@ function pickMime() {
   return ''
 }
 
+// WebCodecs 引擎开关：默认关闭（MediaRecorder 兜底成为默认引擎，行为=fe38419，有声有保证）。
+// 为什么默认关：本机实测 WebCodecs 路径视频 16.7M 足额、但音轨全零静音（收包/AAC 正常、电平 0.0000，
+// 48k/默认采样率都复现）；MediaRecorder 消费同一条 WebAudio 轨在另一台电脑有声。
+// 临时打开验证（DevTools Console）：localStorage.setItem('ztWebCodecs','1') 后刷新
+const USE_WEBCODECS = (() => {
+  try { return typeof localStorage !== 'undefined' && localStorage.getItem('ztWebCodecs') === '1' } catch (e) { return false }
+})()
+
 // 供 UI 显示当前能出什么格式
-// WebCodecs 可用 → 必出 mp4/H.264 High+AAC（录制时会再异步确认，失败自动落 MediaRecorder）
+// MediaRecorder 默认：Electron 31(Chromium 126) 本身支持 mp4/H.264；WebCodecs 开关打开时显示 WebCodecs 档
 export function probeMime() {
-  if (typeof window !== 'undefined' && window.VideoEncoder && window.MediaStreamTrackProcessor) {
-    return { mime: 'video/mp4;codecs=avc1.640028,mp4a.40.2', ext: 'mp4' }
+  if (USE_WEBCODECS && typeof window !== 'undefined' && window.VideoEncoder && window.MediaStreamTrackProcessor) {
+    return { mime: 'video/mp4;codecs=avc1.640028,mp4a.40.2', ext: 'mp4', engine: 'webcodecs' }
   }
   const m = pickMime()
-  return { mime: m, ext: m && m.indexOf('mp4') >= 0 ? 'mp4' : 'webm' }
+  return { mime: m, ext: m && m.indexOf('mp4') >= 0 ? 'mp4' : 'webm', engine: 'mediarecorder' }
 }
 
 // 取可录制的音轨：WebAudio 管线（元素一播放就出数据帧，可控性最好）。
@@ -204,8 +216,8 @@ export async function startRecording(iframeEl, opts) {
     try { displayStream.getTracks().forEach((t) => t.stop()) } catch (e) {}
   }
 
-  // ① WebCodecs 引擎（主路径）：VideoEncoder CBR 精确兑现码率，见文件头 v3.2 说明
-  const wc = await canUseWebCodecs(W, H, bitrate)
+  // ① WebCodecs 引擎（可选，见 USE_WEBCODECS 注释）：视频 CBR 精确码率；音频在本机实测静音待查
+  const wc = USE_WEBCODECS ? await canUseWebCodecs(W, H, bitrate) : null
   if (wc) {
     return buildWebCodecsSession({ canvas, W, H, bitrate, codec: wc, audioInfo, startedAt, inactivePromise, cleanup })
   }
