@@ -89,8 +89,9 @@ function getAudioTrack(iframeEl) {
         console.warn('[ZT-Edit] 音轨(WebAudio·复用)已取得, ctxState=' + (ctx ? ctx.state : 'unknown'))
         return track ? { track, sampleRate: ctx.sampleRate, channels: audioEl.__ztRecDest.channelCount || 2, via: 'webaudio' } : null
       }
-      // 采样率钉死 48000：AAC/封装配置需要确定的值，浏览器会自动重采样
-      const actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 })
+      // 采样率用设备默认（与 v3.1 一致）：曾钉 48000 导致本机实录全零静音（另一台电脑默认采样率有声）；
+      // AAC/封装配置直接用 ctx 实际采样率，44.1k/48k 都合法
+      const actx = new (window.AudioContext || window.webkitAudioContext)()
       console.warn('[ZT-Edit] AudioContext 已创建 state=' + actx.state + ' sampleRate=' + actx.sampleRate)
       const resumeP = actx.state === 'suspended' ? actx.resume().catch((e) => console.warn('[ZT-Edit] AudioContext resume 失败：' + (e && e.message))) : null
       const src = actx.createMediaElementSource(audioEl)
@@ -348,10 +349,12 @@ function buildWebCodecsSession({ canvas, W, H, bitrate, codec, audioInfo, starte
   // 音频泵：WebAudio 轨 → AudioData → AAC
   let aenc = null
   let aPump = null
+  let audioDataCount = 0
+  let aacChunkCount = 0
   if (audio) {
     try {
       aenc = new AudioEncoder({
-        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+        output: (chunk, meta) => { aacChunkCount++; muxer.addAudioChunk(chunk, meta) },
         error: (e) => console.error('[ZT-Edit] AudioEncoder 错误：' + (e && e.message)),
       })
       aenc.configure({ codec: 'mp4a.40.2', sampleRate: audio.sampleRate, numberOfChannels: audio.channels, bitrate: 192000 })
@@ -364,6 +367,7 @@ function buildWebCodecsSession({ canvas, W, H, bitrate, codec, audioInfo, starte
             if (aenc.state !== 'configured') { if (value.close) value.close(); break }
             aenc.encode(value)
             if (value.close) value.close()
+            audioDataCount++
           }
         } catch (e) {
           console.warn('[ZT-Edit] 音频泵中断：' + (e && e.message))
@@ -401,12 +405,15 @@ function buildWebCodecsSession({ canvas, W, H, bitrate, codec, audioInfo, starte
           try { muxer.finalize() } catch (e) { recError = recError || ('mp4 finalize: ' + (e && e.message)) }
           cleanup()
           if (dropped) console.warn(`[ZT-Edit] 编码背压丢帧 ${dropped} 帧`)
+          console.warn(`[ZT-Edit] 音频统计：AudioData收包=${audioDataCount} AAC块=${aacChunkCount}`)
           resolve({
             blob: new Blob([muxer.target.buffer], { type: 'video/mp4' }),
             ext: 'mp4',
             durationMs: Math.round(performance.now() - startedAt),
             recError,
             firstChunkMs: firstChunkAt ? Math.round(firstChunkAt - startedAt) : 0,
+            audioDataCount,
+            aacChunkCount,
           })
         })()
       }),
