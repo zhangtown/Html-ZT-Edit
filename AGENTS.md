@@ -27,6 +27,10 @@ npm run check:contract   # 契约版本校验（见上）
 打包.bat                  # Windows 一键打包（自动配国内镜像）
 ```
 
+## 技能管理（skill-manager）
+
+本机所有 skill 由 skill-manager 统一管理：技能本体只存中央仓库 `~/.skills-manager/skills/`，`~/.zcode/skills/`、`~/.claude/skills/` 等 agent 目录下的条目都是指向中央仓库的 JUNCTION 链接。装/删/更新技能一律走 skill-manager，不要往 agent 目录手工拷贝技能文件（拷贝件脱离中央管理，各端不同步）。注意：新链接的技能要新开会话才会被 Agent 加载。
+
 ## 环境备忘
 
 - 企业网有 TLS 拦截：npm 装 Electron 二进制需 `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/` + `NODE_OPTIONS=--use-system-ca`；GitHub 下载慢时走 `https://gh-proxy.com/` 前缀
