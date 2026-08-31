@@ -1,4 +1,4 @@
-// 录屏管线 v3.1：直接全屏 + 原生分辨率优先
+// 录屏管线 v3.2：直接全屏 + 原生分辨率优先 + WebCodecs 编码引擎
 // 路线：点录制 → 编辑器窗口全屏（画面即所得）→ getDisplayMedia 捕获主窗口 →
 //   默认原生分辨率直出（仅补齐到 16 对齐，零缩放零黑边）→ mp4(H.264 High+AAC)。
 //
@@ -12,6 +12,17 @@
 //   播放循环不启动，画面冻结在第一页），还多出临时文件/隐藏窗口两层复杂度。
 // 音轨：从编辑器 iframe 的 <audio> captureStream 直取——它就是屏幕上正在播放的
 //   同一实例，与画面同源；主窗口的音频捕获轨实测是静音数据，不可用。
+//
+// v3.2 为什么改用 WebCodecs 编码（2026-08-31 实测定案）：
+//   MediaRecorder 的 videoBitsPerSecond 在部分机器上基本失效——同一台机器实测
+//   （Electron 31 / Chromium 126，硬编软编都试过）：H.264 请求 1M~16.7M 实际只出
+//   0.3~4.9Mbps，VP8/VP9/H.264 × var/constant 全部如此，25 秒成片仅 ~5MB，文字发虚。
+//   换 WebCodecs VideoEncoder（bitrateMode:'constant'）后同机实测：请求 16.7M
+//   实出 16.7M（静/动画面都兑现），AAC AudioEncoder 可用。因此主路径改为
+//   VideoEncoder(H.264 High CBR) + AudioEncoder(AAC) + mp4-muxer 手工封装，
+//   MediaRecorder 整体降级为兜底（浏览器/旧内核环境），其码率上限照旧受限。
+
+import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
 
 // 按浏览器支持度挑选封装格式（优先 mp4/H.264 High Profile+AAC，退回 webm）
 // High(640028)/Main(4D4028) 带 CABAC，同码率下细节明显好于 Baseline(42E01E)；
@@ -35,12 +46,21 @@ function pickMime() {
 }
 
 // 供 UI 显示当前能出什么格式
+// WebCodecs 可用 → 必出 mp4/H.264 High+AAC（录制时会再异步确认，失败自动落 MediaRecorder）
 export function probeMime() {
+  if (typeof window !== 'undefined' && window.VideoEncoder && window.MediaStreamTrackProcessor) {
+    return { mime: 'video/mp4;codecs=avc1.640028,mp4a.40.2', ext: 'mp4' }
+  }
   const m = pickMime()
   return { mime: m, ext: m && m.indexOf('mp4') >= 0 ? 'mp4' : 'webm' }
 }
 
-function mixInAudio(stream, iframeEl) {
+// 取可录制的音轨：WebAudio 管线（元素一播放就出数据帧，可控性最好）。
+// 返回 { track, sampleRate, channels, via }，找不到可用音频时返回 null。
+// （实测 element.captureStream() 在元素尚未播放时拿到的轨不会产出数据帧，
+//   mp4 里连音轨 box 都不会写——它只作为 MediaRecorder 兜底的最后手段，
+//   WebCodecs 路径不用它，因为拿不到确定的采样率/声道数，AAC 配置会错。）
+function getAudioTrack(iframeEl) {
   try {
     const doc = iframeEl && iframeEl.contentDocument
     const audioEl = doc && (doc.getElementById('bgAudio') || doc.querySelector('audio'))
@@ -49,16 +69,13 @@ function mixInAudio(stream, iframeEl) {
         '[ZT-Edit] 页面里没找到 <audio>，本次录制将无声。' +
           '诊断：iframe doc=' + !!doc + '，body子元素数=' + (doc && doc.body ? doc.body.children.length : -1)
       )
-      return
+      return null
     }
     console.warn(
       '[ZT-Edit] 音频元素已找到 src=' + (audioEl.currentSrc || audioEl.src || '(空)') +
         ' paused=' + audioEl.paused + ' readyState=' + audioEl.readyState +
         ' 已有缓存dest=' + !!audioEl.__ztRecDest
     )
-    // 首选 WebAudio 管线：元素一播放就出数据帧，可控性最好。
-    // （实测 element.captureStream() 在元素尚未播放时拿到的轨不会产出数据帧，
-    //   mp4 里连音轨 box 都不会写——它是踩过坑的兜底，不再是首选。）
     try {
       if (audioEl.__ztRecDest) {
         // createMediaElementSource 对同一元素只能调一次：复用首次建好的 destination。
@@ -68,13 +85,13 @@ function mixInAudio(stream, iframeEl) {
         if (ctx && ctx.state === 'suspended') {
           ctx.resume().catch((e) => console.warn('[ZT-Edit] AudioContext resume 失败：' + (e && e.message)))
         }
-        const st2 = ctx ? ctx.state : 'unknown'
-        audioEl.__ztRecDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t))
-        console.warn('[ZT-Edit] 音轨(WebAudio·复用)已接入, ctxState=' + st2 + ', tracks=' + stream.getAudioTracks().length)
-        return
+        const track = audioEl.__ztRecDest.stream.getAudioTracks()[0]
+        console.warn('[ZT-Edit] 音轨(WebAudio·复用)已取得, ctxState=' + (ctx ? ctx.state : 'unknown'))
+        return track ? { track, sampleRate: ctx.sampleRate, channels: audioEl.__ztRecDest.channelCount || 2, via: 'webaudio' } : null
       }
-      const actx = new (window.AudioContext || window.webkitAudioContext)()
-      console.warn('[ZT-Edit] AudioContext 已创建 state=' + actx.state)
+      // 采样率钉死 48000：AAC/封装配置需要确定的值，浏览器会自动重采样
+      const actx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 48000 })
+      console.warn('[ZT-Edit] AudioContext 已创建 state=' + actx.state + ' sampleRate=' + actx.sampleRate)
       const resumeP = actx.state === 'suspended' ? actx.resume().catch((e) => console.warn('[ZT-Edit] AudioContext resume 失败：' + (e && e.message))) : null
       const src = actx.createMediaElementSource(audioEl)
       const dest = actx.createMediaStreamDestination()
@@ -83,20 +100,22 @@ function mixInAudio(stream, iframeEl) {
       src.connect(actx.destination)
       audioEl.__ztRecDest = dest
       audioEl.__ztRecCtx = actx // 强引用防 GC；下次录制复用时按需 resume
-      dest.stream.getAudioTracks().forEach((t) => {
-        stream.addTrack(t)
-        console.warn('[ZT-Edit] 音轨(WebAudio)已接入 track=' + t.readyState + ' muted=' + t.muted)
-      })
+      const track = dest.stream.getAudioTracks()[0]
+      console.warn('[ZT-Edit] 音轨(WebAudio)已取得 track=' + (track && track.readyState) + ' muted=' + (track && track.muted))
       if (resumeP) resumeP.then(() => console.warn('[ZT-Edit] AudioContext resume 后 state=' + actx.state)).catch(() => {})
-      return
+      return track ? { track, sampleRate: actx.sampleRate, channels: dest.channelCount || 2, via: 'webaudio' } : null
     } catch (e) {
-      console.warn('[ZT-Edit] WebAudio 音轨接入失败，退回 captureStream：' + (e && e.message))
+      console.warn('[ZT-Edit] WebAudio 音轨取得失败：' + (e && e.message))
     }
     if (audioEl.captureStream) {
-      audioEl.captureStream().getAudioTracks().forEach((t) => stream.addTrack(t))
-      console.warn('[ZT-Edit] 音轨(captureStream兜底)已接入')
+      const t = audioEl.captureStream().getAudioTracks()[0]
+      if (t) {
+        console.warn('[ZT-Edit] 音轨(captureStream兜底)已取得，仅用于 MediaRecorder 路径')
+        return { track: t, sampleRate: 0, channels: 0, via: 'capture' }
+      }
     }
   } catch (e) {}
+  return null
 }
 
 // 开始录制
@@ -112,7 +131,7 @@ export async function startRecording(iframeEl, opts) {
   const displayStream = await navigator.mediaDevices.getDisplayMedia({
     // 不约束捕获尺寸：窗口多大捕多大，输出尺寸在下方决定
     video: { frameRate: 30 },
-    // 窗口音轨实测是静音数据（原因未明，离屏窗口同写法则有声）；音轨走 mixInAudio
+    // 窗口音轨实测是静音数据（原因未明，离屏窗口同写法则有声）；音轨走 getAudioTrack
     audio: false,
     // Chromium：优先当前标签页（Electron 中由主进程直接接管，不弹选择框）
     preferCurrentTab: true,
@@ -158,22 +177,49 @@ export async function startRecording(iframeEl, opts) {
     raf = requestAnimationFrame(draw)
   }
   draw()
-  const outStream = canvas.captureStream(30)
-  mixInAudio(outStream, iframeEl)
 
-  const mime = pickMime()
   // 码率按输出像素走：1080p≈17M、原生2.5K≈32M、4K 封顶 48M（对标 Game Bar 高码率；
-  // 硬编不认高码率时会被钳到编码器上限，不会失败）
+  // WebCodecs CBR 会足额兑现；MediaRecorder 引擎不认高码率时会被钳到上限，不会失败）
   const bitrate = Math.min(48_000_000, Math.max(12_000_000, Math.round(W * H * 8)))
+  // 编码器初始化需要几百毫秒，这期间产不出任何样本；录制若在这之前就被停掉，
+  // 成片只有骨架没有样本——录制时长必须作为自检第一项，它比音轨电平更能说明问题。
+  const startedAt = performance.now()
+  const audioInfo = getAudioTrack(iframeEl)
+
+  // 用户在系统 UI 上主动停止了共享 → 视同停止录制。
+  // 带上"距启动多少毫秒"：全屏切换的余波会让捕获轨在录制刚起步时就 ended，
+  // 与用户真的手动停止共享是两种完全不同的情况，调用方据此区分处理。
+  let onInactive = null
+  const inactivePromise = new Promise((r) => { onInactive = r })
+  displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+    const at = Math.round(performance.now() - startedAt)
+    console.warn(`[ZT-Edit] 捕获轨 ended，距录制启动 ${at}ms`)
+    if (onInactive) onInactive(at)
+  })
+
+  const cleanup = () => {
+    stopped = true
+    if (raf) cancelAnimationFrame(raf)
+    try { displayStream.getTracks().forEach((t) => t.stop()) } catch (e) {}
+  }
+
+  // ① WebCodecs 引擎（主路径）：VideoEncoder CBR 精确兑现码率，见文件头 v3.2 说明
+  const wc = await canUseWebCodecs(W, H, bitrate)
+  if (wc) {
+    return buildWebCodecsSession({ canvas, W, H, bitrate, codec: wc, audioInfo, startedAt, inactivePromise, cleanup })
+  }
+
+  // ② MediaRecorder 兜底（无 WebCodecs 的环境）：码率是否兑现取决于内核，无法保证
+  const outStream = canvas.captureStream(30)
+  if (audioInfo) {
+    try { outStream.addTrack(audioInfo.track) } catch (e) {}
+  }
+  const mime = pickMime()
   const rec = new MediaRecorder(
     outStream,
     mime ? { mimeType: mime, videoBitsPerSecond: bitrate } : undefined
   )
   const chunks = []
-  // 编码器初始化需要几百毫秒，这期间产不出任何样本。
-  // 录制若在这之前就被停掉，成片只有 moov 骨架、没有 vide trak —— 表现为"几 KB 的 mp4"。
-  // 所以录制时长必须作为自检第一项，它比音轨电平更能说明问题。
-  const startedAt = performance.now()
   let recError = null
   let firstChunkAt = 0
   rec.ondataavailable = (e) => {
@@ -190,36 +236,21 @@ export async function startRecording(iframeEl, opts) {
   rec.onstop = () => console.warn(`[ZT-Edit] 录制器停止：共 ${chunks.length} 块数据`)
   rec.start(1000)
   console.warn(
-    `[ZT-Edit] 录制器已启动 [${fixedTier ? '固定档' : '原生直出'}] 输出=${W}x${H} 源=${vw}x${vh} ` +
+    `[ZT-Edit] 录制器已启动 [MediaRecorder兜底] [${fixedTier ? '固定档' : '原生直出'}] 输出=${W}x${H} 源=${vw}x${vh} ` +
       `mime=${mime || '默认'} bitrate=${bitrate} 送入轨数(v/a)=${outStream.getVideoTracks().length}/${outStream.getAudioTracks().length}`
   )
-
-  // 用户在系统 UI 上主动停止了共享 → 视同停止录制。
-  // 带上"距启动多少毫秒"：全屏切换的余波会让捕获轨在录制刚起步时就 ended，
-  // 与用户真的手动停止共享是两种完全不同的情况，调用方据此区分处理。
-  let onInactive = null
-  const inactivePromise = new Promise((r) => { onInactive = r })
-  displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-    const at = Math.round(performance.now() - startedAt)
-    console.warn(`[ZT-Edit] 捕获轨 ended，距录制启动 ${at}ms`)
-    if (onInactive) onInactive(at)
-  })
 
   return {
     canvas,
     direct: true,
-    // 真正送进 MediaRecorder 的音轨数：0 就说明这趟注定没声音，调用方据此告警
+    engine: 'mediarecorder',
     audioTrackCount: outStream.getAudioTracks().length,
     videoTrackCount: outStream.getVideoTracks().length,
-    // 用户在系统层面停止共享时轨道会 ended，调用方据此兜底结束录制。
-    // resolve 值是该事件距录制启动的毫秒数
     onExternalStop: inactivePromise,
     stop: () =>
       new Promise((resolve) => {
         const finish = () => {
-          stopped = true
-          if (raf) cancelAnimationFrame(raf)
-          try { displayStream.getTracks().forEach((t) => t.stop()) } catch (e) {}
+          cleanup()
           try { outStream.getTracks().forEach((t) => t.stop()) } catch (e) {}
           const ext = mime && mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm'
           resolve({
@@ -235,6 +266,149 @@ export async function startRecording(iframeEl, opts) {
           rec.onstop = finish
           try { rec.stop() } catch (e) { finish() }
         }
+      }),
+  }
+}
+
+// WebCodecs 可用性：High → Main → Baseline 依次探测，返回可用 codec 串或 null
+async function canUseWebCodecs(W, H, bitrate) {
+  try {
+    if (typeof window === 'undefined' || !window.VideoEncoder || !window.MediaStreamTrackProcessor) return null
+    for (const codec of ['avc1.640028', 'avc1.4D4028', 'avc1.42E01E']) {
+      const s = await VideoEncoder.isConfigSupported({
+        codec, width: W, height: H, bitrate, framerate: 30,
+        bitrateMode: 'constant', latencyMode: 'quality',
+      })
+      if (s && s.supported) return codec
+    }
+  } catch (e) {
+    console.warn('[ZT-Edit] WebCodecs 探测失败，走 MediaRecorder：' + (e && e.message))
+  }
+  return null
+}
+
+// WebCodecs 录制会话：canvas 轨 → VideoEncoder(H.264 CBR)，WebAudio 轨 → AudioEncoder(AAC)，
+// mp4-muxer 封装成单一 mp4。stop() 返回契约与 MediaRecorder 路径一致。
+function buildWebCodecsSession({ canvas, W, H, bitrate, codec, audioInfo, startedAt, inactivePromise, cleanup }) {
+  let recError = null
+  let firstChunkAt = 0
+  const canvasTrack = canvas.captureStream(30).getVideoTracks()[0]
+
+  // 音频只收 WebAudio 来源（采样率/声道数确定，AAC 与封装配置才不会错）
+  const audio = audioInfo && audioInfo.via === 'webaudio' && window.AudioEncoder ? audioInfo : null
+  if (audioInfo && !audio) {
+    console.warn('[ZT-Edit] 音轨非 WebAudio 来源或无 AudioEncoder，本趟按无声处理')
+  }
+
+  const muxer = new Muxer({
+    target: new ArrayBufferTarget(),
+    video: { codec: 'avc', width: W, height: H },
+    ...(audio ? { audio: { codec: 'aac', sampleRate: audio.sampleRate, numberOfChannels: audio.channels } } : {}),
+    fastStart: 'in-memory',
+  })
+
+  const venc = new VideoEncoder({
+    output: (chunk, meta) => {
+      if (!firstChunkAt) firstChunkAt = performance.now()
+      muxer.addVideoChunk(chunk, meta)
+    },
+    error: (e) => {
+      recError = `VideoEncoder: ${e && e.message}`
+      console.error('[ZT-Edit] VideoEncoder 错误：' + recError)
+    },
+  })
+  venc.configure({
+    codec, width: W, height: H, bitrate, framerate: 30,
+    // constant 是清晰度问题的正解：variable 模式在本机实测 16.7M 请求只花 0.3~1.5M
+    bitrateMode: 'constant',
+    latencyMode: 'quality',
+    avc: { format: 'avc' }, // mp4 封装需要 avcC 描述（随 chunk meta 带出）
+  })
+
+  // 视频泵：canvas 轨 → VideoFrame → 编码器；编码队列积压 >8 帧时丢帧保实时
+  const vReader = new MediaStreamTrackProcessor({ track: canvasTrack }).readable.getReader()
+  let frameIdx = 0
+  let dropped = 0
+  const vPump = (async () => {
+    try {
+      while (true) {
+        const { done, value: frame } = await vReader.read()
+        if (done) break
+        if (venc.state !== 'configured') { frame.close(); break }
+        if (venc.encodeQueueSize > 8) { frame.close(); dropped++; continue }
+        venc.encode(frame, { keyFrame: frameIdx % 60 === 0 })
+        frame.close()
+        frameIdx++
+      }
+    } catch (e) {
+      recError = recError || ('video pump: ' + (e && e.message))
+    }
+  })()
+
+  // 音频泵：WebAudio 轨 → AudioData → AAC
+  let aenc = null
+  let aPump = null
+  if (audio) {
+    try {
+      aenc = new AudioEncoder({
+        output: (chunk, meta) => muxer.addAudioChunk(chunk, meta),
+        error: (e) => console.error('[ZT-Edit] AudioEncoder 错误：' + (e && e.message)),
+      })
+      aenc.configure({ codec: 'mp4a.40.2', sampleRate: audio.sampleRate, numberOfChannels: audio.channels, bitrate: 192000 })
+      const aReader = new MediaStreamTrackProcessor({ track: audio.track }).readable.getReader()
+      aPump = (async () => {
+        try {
+          while (true) {
+            const { done, value } = await aReader.read()
+            if (done) break
+            if (aenc.state !== 'configured') { if (value.close) value.close(); break }
+            aenc.encode(value)
+            if (value.close) value.close()
+          }
+        } catch (e) {
+          console.warn('[ZT-Edit] 音频泵中断：' + (e && e.message))
+        }
+      })()
+    } catch (e) {
+      console.warn('[ZT-Edit] AAC 初始化失败，本趟无声：' + (e && e.message))
+      aenc = null
+    }
+  }
+
+  console.warn(
+    `[ZT-Edit] 录制器已启动 [WebCodecs] 输出=${W}x${H} codec=${codec} bitrate=${bitrate}(CBR)` +
+      ` 送入轨数(v/a)=1/${aenc ? 1 : 0}`
+  )
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  return {
+    canvas,
+    direct: true,
+    engine: 'webcodecs',
+    audioTrackCount: aenc ? 1 : 0,
+    videoTrackCount: 1,
+    onExternalStop: inactivePromise,
+    stop: () =>
+      new Promise((resolve) => {
+        (async () => {
+          try { canvasTrack.stop() } catch (e) {}
+          await Promise.race([vPump, sleep(1500)])
+          try { await Promise.race([venc.flush(), sleep(3000)]); venc.close() } catch (e) {}
+          if (aPump) await Promise.race([aPump, sleep(1000)])
+          if (aenc) {
+            try { await Promise.race([aenc.flush(), sleep(3000)]); aenc.close() } catch (e) {}
+          }
+          try { muxer.finalize() } catch (e) { recError = recError || ('mp4 finalize: ' + (e && e.message)) }
+          cleanup()
+          if (dropped) console.warn(`[ZT-Edit] 编码背压丢帧 ${dropped} 帧`)
+          resolve({
+            blob: new Blob([muxer.target.buffer], { type: 'video/mp4' }),
+            ext: 'mp4',
+            durationMs: Math.round(performance.now() - startedAt),
+            recError,
+            firstChunkMs: firstChunkAt ? Math.round(firstChunkAt - startedAt) : 0,
+          })
+        })()
       }),
   }
 }
