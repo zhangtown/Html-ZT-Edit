@@ -390,11 +390,15 @@ export default function App() {
       try {
         if (!window.ztRecSession || !window.ztRecSession.setFullscreen)
           throw new Error('全屏录屏需要桌面端（Electron），请用打包版或 dev:electron 运行')
+        // 主进程那边会等到全屏真正落定（enter-full-screen + 余量）才 resolve，
+        // 这一步返回的时刻已经可以吃捕获了
         await window.ztRecSession.setFullscreen(true)
         directRecRef.current = true
         setDirectRec(true) // CSS 类隐藏全部编辑器 UI + 鼠标
         hideIframeCursor(true)
-        await new Promise((r) => setTimeout(r, 450)) // 等全屏布局稳定后再捕获，避免首帧带着旧窗口尺寸
+        // 再留一拍：全屏后 React 的 UI 重排与画布铺满也要走一帧，
+        // 让首帧带着最终布局进编码器，同时避开全屏切换的最后一点余波
+        await new Promise((r) => setTimeout(r, 300))
         let recOpts = {}
         if (recRes && recRes !== 'native') {
           const [w, h] = String(recRes).split('x').map(Number)
@@ -404,10 +408,20 @@ export default function App() {
         recRef.current = session
         setRecording(true)
         // 用户在系统层面停止共享时：兜底结束录制并停止播放
-        session.onExternalStop.then(() => {
-          if (recRef.current === session) {
-            send({ type: 'stopPlay' })
+        session.onExternalStop.then((at) => {
+          if (recRef.current !== session) return
+          // 保护窗：录制起步 1.5 秒内轨就 ended，几乎可以确定是全屏切换的余波把捕获打掉了，
+          // 不可能是用户在系统层手动停止共享（人反应没这么快）。
+          // 这种情况绝不能当成"结束录制"处理——否则成片只有几十毫秒，
+          // 编码器连初始化都来不及，产出一个几 KB 的空壳文件，
+          // 而且自检只会报"音轨静音"，把排查方向彻底带偏（实测踩坑）。
+          if (typeof at === 'number' && at < 1500) {
+            console.warn(
+              `[ZT-Edit] 捕获轨在启动 ${at}ms 时失效，判定为全屏余波误触发，已忽略并继续录制`
+            )
+            return
           }
+          send({ type: 'stopPlay' })
         })
       } catch (e) {
         await restoreDirectRec()
@@ -430,16 +444,46 @@ export default function App() {
     }
   }
 
+  // 数产物里到底有几条轨、分别是什么类型。
+  // 踩过的坑：只按"字符串里出现 mp4a"判断音轨会误报——
+  // 编码器还没初始化就被停掉的录制，moov 里照样写着 mp4a 的 stsd 骨架，
+  // 但 sample_count 是 0，成片其实什么都没有。必须连 vide 轨和样本数一起看。
+  async function probeTracks(blob) {
+    const res = { video: 0, soun: 0, samples: null }
+    try {
+      const buf = await blob.slice(0, 512 * 1024).arrayBuffer()
+      const u8 = new Uint8Array(buf)
+      const s = new TextDecoder('latin1').decode(u8)
+      let i = -1
+      // hdlr: size(4) type(4) version(1)+flags(3) predefined(4) handler_type(4)
+      while ((i = s.indexOf('hdlr', i + 1)) >= 0) {
+        const t = s.slice(i + 12, i + 16)
+        if (t === 'vide') res.video += 1
+        else if (t === 'soun') res.soun += 1
+      }
+      // stsz 的 sample_count：sample_size(4)+sample_count(4) 在 stsz 体内，
+      // 即 type 结束(+4) 之后偏移 8 处。0 就说明这条轨一个样本都没写出。
+      const j = s.indexOf('stsz')
+      if (j >= 0 && j + 16 <= u8.length) {
+        res.samples = new DataView(buf).getUint32(j + 12)
+      }
+      return res
+    } catch (e) {
+      return res
+    }
+  }
+
   // 进一步测电平，区分「有音轨且有声」和「有音轨却是静音数据」。
   // 把产物喂给 <audio> 回放，用 AnalyserNode 采峰值——只连到 analyser 不连 destination，
   // 所以检测过程不会出声。
   async function probeAudioLevel(blob) {
     let a = null
+    let actx = null
     try {
       const url = URL.createObjectURL(blob)
       a = new Audio()
       a.src = url
-      const actx = new AudioContext()
+      actx = new AudioContext()
       if (actx.state === 'suspended') {
         try { await actx.resume() } catch (e) {}
       }
@@ -447,11 +491,19 @@ export default function App() {
       const an = actx.createAnalyser()
       an.fftSize = 2048
       src.connect(an)
-      await new Promise((resolve, reject) => {
+      const meta = await new Promise((resolve, reject) => {
         a.onloadedmetadata = resolve
         a.onerror = () => reject(new Error('产物无法解码'))
         setTimeout(() => reject(new Error('解码超时')), 8000)
       })
+      void meta
+      const dur = a.duration
+      // 产物不到 0.5s 时测电平没有意义：编码器还没来得及吐出样本，
+      // 这时"静音"是录制过短的果，不是因，别把它当成音频问题报给用户
+      if (dur && dur < 0.5) {
+        URL.revokeObjectURL(url)
+        return { tooShort: true, duration: dur }
+      }
       await a.play()
       const data = new Float32Array(an.fftSize)
       let peak = 0
@@ -465,10 +517,13 @@ export default function App() {
       }
       try { a.pause() } catch (e) {}
       URL.revokeObjectURL(url)
-      return { peak, duration: a.duration }
+      return { peak, duration: dur }
     } catch (e) {
       if (a) { try { a.pause() } catch (e2) {} }
       return { error: String(e && e.message) }
+    } finally {
+      // AudioContext 不 close 会一直占着内核配额（约 6 个），录几次后就再也建不出来
+      if (actx) { try { actx.close() } catch (e) {} }
     }
   }
 
@@ -484,8 +539,8 @@ export default function App() {
     setRecording(false)
     setSavingRec(true)
     try {
-      const { blob, ext } = await session.stop()
-      console.warn(`[ZT-Edit] 收录完成 blob=${blob.size}B ext=${ext}`)
+      const { blob, ext, durationMs, recError, firstChunkMs } = await session.stop()
+      console.warn(`[ZT-Edit] 收录完成 blob=${blob.size}B ext=${ext} 时长=${durationMs}ms`)
       // 直接全屏录屏：先退出全屏、恢复 UI 与鼠标，再做自检/保存（弹窗都在恢复正常之后）
       if (directRecRef.current) await restoreDirectRec()
       if (!blob.size) {
@@ -494,32 +549,51 @@ export default function App() {
       }
       // 自检：产物到底带不带音轨。没录到声音时把关键信息一次性摆出来，省得靠猜
       const hasAudio = await probeAudioTrack(blob, ext)
+      const tracks = await probeTracks(blob)
       // 光有音轨不算数，还得测出电平：静音轨道同样会让成片没声音
       const level = hasAudio ? await probeAudioLevel(blob) : null
       const silent = !!level && !level.error && level.peak < 0.005
+      // 录制过短是"几 KB 成片 / 音轨静音 / 没有画面"的共同根因：
+      // 编码器初始化要几百毫秒，在这之前停录，产物就只剩 moov 骨架。
+      const tooShort = typeof durationMs === 'number' && durationMs < 1500
       const diag = [
+        ['录制时长', `${((durationMs || 0) / 1000).toFixed(2)}s${tooShort ? '（过短！）' : ''}`],
         ['录制模式', '直接全屏（固定输出档位）'],
         ['封装格式', ext.toUpperCase()],
-        ['送入音轨数', String(session.audioTrackCount)],
+        ['送入轨数(视/音)', `${session.videoTrackCount || 0}/${session.audioTrackCount}`],
+        ['产物含视频轨', tracks.video > 0 ? '是' : '否'],
         ['产物含音轨', hasAudio === null ? '未知' : hasAudio ? '是' : '否'],
+        ['首个样本数(stsz)', tracks.samples === null ? '—' : String(tracks.samples)],
         [
           '音轨峰值',
-          !level ? '—' : level.error ? '检测失败：' + level.error : level.peak.toFixed(4) + (silent ? '（静音！）' : '（有声）'),
+          !level
+            ? '—'
+            : level.error
+              ? '检测失败：' + level.error
+              : level.tooShort
+                ? '—（录制过短，未测）'
+                : level.peak.toFixed(4) + (silent ? '（静音！）' : '（有声）'),
         ],
+        ['首个数据块', firstChunkMs ? `${firstChunkMs}ms` : '未产出'],
+        ['录制器错误', recError || '无'],
         ['资源根目录', recRootRef.current ? '已获取' : '空'],
       ]
       const diagText = diag.map(([k, v]) => `  ${k}：${v}`).join('\n')
       console.warn('[ZT-Edit] 录屏自检\n' + diagText) // 用 warn：在 DevTools 里是黄色，不会被一堆日志淹掉
       // 同时显示到顶栏：不必人人都会开 DevTools，结果就该摆在能看到的地方
       setRecDiag({
-        ok: !silent && hasAudio !== false,
-        text: !level
-          ? hasAudio === false
-            ? '无音轨'
-            : '未检出音轨'
-          : level.error
-            ? '电平检测失败'
-            : `音轨峰值 ${level.peak.toFixed(3)}${silent ? '（静音）' : ''}`,
+        ok: !tooShort && !silent && hasAudio !== false && tracks.video > 0,
+        text: tooShort
+          ? `录制仅 ${((durationMs || 0) / 1000).toFixed(2)}s（过短）`
+          : !level
+            ? hasAudio === false
+              ? '无音轨'
+              : '未检出音轨'
+            : level.error
+              ? '电平检测失败'
+              : level.tooShort
+                ? '录制过短'
+                : `音轨峰值 ${level.peak.toFixed(3)}${silent ? '（静音）' : ''}`,
       })
       // 先落盘，再提示：静音/无音轨的告警是阻塞弹窗，放在保存前会卡死保存流程（实测踩坑）
       const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
@@ -541,15 +615,26 @@ export default function App() {
       } else {
         download(name, blob)
       }
-      if (hasAudio === false || silent) {
-        alert(
-          (silent ? '录到了音轨，但里面是静音数据。\n\n' : '这次录制没有录到声音。\n\n') +
-            diagText +
-            '\n\n常见原因：\n' +
+      if (tooShort || hasAudio === false || silent) {
+        const head = tooShort
+          ? `录屏在 ${((durationMs || 0) / 1000).toFixed(2)} 秒时就结束了，几乎没有内容。\n\n` +
+            '这不是声音的问题——视频/音频编码器初始化要几百毫秒，\n' +
+            '录制在此之前被停掉，产物就只剩一个几 KB 的空壳。\n\n'
+          : silent
+            ? '录到了音轨，但里面是静音数据。\n\n'
+            : '这次录制没有录到声音。\n\n'
+        const tips = tooShort
+          ? '常见原因：\n' +
+            '1) 捕获轨在全屏切换余波中失效（最常见）——窗口刚全屏就立刻开始捕获所致\n' +
+            '2) 按了 Esc / 系统层停止共享，录制随之结束\n' +
+            '3) MediaRecorder 启动即报错（见上方「录制器错误」）\n\n'
+          : '常见原因：\n' +
             '1) 「资源根目录」为空 → 退回兜底模式，音轨改从编辑器内页面取\n' +
             '   （多为刷新后从旧草稿恢复，重新点一次「选择 HTML 文件」即可）\n' +
             '2) 页面里没有 <audio> 元素，或音频文件没加载成功\n' +
-            '3) 录制期间页面音频处于静音状态\n\n' +
+            '3) 录制期间页面音频处于静音状态\n\n'
+        alert(
+          head + diagText + '\n\n' + tips +
             `视频已保存，可直接检查：${recRootRef.current ? recRootRef.current + '\\' + name : name}`
         )
       }

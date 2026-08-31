@@ -170,34 +170,49 @@ export async function startRecording(iframeEl, opts) {
     mime ? { mimeType: mime, videoBitsPerSecond: bitrate } : undefined
   )
   const chunks = []
+  // 编码器初始化需要几百毫秒，这期间产不出任何样本。
+  // 录制若在这之前就被停掉，成片只有 moov 骨架、没有 vide trak —— 表现为"几 KB 的 mp4"。
+  // 所以录制时长必须作为自检第一项，它比音轨电平更能说明问题。
+  const startedAt = performance.now()
+  let recError = null
+  let firstChunkAt = 0
   rec.ondataavailable = (e) => {
-    if (e.data && e.data.size) chunks.push(e.data)
+    if (e.data && e.data.size) {
+      if (!firstChunkAt) firstChunkAt = performance.now()
+      chunks.push(e.data)
+    }
   }
   rec.onerror = (e) => {
     const err = e && e.error
-    console.error(
-      '[ZT-Edit] MediaRecorder 错误：' +
-        (err ? `${err.name}: ${err.message}` : String(e))
-    )
+    recError = err ? `${err.name}: ${err.message}` : String(e)
+    console.error('[ZT-Edit] MediaRecorder 错误：' + recError)
   }
   rec.onstop = () => console.warn(`[ZT-Edit] 录制器停止：共 ${chunks.length} 块数据`)
   rec.start(1000)
   console.warn(
     `[ZT-Edit] 录制器已启动 [${fixedTier ? '固定档' : '原生直出'}] 输出=${W}x${H} 源=${vw}x${vh} ` +
-      `mime=${mime || '默认'} bitrate=${bitrate}`
+      `mime=${mime || '默认'} bitrate=${bitrate} 送入轨数(v/a)=${outStream.getVideoTracks().length}/${outStream.getAudioTracks().length}`
   )
 
-  // 用户在系统 UI 上主动停止了共享 → 视同停止录制
+  // 用户在系统 UI 上主动停止了共享 → 视同停止录制。
+  // 带上"距启动多少毫秒"：全屏切换的余波会让捕获轨在录制刚起步时就 ended，
+  // 与用户真的手动停止共享是两种完全不同的情况，调用方据此区分处理。
   let onInactive = null
   const inactivePromise = new Promise((r) => { onInactive = r })
-  displayStream.getVideoTracks()[0]?.addEventListener('ended', () => onInactive && onInactive())
+  displayStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+    const at = Math.round(performance.now() - startedAt)
+    console.warn(`[ZT-Edit] 捕获轨 ended，距录制启动 ${at}ms`)
+    if (onInactive) onInactive(at)
+  })
 
   return {
     canvas,
     direct: true,
     // 真正送进 MediaRecorder 的音轨数：0 就说明这趟注定没声音，调用方据此告警
     audioTrackCount: outStream.getAudioTracks().length,
-    // 用户在系统层面停止共享时轨道会 ended，调用方据此兜底结束录制
+    videoTrackCount: outStream.getVideoTracks().length,
+    // 用户在系统层面停止共享时轨道会 ended，调用方据此兜底结束录制。
+    // resolve 值是该事件距录制启动的毫秒数
     onExternalStop: inactivePromise,
     stop: () =>
       new Promise((resolve) => {
@@ -207,7 +222,13 @@ export async function startRecording(iframeEl, opts) {
           try { displayStream.getTracks().forEach((t) => t.stop()) } catch (e) {}
           try { outStream.getTracks().forEach((t) => t.stop()) } catch (e) {}
           const ext = mime && mime.indexOf('mp4') >= 0 ? 'mp4' : 'webm'
-          resolve({ blob: new Blob(chunks, { type: mime || 'video/webm' }), ext })
+          resolve({
+            blob: new Blob(chunks, { type: mime || 'video/webm' }),
+            ext,
+            durationMs: Math.round(performance.now() - startedAt),
+            recError,
+            firstChunkMs: firstChunkAt ? Math.round(firstChunkAt - startedAt) : 0,
+          })
         }
         if (rec.state === 'inactive') finish()
         else {

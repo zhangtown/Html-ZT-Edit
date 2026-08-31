@@ -314,6 +314,41 @@ function destroyRecWindow() {
   }
 }
 
+// 等窗口真正进入全屏并稳定下来。
+// 为什么需要它：setFullScreen() 返回时窗口往往还在做样式重建与 DWM 重新合成，
+// 这段余波会持续数百毫秒。要是刚调完就立刻 getDisplayMedia 建立捕获，
+// 捕获源会在余波末尾失效（video track ended），录制只跑 100 多毫秒就收摊——
+// H.264/AAC 编码器那点初始化时间根本不够，产物就只剩一个几 KB 的 moov 空壳
+// （没有 vide trak、音频 sample_count=0，表面看像是"音轨静音"，实为秒停）。
+// 所以这里等 enter-full-screen 事件落地，再多给一拍余量。
+function waitFullscreenSettled(win, timeoutMs) {
+  return new Promise((resolve) => {
+    let settled = false
+    let timer = null
+    const onEnter = () => settle()
+    function settle() {
+      if (settled) return
+      settled = true
+      if (timer) clearTimeout(timer)
+      try { win.removeListener('enter-full-screen', onEnter) } catch (e) {}
+      // 事件落地后 DWM 通常还有最后一波合成，再留 250ms
+      setTimeout(resolve, 250)
+    }
+    timer = setTimeout(settle, timeoutMs || 2000)
+    try {
+      // 已经是全屏状态就不会再有 enter 事件，直接走余量等待
+      if (win.isFullScreen()) {
+        clearTimeout(timer)
+        timer = setTimeout(settle, 100)
+        return
+      }
+      win.on('enter-full-screen', onEnter)
+    } catch (e) {
+      settle()
+    }
+  })
+}
+
 function registerIpc() {
   ipcMain.handle('zt:open-html-folder', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
@@ -375,14 +410,18 @@ function registerIpc() {
   // UI 靠这个把录不到的档位置灰。
   // 直接全屏录屏：录制前主窗口全屏（画面=窗口内容，原生分辨率），结束后退出全屏。
   // 全屏时必须把菜单栏一并藏掉，否则 File/Edit 那条会被录进画面（Windows 实测踩坑）。
-  ipcMain.handle('zt:set-fullscreen', (event, on) => {
+  ipcMain.handle('zt:set-fullscreen', async (event, on) => {
     try {
       if (mainWin && !mainWin.isDestroyed()) {
         mainWin.setFullScreen(!!on)
         mainWin.setMenuBarVisibility(!on)
-        if (on) mainWin.setAutoHideMenuBar(true)
+        // 进全屏要等它真正落定再交回控制权：见 waitFullscreenSettled 的注释
+        if (on) {
+          mainWin.setAutoHideMenuBar(true)
+          await waitFullscreenSettled(mainWin)
+        }
       }
-      return { ok: true }
+      return { ok: true, settled: !!on }
     } catch (e) {
       return { ok: false, error: String(e && e.message) }
     }

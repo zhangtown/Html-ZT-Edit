@@ -6,7 +6,7 @@
 全程本地运行、绝不联网；Electron 打包成免安装 Windows 程序。
 
 ## 技术栈
-Vite 5 + React 18（纯前端无后端）+ Electron 29 桌面壳 + IndexedDB 草稿。
+Vite 5 + React 18（纯前端无后端）+ Electron 31.7.7 桌面壳 + IndexedDB 草稿。
 
 ## 架构（改代码前必读）
 - **父窗口** `src/App.jsx`（~2270 行）：工具栏 / 属性面板 / 图层 / 时间轴 / 消息中转 / 草稿 / 导出 / 录屏调度。
@@ -15,7 +15,7 @@ Vite 5 + React 18（纯前端无后端）+ Electron 29 桌面壳 + IndexedDB 草
 - 二者通过 `postMessage` 通信；父端 `send(msg)`，iframe 内 `post(msg)`，消息类型集中在
   App.jsx 的 `onMessage` 与 runtime 的 `init()` 里（改动要两端同步）。
 - 辅助模块：`loadFolder.js`（文件夹选择/相对路径解析）、`htmlProcess.js`（剥脚本/资源 blob 重写/导出还原/播放脚本生成）、
-  `draftStore.js`（IndexedDB）、`recorder.js`（getDisplayMedia → canvas 裁剪 → MediaRecorder）。
+  `draftStore.js`（IndexedDB）、`recorder.js`（v3.1：主窗口全屏 → getDisplayMedia 捕获 → canvas 补 16 对齐 → MediaRecorder）。
 - **`src/animEffects.js`（2026-08-29 新增）：动画效果清单 + 引擎源码的唯一出处。**
   预览 / 导出脚本 / 播放录屏 三端全部消费它。改动画只改这个文件，改完跑 `npm run check:anim`。
   引擎源码经 App postMessage 下发（runtime 是 `?raw` 注入的纯脚本，不能 import）。
@@ -45,19 +45,46 @@ Vite 5 + React 18（纯前端无后端）+ Electron 29 桌面壳 + IndexedDB 草
 - `vite.config.js` 设了 `emptyOutDir: false` → `dist/` 会堆积历史产物（曾累到 26 个 js / 5.6MB），
   而 electron-builder 按 `dist/**/*` 全量打包。**打包前先 `rm -rf dist && npm run build`**。
 - 改主进程（`electron/main.cjs`、`preload.cjs`）需重启 dev:electron；`src/` 走 HMR。
+- **【录屏秒停】`setFullScreen()` 返回 ≠ 全屏已稳定**（2026-08-31 实测）：
+  窗口样式重建 + DWM 重新合成的余波有数百 ms~1s，此时建捕获会让它 `ended`，
+  录制只跑 100 多 ms → 编码器来不及初始化 → 产物是几 KB 空壳。
+  必须等 `enter-full-screen` 事件落地再留余量（`waitFullscreenSettled()`）。
+- **【录屏自检别信弹窗】判断产物有没有内容，要用 MP4 的 hdlr/stsz，不能用字符串匹配**（2026-08-31）：
+  空壳成片的 moov 里照样写着 `mp4a` 的 stsd 骨架，正则 `/mp4a|soun/` 会误报「含音轨」，
+  于是现象被误读成「音轨静音」，排查方向整个跑偏。
+  正确做法是数 `hdlr` 的 handler_type（vide/soun）+ 读 `stsz` 的 sample_count。
+  **排查录屏问题第一件事：解产物 MP4 看 mvhd duration 和 trak 列表。**
 
 ## 调试方式
 - 桌面端窗口按 **F12** 或 **Ctrl+Shift+I** 开合 DevTools。快捷键在 `main.cjs` 的
   `webContents.on('before-input-event')` 里显式注册 —— Electron 默认菜单并不保证带这些键，
   不注册的话 F12 常常没反应。
-- 录屏产物若没音轨，App 会在保存前弹「录屏自检」信息（录制模式/格式/送入音轨数/root 状态），
-  排查静音问题先看这个弹窗，其次看 console 里的 `[ZT-Edit] 录屏自检`。
+- 录屏出问题时 App 会弹「录屏自检」，结果同时显示在顶栏（不必开 DevTools），
+  console 里也有 `[ZT-Edit] 录屏自检`。但**先看「录制时长」这一项**——
+  过短（<1.5s）就说明是秒停，不是声音问题，见「已知坑」的【录屏自检别信弹窗】条。
+- 解 MP4 结构排查（mvhd duration / hdlr handler_type / stsz sample_count）可直接用 python，
+  H.264 的 box 顺序是 `ftyp moov(trak→mdia→minf→stbl) mdat`。
 - 国内镜像地址（**已实测可达，别改成 README 里那种旧写法**）：
   `ELECTRON_MIRROR=https://registry.npmmirror.com/-/binary/electron/`
   `ELECTRON_BUILDER_BINARIES_MIRROR=https://registry.npmmirror.com/-/binary/electron-builder-binaries/`
   旧写法 `https://npmmirror.com/mirrors/electron-builder-binary/` 会 302 跳到 HTML 索引页，不是二进制目录。
 
-### 录屏（v2 离屏架构，Electron 31.7.7）
+### 录屏 v3.1（当前在用：直接全屏，Electron 31.7.7）
+- 唯一路径：主窗口全屏 → `getDisplayMedia` 捕获主窗口 → canvas 补 16 对齐 → MediaRecorder 直出 mp4。
+  默认**原生分辨率直出**（零缩放零黑边，对标 Game Bar），选固定档才重采样。
+  `directRec` CSS 类隐藏全部编辑器 UI + 鼠标，只响应 Esc。
+- **音轨来自编辑器 iframe 内的 `<audio>`**（WebAudio `createMediaElementSource` → MediaStreamDestination），
+  不用窗口捕获的音频轨（实测是静音数据）。元素一播放就出帧，且必须与画面同源。
+- `.zt-direct-rec` 只做 CSS 覆盖，**绝不能卸载/隐藏 iframe**（会重载打断播放）。
+- 全屏时序见「已知坑」的【录屏秒停】条；`onExternalStop` 有 1.5s 保护窗，
+  起步 1.5s 内轨 ended 一律视为全屏余波误触发并忽略。
+- 自检面板项：录制时长 / 送入轨数 / 产物含视频轨 / stsz 样本数 / 音轨峰值 / 首个数据块 / 录制器错误。
+- 若出现「时长正常但产物含视频轨=否」→ H.264 High profile(`avc1.640028`) 编码器不可用，
+  把 `recorder.js` 的 `pickMime()` 首选降到 Baseline(`42E01E`)。
+
+### 录屏 v2 离屏架构【已废弃，仅留作历史经验】
+（离屏定尺寸隐藏窗口方案已弃用：第三方播放脚本在离屏页里时序不可控，画面冻结在第一页。
+下列条目中，只有「AudioContext/MP4 支持/编解码器」几条对 v3 仍有效。）
 - **必须保留 `autoplay-policy=no-user-gesture-required`**：离屏页播放由 IPC 触发、无用户手势，
   否则 Chromium 拦掉 `audio.play()`，时间轴不走、只能录到静止首屏。
 - 取页面用 `requestSerialize` 而非 `requestExport`：后者执行 `exportClean()` 摘掉编辑器样式/脚本，**破坏编辑态**。
