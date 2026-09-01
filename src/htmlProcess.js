@@ -121,6 +121,19 @@ export function restoreAndWrap(iframeHtml, relMap, scripts, mapValue) {
   // 注入聚焦强调效果所需 CSS（确保导出后 focus-group 联动可用）
   var headEl = doc.head || doc.documentElement
   headEl.insertAdjacentHTML('beforeend', '<style>' + FOCUS_CSS + '</style>')
+  // 补回焦点组：源 HTML 里 focus-zoom 等焦点元素天然被 .focus-group 容器包着
+  // （tl-row / img-row / flow-chart / media-grid 等直接带 focus-group 类），激活时才能走
+  // 「光晕 + transition 平滑过渡 + 同组其他元素 dim-others 变暗」的组效果。
+  // 但序列化/导出时这个组信息会丢（编辑器运行时建组、或 DOM 重排），导致导出产物里焦点元素裸奔、
+  // 只能走兜底规则（旧版带 outline 红线框且无 transition）→ 录制画面出现「红线框 + 无过渡」。
+  // 这里在生成产物前，给每个 focus-* 元素的父容器补上 focus-group 类，对齐源 HTML 行为。
+  // 注：只针对 data-zt-anim-effect 以 focus- 开头的元素（wipe/zoom-in 等非焦点类不带组，不动其父）。
+  try {
+    doc.querySelectorAll('[data-zt-anim-effect^="focus-"]').forEach(function (el) {
+      var p = el.parentElement
+      if (p && !p.classList.contains('focus-group')) p.classList.add('focus-group')
+    })
+  } catch (e) {}
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML
 }
 
