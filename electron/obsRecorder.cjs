@@ -31,9 +31,7 @@ const os = require('os')
 const { spawn, spawnSync } = require('child_process')
 
 const SCENE_NAME = 'ZT-录制'                 // 全自动维护的专用场景
-const WIN_SOURCE = 'zt-window'               // 窗口捕获源（指向 ztEdit 主窗口 / 系统浏览器窗口）
 const BROWSER_SOURCE = 'zt-html'             // OBS 原生浏览器源（HTML 直接交给 OBS 内置 CEF 渲染）
-const AUDIO_SOURCE = 'zt-desktop-audio'      // 场景/全局都没音源时自动补的「桌面音频」
 
 // 场景里能出画面的源类型（一个都没有 → 录出来是黑屏）
 const VIDEO_KINDS = [
@@ -45,8 +43,6 @@ const VIDEO_KINDS = [
 const AUDIO_KINDS = [
   'wasapi_output_capture', 'wasapi_input_capture', 'wasapi_process_output_capture', 'browser_source',
 ]
-// 能录到「系统/应用播放出来的声音」的源类型（页面 <audio> 的声音只走这几类）
-const DESKTOP_AUDIO_KINDS = ['wasapi_output_capture', 'wasapi_process_output_capture']
 
 let obs = null            // OBSWebSocket 实例（单例）
 let connected = false
@@ -260,135 +256,8 @@ async function ensureScene(name) {
 }
 
 // ---------------------------------------------------------------------------
-// 窗口识别 + 窗口捕获源
+// OBS 原生浏览器源（HTML 直接交给 OBS 内置 CEF 渲染）
 // ---------------------------------------------------------------------------
-
-// OBS 能捕获的窗口列表。itemValue 形如 "标题:窗口类:可执行文件名"，
-// 这个字符串是唯一能喂回 SetInputSettings 的标识，绝不能自己拼。
-//
-// 关键坑（用户实测踩过）：obs-websocket 5.7+ 的 GetInputPropertiesListPropertyItems
-// 不再接受 inputKind，必须传一个已存在的 input 的 inputName（配合可选 propertyName）。
-// 所以这里先建一个临时 window_capture 输入当载体，枚举完立即删掉——
-// 否则会报 "must contain at least one of: inputName ... or inputUuid"。
-async function listWindows() {
-  const o = getObs()
-  const r = await connect()
-  if (!r.ok) return r
-  const tmpName = 'zt-tmp-wincap-' + Date.now()
-  let created = false
-  try {
-    await o.call('CreateInput', {
-      sceneName: SCENE_NAME,
-      inputName: tmpName,
-      inputKind: 'window_capture',
-      inputSettings: {},
-    })
-    created = true
-    const p = await o.call('GetInputPropertiesListPropertyItems', {
-      inputName: tmpName,
-      propertyName: 'window',
-    })
-    const items = (p.propertyItems || [])
-      .map((x) => ({ name: x.itemName || '', value: x.itemValue || '' }))
-      .filter((x) => x.value)
-    return { ok: true, windows: items }
-  } catch (e) {
-    return { ok: false, error: '读取可捕获窗口列表失败：' + ((e && e.message) || e) }
-  } finally {
-    if (created) {
-      try { await o.call('RemoveInput', { inputName: tmpName }) } catch (e) {}
-    }
-  }
-}
-
-// 自动认出目标窗口：以主进程传来的标题为准，逐级放宽。
-// 两种模式：
-//   - 默认（录制 ztEdit 主窗口）：按标题匹配、或名字像 ztEdit。
-//   - captureMode==='browser'（录制落盘的临时 HTML，用系统浏览器打开）：
-//     优先匹配浏览器进程（msedge/chrome/...），因为 Edge 全屏窗口的标题是页面 <title>，
-//     不保证等于临时文件名，按 exe 识别最稳。
-async function autoPickWindow(title, opt = {}) {
-  const r = await listWindows()
-  if (!r.ok) return r
-  const list = r.windows || []
-  if (!list.length) return { ok: false, error: 'OBS 返回的可捕获窗口列表为空（OBS 可能刚启动，或运行在无窗口采集权限的会话里）。' }
-  const t = String(title || '').trim()
-  const preferExe = opt && opt.preferExe
-  const score = (w) => {
-    const n = w.name || ''
-    const v = w.value || ''
-    if (preferExe && preferExe.test(v)) return 0                // 浏览器模式：优先匹配浏览器 exe（itemValue 形如 "标题:类:msedge.exe"）
-    if (t && n === t) return 1                                  // 标题完全一致
-    if (t && v.indexOf(t) >= 0) return 2                        // 标识串里含标题
-    if (t && n.indexOf(t) >= 0) return 3                        // 窗口名包含标题
-    if (/html-ztedit|ztedit|zt-edit/i.test(n)) return 4         // 名字像 ztEdit
-    if (/electron\.exe/i.test(v)) return 5                      // Electron 进程
-    return 99
-  }
-  let best = null
-  let bestScore = 99
-  for (const w of list) {
-    const s = score(w)
-    if (s < bestScore) { bestScore = s; best = w }
-  }
-  if (!best) {
-    return {
-      ok: false,
-      error:
-        `没能在 OBS 的窗口列表里认出 ztEdit 主窗口（预期标题含「${t || '（未知）'}」）。\n` +
-        `OBS 现在能看到的窗口：${list.slice(0, 12).map((w) => w.name).join('、')}`,
-    }
-  }
-  return { ok: true, value: best.value, name: best.name, score: bestScore }
-}
-
-// 建/更新「窗口捕获」源并铺满画布 —— 这就是"把画面送进 OBS 场景"的环节。
-// 用 bounds 铺满：不需要知道源原始尺寸，也不会出现"只录到左上角一部分"。
-async function ensureWindowCapture(sceneName, windowVal) {
-  const o = getObs()
-  let exists = false
-  try {
-    const si = await o.call('GetSceneItemId', { sceneName, sourceName: WIN_SOURCE })
-    exists = si.sceneItemId != null
-  } catch (e) {
-    exists = false
-  }
-
-  const settings = { window: windowVal, capture_cursor: false }
-  if (!exists) {
-    await o.call('CreateInput', {
-      sceneName,
-      inputName: WIN_SOURCE,
-      inputKind: 'window_capture',
-      inputSettings: settings,
-      setVisible: true,
-    })
-  } else {
-    await o.call('SetInputSettings', { inputName: WIN_SOURCE, inputSettings: settings })
-  }
-
-  try {
-    const v = await o.call('GetVideoSettings')
-    const si = await o.call('GetSceneItemId', { sceneName, sourceName: WIN_SOURCE })
-    if (si.sceneItemId != null) {
-      await o.call('SetSceneItemTransform', {
-        sceneName,
-        sceneItemId: si.sceneItemId,
-        sceneItemTransform: {
-          positionX: 0,
-          positionY: 0,
-          boundsType: 'OBS_BOUNDS_SCALE_INNER',
-          boundsAlignment: 0,
-          boundsWidth: v.baseWidth,
-          boundsHeight: v.baseHeight,
-        },
-      })
-    }
-  } catch (e) {
-    /* 变换失败不致命：源已在场景里，最多位置/尺寸不完美 */
-  }
-  return true
-}
 
 // 建/更新「OBS 原生浏览器源」：HTML 直接交给 OBS 内置 CEF 渲染，无需临时窗口/文件管理。
 // 浏览器源自带音轨（VIDEO_KINDS/AUDIO_KINDS 都已含 browser_source），所以不补桌面音频。
@@ -445,78 +314,6 @@ async function getSourceSize(sceneName, sourceName) {
 }
 
 // ---------------------------------------------------------------------------
-// 音频
-// ---------------------------------------------------------------------------
-
-// OBS 录制的是混音总输出，只要 profile 里存在任意一个音频输入就会入混，
-// 不必挂在要录的场景下。所以这里查的是全局输入列表。
-async function hasAnyAudio() {
-  const o = getObs()
-  try {
-    const l = await o.call('GetInputList')
-    return (l.inputs || []).some((i) => AUDIO_KINDS.indexOf(i.inputKind) >= 0)
-  } catch (e) {
-    return false
-  }
-}
-
-// 只认「能录到系统播放声音」的音源：桌面音频 / 应用音频捕获。
-//
-// 坑（用户实测"成片完全没声音"）：绝不能用 hasAnyAudio() 当放行条件。
-// OBS 默认配置里往往已有一个麦克风（wasapi_input_capture），于是"存在任意音源"为真，
-// 就不补桌面音频了 —— 但麦克风录的是人声，页面 <audio> 的声音走的是系统回放，
-// 只有 wasapi_output_capture（桌面音频）才抓得到，结果就是成片彻底无声。
-async function hasDesktopAudio() {
-  const o = getObs()
-  try {
-    const l = await o.call('GetInputList')
-    return (l.inputs || []).some((i) => DESKTOP_AUDIO_KINDS.indexOf(i.inputKind) >= 0)
-  } catch (e) {
-    return false
-  }
-}
-
-// 一个音源都没有 → 自动补「桌面音频」（抓 Windows 系统回放，页面里 <audio> 的声音就在这里面）。
-// 用户若已在 OBS 配过桌面音频/麦克风，这里什么都不会加。
-async function ensureDesktopAudio(sceneName) {
-  const o = getObs()
-  let exists = false
-  try {
-    const l = await o.call('GetInputList')
-    exists = (l.inputs || []).some((i) => i.inputName === AUDIO_SOURCE)
-  } catch (e) {
-    exists = false
-  }
-  if (!exists) {
-    try {
-      await o.call('CreateInput', {
-        sceneName,
-        inputName: AUDIO_SOURCE,
-        inputKind: 'wasapi_output_capture',
-        inputSettings: {},
-        setVisible: true,
-      })
-      // 新建的音源可能被静音/音量 0 —— 不解掉照样录不出声音
-      try { await o.call('SetInputMute', { inputName: AUDIO_SOURCE, inputMuted: false }) } catch (e) {}
-      return 'added'
-    } catch (e) {
-      throw new Error('创建「桌面音频」源失败：' + ((e && e.message) || e))
-    }
-  }
-  try { await o.call('SetInputMute', { inputName: AUDIO_SOURCE, inputMuted: false }) } catch (e) {}
-  // 源已存在但不在本场景 → 挂进来（音源挂在场景里才会随场景激活）
-  try {
-    const si = await o.call('GetSceneItemId', { sceneName, sourceName: AUDIO_SOURCE })
-    if (si.sceneItemId == null) throw new Error('not in scene')
-  } catch (e) {
-    try {
-      await o.call('CreateSceneItem', { sceneName, sourceName: AUDIO_SOURCE, setVisible: true })
-    } catch (e2) { /* 挂不进去也不致命，全局音源照样入混 */ }
-  }
-  return 'exists'
-}
-
-// ---------------------------------------------------------------------------
 // 体检 / 画布
 // ---------------------------------------------------------------------------
 
@@ -562,8 +359,9 @@ async function fitVideo(width, height) {
 // ---------------------------------------------------------------------------
 
 // 开始录制。opts:
-//   { outdir, windowTitle, width, height, autoFit }
+//   { outdir, browserUrl, width, height, maxWidth, autoFit }
 //   outdir 必填——成片直接落在当前编辑的 HTML 所在目录。
+//   仅 OBS 原生浏览器源模式：browserUrl 为落盘的 录屏源.html 的 file:// 地址。
 async function start(opts) {
   const a = opts || {}
   // 连接不上就自动拉起 OBS（首次会搜路径并固化到 OBS_EXE 环境变量，下次免搜）
@@ -575,20 +373,18 @@ async function start(opts) {
   if (!outdir) return { ok: false, error: '没有拿到 HTML 所在目录，无法决定成片存哪。请重新点一次「选择 HTML 文件」。' }
   try { fs.mkdirSync(outdir, { recursive: true }) } catch (e) {}
 
-  try {
-    // 1) 专用场景
-    await ensureScene(SCENE_NAME)
+    try {
+      // 1) 专用场景
+      await ensureScene(SCENE_NAME)
 
-    // 2) + 3) + 4) 画面源与音频：按 captureMode 分流
-    const maxW = parseInt(a.maxWidth || process.env.OBS_MAX_WIDTH || 1920, 10)
-    const even = (n) => Math.max(2, Math.round(n / 2) * 2)
-    let fit = null
-    let audio = 'exists'
-    if (a.captureMode === 'obs-browser-source') {
+      // 2) + 3) + 4) 画面源与音频（仅 OBS 原生浏览器源模式）
+      const maxW = parseInt(a.maxWidth || process.env.OBS_MAX_WIDTH || 1920, 10)
+      const even = (n) => Math.max(2, Math.round(n / 2) * 2)
+      let fit = null
+      let audio = 'exists'
       // ── OBS 原生浏览器源模式 ──
       // HTML 直接交给 OBS 内置 CEF 渲染：无临时窗口、无临时文件生命周期、分辨率=我们设的画布。
-      // 浏览器源自带音轨，不补桌面音频（避免声音翻倍）。这是比"捕获 Edge 窗口"更稳的路线，
-      // 但依赖 OBS 的 CEF 能跑你的播放引擎（尤其 audio 自动播放）——需在装 OBS 的机器上实测。
+      // 浏览器源自带音轨，不补桌面音频（避免声音翻倍）。
       if (!a.browserUrl) return { ok: false, error: '浏览器源模式缺少 HTML 地址（browserUrl）。' }
       const bw = parseInt(a.width, 10) || 1920
       const bh = parseInt(a.height, 10) || 1080
@@ -599,57 +395,6 @@ async function start(opts) {
       if (w && h) fit = await fitVideo(w, h)
       audio = 'browser-source'
       a.windowTitle = '' // 浏览器源模式不需要匹配窗口标题
-    } else {
-      // ── 窗口捕获模式（兜底，默认已切到 OBS 浏览器源）：录制 ztEdit 主窗口 或 系统浏览器窗口 ──
-      // 2) 自动认窗口 + 建窗口捕获源（缺了它就是黑屏）
-      //    浏览器模式：优先按 exe 认出 msedge/chrome 等（Edge 全屏窗口标题是页面 title，未必等于临时文件名）。
-      const pw = await autoPickWindow(a.windowTitle, a.captureMode === 'browser'
-        ? { preferExe: /msedge\.exe|chrome\.exe|brave\.exe|firefox\.exe|edge\.exe|opera\.exe|iexplore\.exe/i }
-        : {})
-      if (!pw.ok) return pw
-      await ensureWindowCapture(SCENE_NAME, pw.value)
-
-      // 3) 画布对齐到「窗口捕获源的真实像素尺寸」，1:1 不缩放。
-      //    以前用的是整块显示器尺寸（比窗口大）→ OBS 把窗口放大铺满画布 → 成片异常模糊。
-      if (a.autoFit !== false) {
-        try {
-          await wait(700) // 窗口捕获源要一两帧才量得到真实尺寸
-          const sz = await getSourceSize(SCENE_NAME, WIN_SOURCE)
-          let w = (sz && sz.width) || parseInt(a.width, 10)
-          let h = (sz && sz.height) || parseInt(a.height, 10)
-          if (w > maxW) { h = Math.round((h * maxW) / w); w = maxW }
-          w = even(w)
-          h = even(h)
-          if (w && h) {
-            fit = await fitVideo(w, h)
-            // 画布尺寸可能刚变过，重铺一次：左上角对齐 + bounds 等于源尺寸（即 1:1）
-            const si = await o.call('GetSceneItemId', { sceneName: SCENE_NAME, sourceName: WIN_SOURCE })
-            if (si.sceneItemId != null) {
-              await o.call('SetSceneItemTransform', {
-                sceneName: SCENE_NAME,
-                sceneItemId: si.sceneItemId,
-                sceneItemTransform: {
-                  positionX: 0,
-                  positionY: 0,
-                  boundsType: 'OBS_BOUNDS_SCALE_INNER',
-                  boundsAlignment: 0,
-                  boundsWidth: w,
-                  boundsHeight: h,
-                },
-              })
-            }
-          }
-        } catch (e) { /* 不致命 */ }
-      }
-
-      // 4) 音频兜底：必须确认存在「桌面音频」这类能抓系统回放的源。
-      //    用 hasAnyAudio() 会被 OBS 自带的麦克风骗过去 → 成片无声。
-      try {
-        if (!(await hasDesktopAudio())) audio = await ensureDesktopAudio(SCENE_NAME)
-      } catch (e) {
-        audio = 'failed: ' + ((e && e.message) || e)
-      }
-    }
 
     // 5) 切场景 + 起录前体检（没视频源 = 黑屏，直接拦下而不是录完才发现）
     await o.call('SetCurrentProgramScene', { sceneName: SCENE_NAME })
@@ -703,7 +448,7 @@ async function start(opts) {
     return {
       ok: true,
       scene: SCENE_NAME,
-      window: a.captureMode === 'obs-browser-source' ? 'OBS 浏览器源' : (pw && pw.name),
+      window: 'OBS 浏览器源',
       captureMode: a.captureMode,
       outdir,
       fit,
@@ -835,6 +580,6 @@ async function disconnect() {
 
 module.exports = {
   SCENE_NAME,
-  connect, ensureOBSRunning, resolveObsExe, start, stop, status, listScenes, listWindows, sceneHealth,
+  connect, ensureOBSRunning, resolveObsExe, start, stop, status, listScenes, sceneHealth,
   disconnect, isConnected: () => connected,
 }

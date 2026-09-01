@@ -135,6 +135,11 @@ function generatePlaybackScript(scripts, iframeHtml) {
 
   return `
 (function(){
+// OBS 浏览器源（CEF offscreen）会把 requestAnimationFrame 节流到≈0，导致 loop() 只跑一帧就冻结，
+// 而 audio.play() 由音频线程独立推进 → 录屏「画面不动、声音正常」。这里注入 rAF→setTimeout 垫片：
+// 在 OBS 里 loop 改走 33ms 定时器持续推进画面；真实 Edge 里 rAF 本就正常，垫片不影响其行为。
+(function(){if(window.__ztRafShim)return;window.__ztRafShim=1;var __ztRealRaf=window.requestAnimationFrame;window.requestAnimationFrame=function(cb){return setTimeout(function(){cb(performance.now?performance.now():Date.now())},33)};window.cancelAnimationFrame=function(id){clearTimeout(id)};})();
+
 ${animEngineSource()}
 
 ${slideTimingsStr}
