@@ -1871,6 +1871,10 @@
 
   // ---- 序列化（供草稿保存，保留编辑器样式/选择类，由父窗口剥离）----
   function serialize() {
+    // 序列化前先清掉选中态：否则 zt-selected 类（编辑器选中红框）会被烤进导出的 HTML，
+    // 录制/导出画面里一直留着选中框。放在读取 DOM 之前同步执行，杜绝「外部先发 deselect、
+    // 但 serialize 先读到旧 DOM」的竞态（之前靠 App 先后发两条 postMessage 会偶发残留）。
+    deselectAll()
     post({ type: 'serialize', html: document.documentElement.outerHTML, current: current })
   }
 

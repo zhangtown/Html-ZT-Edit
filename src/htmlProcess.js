@@ -80,7 +80,7 @@ export function stripEditorParts(html) {
 
 // 导出：把 iframe 回传的 html 中的 blob URL 恢复为原始相对引用，
 // 并把脚本片段还原回 body，最后包裹成完整文档
-const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n/* 组外被绑元素的独立强调：导出 HTML 里 focus-item 往往不被 .focus-group 包裹（编辑器运行时才建组），\n   激活也要有「放大+红色光晕」的正确视觉效果，而不是只剩裸 outline 红框。\n   组内规则优先级更高（带 .focus-group.dim-others 前缀），这条做兜底。 */\n.zt-focus-active{outline:2px solid rgba(196,30,36,.5);outline-offset:2px;opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 40px rgba(196,30,36,.4);z-index:3}\n.zt-hl-sweep{position:relative}\n.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}\n.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}\n'
+const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n/* 组外被绑元素的独立强调：导出 HTML 里 focus-item 往往不被 .focus-group 包裹（编辑器运行时才建组），\n   激活也要有「放大+红色光晕」的正确视觉效果，而不是只剩裸 outline 红框。\n   组内规则优先级更高（带 .focus-group.dim-others 前缀），这条做兜底。 */\n.zt-focus-active{opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 50px rgba(196,30,36,.55);z-index:3}\n.zt-hl-sweep{position:relative}\n.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}\n.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}\n'
 
 // 录屏专用 mapper：把相对引用改写成 file:// 绝对地址。
 // 录屏页是系统临时目录里的 HTML，只有指回磁盘原位置才能加载到图片/音频。
@@ -258,6 +258,17 @@ document.addEventListener('click',function(e){
 
 // 手动翻页时清除动画状态
 var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');el.classList.remove('zt-hl-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
+
+// 首屏入场：源 HTML 的首屏 .slide 往往写死 class="slide active"，导致 .slide 的
+// translateX(30px)→0 滑入过渡在「加载即终态」时不触发（同步 remove+add 不重启动画）。
+// 这里先清掉所有 active，再跨两帧把首屏 active 加回，强制触发滑入过渡（与源预览一致）。
+// 在 load 前就排好，双击打开 / OBS 加载时封面都能正常滑入；时间轴动画仍等播放才开始。
+;(function(){try{
+  slides.forEach(function(s){s.classList.remove('active')});
+  requestAnimationFrame(function(){requestAnimationFrame(function(){
+    if(!document.querySelector('.slide.active'))showSlide(0)
+  })})();
+}catch(e){}})();
 
 window.addEventListener('load',function(){setTimeout(startPlayback,300)});
 
