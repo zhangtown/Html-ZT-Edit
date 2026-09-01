@@ -146,7 +146,7 @@ export default function App() {
   // OBS 系统级录制（全自动一键，成片直接落在当前 HTML 所在目录）
   const [obsRec, setObsRec] = useState({ recording: false, msg: '', filePath: '' })
   const [obsInteractDelay, setObsInteractDelay] = useState(0) // OBS 起播/导出 HTML 的「音频开始延迟」（秒，0.3 起即几百 ms 量级）：进画面先放首屏动画，N 秒后才出音频
-  const [obsCaptureMode, setObsCaptureMode] = useState('browser') // OBS 录制方式：'browser'=系统浏览器窗口被 OBS 捕获；'obs-browser-source'=HTML 直接交给 OBS 内置 CEF 渲染（无临时窗口/文件管理）
+  const [obsCaptureMode, setObsCaptureMode] = useState('obs-browser-source') // OBS 录制方式：默认用 OBS 原生浏览器源（无临时窗口/文件）；'browser'=系统浏览器窗口被 OBS 捕获（仅作 CEF 自动播放失败时的兜底）
   const obsRecRef = useRef(obsRec) // 异步/守卫里读最新值
   // 「录制 + 播放」联动标记：由「● OBS 录制」一键拉起的这次录制，播放结束要自动停录。
   // 单独点「▶ 本页预览」播放时不置位，播完不会误停正在进行的录制。
@@ -904,8 +904,8 @@ export default function App() {
                 disabled={obsRec.recording}
                 style={{ ...btn('#374151'), minWidth: 120 }}
               >
-                <option value="browser">浏览器窗口</option>
                 <option value="obs-browser-source">OBS 浏览器源</option>
+                <option value="browser">浏览器窗口（兜底）</option>
               </select>
             </label>
             <button

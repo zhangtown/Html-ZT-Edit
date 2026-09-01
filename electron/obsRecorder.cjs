@@ -600,7 +600,7 @@ async function start(opts) {
       audio = 'browser-source'
       a.windowTitle = '' // 浏览器源模式不需要匹配窗口标题
     } else {
-      // ── 窗口捕获模式（默认）：录制 ztEdit 主窗口 或 系统浏览器窗口 ──
+      // ── 窗口捕获模式（兜底，默认已切到 OBS 浏览器源）：录制 ztEdit 主窗口 或 系统浏览器窗口 ──
       // 2) 自动认窗口 + 建窗口捕获源（缺了它就是黑屏）
       //    浏览器模式：优先按 exe 认出 msedge/chrome 等（Edge 全屏窗口标题是页面 title，未必等于临时文件名）。
       const pw = await autoPickWindow(a.windowTitle, a.captureMode === 'browser'
