@@ -285,7 +285,7 @@ function registerIpc() {
       // 停止录制后顺手关闭 OBS 进程：浏览器源是 OBS 内置 CEF 持续渲染，
       // 只停录制不关 OBS，HTML 会在场景里继续播放（动画/音频仍在跑）。
       let killed = null
-      try { killed = obsRecorder.killOBS() } catch (e) { killed = { ok: false, error: String(e && e.message) } }
+      try { killed = await obsRecorder.killOBS() } catch (e) { killed = { ok: false, error: String(e && e.message) } }
       if (r && typeof r === 'object') {
         r.obsKilled = killed
         r.msg = (r.msg ? r.msg + ' · ' : '') + (killed && killed.ok ? '已关闭 OBS' : '关闭 OBS 失败')

@@ -235,6 +235,27 @@ async function connect() {
 // 场景
 // ---------------------------------------------------------------------------
 
+// 清理录制环境：每次起录前把我们的专用场景「ZT-录制」整个删掉重建，
+// 清掉上一次（尤其是被强杀/中断）残留的场景与源，避免多次录制把源叠在一起 → 成片双画面/双音。
+// OBS 不允许直接删「当前场景」或「唯一场景」，所以先切到一个备胎场景再删。
+async function cleanEnvironment() {
+  const o = getObs()
+  const s = await o.call('GetSceneList')
+  const names = (s.scenes || []).map((x) => x.sceneName || x.name).filter(Boolean)
+  if (names.indexOf(SCENE_NAME) < 0) return // 本就没有，无需清理
+  // 备胎场景：没有就建一个，保证能切走再删 ZT-录制
+  let other = names.find((n) => n !== SCENE_NAME)
+  if (!other) {
+    const fb = 'ZT-备用'
+    try { await o.call('CreateScene', { sceneName: fb }) } catch (e) {}
+    other = fb
+  }
+  try { await o.call('SetCurrentProgramScene', { sceneName: other }) } catch (e) {}
+  await wait(200)
+  try { await o.call('RemoveScene', { sceneName: SCENE_NAME }) } catch (e) {}
+  await wait(200)
+}
+
 // 建/复用场景。先查真实列表再建——OBS 允许同名场景存在，
 // 直接 CreateScene 会在第二次跑时建出「ZT-录制 1」，源全跑到新场景里去，
 // 而录制时切的还是第一个（空的那个）→ 黑屏。
@@ -262,25 +283,35 @@ async function ensureScene(name) {
 // 建/更新「OBS 原生浏览器源」：HTML 直接交给 OBS 内置 CEF 渲染，无需临时窗口/文件管理。
 // 浏览器源自带音轨（VIDEO_KINDS/AUDIO_KINDS 都已含 browser_source），所以不补桌面音频。
 // 分辨率由我们显式设（width/height），OBS 画布对齐到它即可 1:1 最锐利。
+//
+// 注意输入「全局存在、按场景引用」：cleanEnvironment 删场景后，输入 zt-html 仍全局存在，
+// 此时 GetSceneItemId 会找不到（已不在场景里）→ 用 CreateSceneItem 把它加回新场景，
+// 不能再用 CreateInput（同名输入已存在会报错）。只有输入从未建过才走 CreateInput。
 async function ensureBrowserSource(sceneName, url, width, height) {
   const o = getObs()
   const w = width || 1920
   const h = height || 1080
-  let exists = false
-  try {
-    const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
-    exists = si.sceneItemId != null
-  } catch (e) { exists = false }
   const settings = {
     url: url,
     width: w,
     height: h,
     fps: 30,
     css: '',
+    // 关键：把音频交给 OBS 内部接管，不再走系统声卡（control_audio_via_os=true）。
+    // 否则 HTML 的 MP3 既被浏览器源录一轨、又从扬声器出去被 OBS 全局桌面音频再抓一轨，
+    // 两路同一声音略有延迟 → 成片「两个音频前后一起播放/回声」。设 true 后只剩浏览器源这一轨。
+    control_audio_via_os: true,
     // OBS 浏览器源基于 CEF，默认放开自动播放（含带声）。若个别 OBS 版本拦自动播放，
     // 可在 OBS 设置→高级 里把「浏览器源」相关自动播放策略放宽；本工具不强行改用户配置。
   }
-  if (!exists) {
+  // 输入是否全局存在（与是否在场景里无关）
+  let inputExists = false
+  try {
+    const ins = await o.call('GetInputList')
+    inputExists = (ins.inputs || []).some((it) => it.inputName === BROWSER_SOURCE)
+  } catch (e) { inputExists = false }
+
+  if (!inputExists) {
     await o.call('CreateInput', {
       sceneName,
       inputName: BROWSER_SOURCE,
@@ -288,9 +319,30 @@ async function ensureBrowserSource(sceneName, url, width, height) {
       inputSettings: settings,
       setVisible: true,
     })
-  } else {
-    await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
+    return true
   }
+
+  // 输入已存在：确保它在本场景里（删场景后可能已不在）
+  let inScene = false
+  try {
+    const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
+    inScene = si && si.sceneItemId != null
+  } catch (e) { inScene = false }
+  if (!inScene) {
+    try {
+      await o.call('CreateSceneItem', { sceneName, sourceName: BROWSER_SOURCE, setVisible: true })
+    } catch (e) { /* 已存在则忽略 */ }
+  }
+  // 仅在设置真正变化时才回写 SetInputSettings——该调用会让 OBS 重载浏览器源，
+  // 重载会重新触发页面 load → 引擎 startPlayback 再播一次（配合「场景激活时刷新」就可能播两遍）。
+  // url 没变就跳过，避免一次录制里出现两次播放。
+  let changed = false
+  try {
+    const cur = await o.call('GetInputSettings', { inputName: BROWSER_SOURCE })
+    const cs = (cur && cur.inputSettings) || {}
+    if (cs.url !== settings.url || cs.width !== settings.width || cs.height !== settings.height || cs.control_audio_via_os !== true) changed = true
+  } catch (e) { changed = true }
+  if (changed) await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
   return true
 }
 
@@ -374,6 +426,9 @@ async function start(opts) {
   try { fs.mkdirSync(outdir, { recursive: true }) } catch (e) {}
 
     try {
+      // 0) 清理环境：每次起录前删掉残留的「ZT-录制」场景（含旧源），保证干净起点，
+      //    避免多次录制把源叠在一起（成片双画面/双音）。之后再重建。
+      await cleanEnvironment()
       // 1) 专用场景
       await ensureScene(SCENE_NAME)
 
@@ -466,20 +521,36 @@ async function start(opts) {
 // 优先用起录时 OBS 回传的 outputPath（精确，且目录里可能本来就有素材视频）；
 // 停止录制后关闭 OBS 进程：浏览器源是 OBS 内置 CEF 持续渲染，
 // 只停录制不关 OBS，HTML 会在场景里继续播放（动画/音频仍在跑）。
-// 用户要求「结束录制即杀 OBS」，这里按镜像名精确结束 obs64.exe（Windows）。
-// 非 Windows 直接走 disconnect（无 taskkill）。
-function killOBS() {
+// 用户要求「结束录制即关 OBS」——但必须**优雅退出**，不能强杀：
+// taskkill /F 会让 OBS 下次启动弹「安全模式」选择框。这里先断 websocket，
+// 再发不带 /F 的 taskkill（WM_CLOSE，OBS 正常保存配置退出）；仅当几秒后进程仍在
+// （如有模态框卡住）才升级到 /F 作为最后手段。非 Windows 直接 disconnect。
+async function killOBS() {
   if (process.platform !== 'win32') {
     try { if (obs) obs.disconnect() } catch (e) {}
     return { ok: true, killed: false, note: '非 Windows，未杀进程' }
   }
   try {
-    const out = spawnSync('taskkill', ['/IM', 'obs64.exe', '/F'], { windowsHide: true })
-    const s = out.stdout ? out.stdout.toString() : ''
-    const err = out.stderr ? out.stderr.toString() : ''
+    // 先断开 websocket，让 OBS 侧连接自然结束
     try { if (obs) obs.disconnect() } catch (e) {}
     connected = false
-    return { ok: true, killed: /SUCCESS|已结束/.test(s) || /没有.*运行/.test(err), raw: (s + err).trim() }
+    // 优雅关闭：不带 /F，发 WM_CLOSE，OBS 会正常退出（不弹安全模式）
+    spawnSync('taskkill', ['/IM', 'obs64.exe'], { windowsHide: true })
+    // 等 OBS 自己收尾（保存配置 + 退出通常很快）
+    let gone = false
+    for (let i = 0; i < 10; i++) {
+      await wait(500)
+      if (!isObsRunning()) { gone = true; break }
+    }
+    // 兜底：仍有残留（卡住）才强杀
+    if (!gone) {
+      try { spawnSync('taskkill', ['/IM', 'obs64.exe', '/F'], { windowsHide: true }) } catch (e) {}
+      for (let i = 0; i < 6; i++) {
+        await wait(500)
+        if (!isObsRunning()) { gone = true; break }
+      }
+    }
+    return { ok: true, killed: gone, note: gone ? '已优雅关闭 OBS' : '关闭超时（已强杀兜底）' }
   } catch (e) {
     return { ok: false, error: String(e && e.message) }
   }

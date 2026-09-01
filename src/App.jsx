@@ -309,6 +309,7 @@ export default function App() {
 
   // ---------- 导出 ----------
   function handleExport() {
+    send({ type: 'deselect' }) // 导出前先清掉选中态，避免选中框被烤进 edited.html
     send({ type: 'requestExport' })
   }
 
@@ -360,6 +361,7 @@ export default function App() {
   function getEditedFinalHtml() {
     return new Promise((resolve) => {
       pendingRecordRef.current = { resolve }
+      send({ type: 'deselect' }) // 录制序列化前先清掉选中态，避免选中框被烤进 录屏源.html
       send({ type: 'requestSerialize' })
     }).then((h) => restoreAndWrap(h, relMapRef.current, scriptsRef.current))
   }
@@ -524,7 +526,12 @@ export default function App() {
       }
       const ctrl = e.ctrlKey || e.metaKey
       const k = e.key.toLowerCase()
-      if (ctrl && !e.shiftKey && k === 'z') {
+      if (e.key === 'Escape') {
+        // ESC 一键取消画布选中态：避免选中框被烤进录制/导出画面（iframe 内 selection 样式清不掉就一直留着）
+        const t = e.target
+        const typing = t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+        if (!typing) { send({ type: 'deselect' }); e.preventDefault() }
+      } else if (ctrl && !e.shiftKey && k === 'z') {
         send({ type: 'undo' })
         e.preventDefault()
       } else if (ctrl && ((e.shiftKey && k === 'z') || k === 'y')) {

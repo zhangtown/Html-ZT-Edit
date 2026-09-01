@@ -2417,8 +2417,9 @@
       else if (m.type === 'toggleGrid') {
         GRID_SIZE = m.size || 20
         setGrid(m.on)
-      } else if (m.type === 'requestExport') exportClean()
+      }       else if (m.type === 'requestExport') exportClean()
       else if (m.type === 'requestSerialize') serialize()
+      else if (m.type === 'deselect') deselectAll()
       else if (m.type === 'resetElement') resetSelected()
       else if (m.type === 'align') align(m.mode)
       else if (m.type === 'layer') layer(m.mode)
