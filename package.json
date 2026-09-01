@@ -18,8 +18,7 @@
     "check:anim": "node scripts/anim-engine-check.mjs"
   },
   "dependencies": {
-    "mp4-muxer": "^5.2.2",
-    "obs-websocket-js": "^5.2.2",
+    "obs-websocket-js": "^5.0.8",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

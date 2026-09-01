@@ -38,11 +38,16 @@ if not exist "node_modules\electron\package.json" (
   echo [2/3] Electron 运行时已存在，跳过下载
 )
 
-REM --- 端口预检：Vite 起不来多半是被上次残留的进程占了 ---
-netstat -ano | findstr /R ":5173 " >nul
-if not errorlevel 1 (
-  echo [警告] 端口 5173 已被占用，Vite 可能启动失败，可先运行 stop-dev.bat 释放。
-  echo.
+REM --- Auto-release stale Vite listeners (5173-5179) before starting. ---
+REM Vite auto-shifts to 5174/5175 when 5173 is taken, so clean the whole range.
+REM ASCII-only block: non-ASCII in a .bat is read as GBK and can break parsing.
+for /L %%P in (5173,1,5179) do (
+  for /f "tokens=5" %%A in ('netstat -ano ^| findstr /R /C:":%%P .*LISTENING"') do (
+    if not "%%A"=="0" (
+      echo [auto] port %%P busy, killing PID %%A ...
+      taskkill /PID %%A /F >nul 2>nul
+    )
+  )
 )
 
 REM --- 3. 启动调试 ---
@@ -53,4 +58,7 @@ echo.
 call npm run dev:electron
 
 :end
+echo.
+echo Finished. Press any key to close this window.
 popd
+pause >nul

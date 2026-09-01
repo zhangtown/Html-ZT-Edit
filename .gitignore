@@ -50,6 +50,6 @@ vo-pipeline/试听/
 # 克隆实验遗留（GPT-SoVITS 路线已裁撤，脚本仅本地留档）
 vo-pipeline/test_tts.py
 
-# 录制产物不入库
-测试工程/*-录屏-*.mp4
+# 录制产物不入库（OBS 默认命名 YYYY-MM-DD HH-MM-SS.mp4，已不适用旧 *-录屏-* 模式）
+测试工程/*.mp4
 测试工程/*绑定复现*.html
