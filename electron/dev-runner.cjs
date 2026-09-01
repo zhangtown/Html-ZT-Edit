@@ -27,11 +27,17 @@ const vite = spawn(npx, ['vite'], { cwd: root, stdio: 'inherit', shell: true })
 let electron = null
 function launchElectron() {
   if (electron) return
+  // 必须剥离 ELECTRON_RUN_AS_NODE：该全局变量被置位时，electron.exe 会以纯 Node
+  // 模式运行，require('electron') 只返回可执行文件路径字符串，解构出的 app 为
+  // undefined，main.cjs 第 14 行 app.commandLine 直接崩溃（TypeError）。
+  // 只在本进程的 env 中过滤，不修改用户全局环境。
+  const electronEnv = { ...process.env }
+  delete electronEnv.ELECTRON_RUN_AS_NODE
   electron = spawn(npx, ['electron', '.'], {
     cwd: root,
     stdio: 'inherit',
     shell: true,
-    env: { ...process.env, VITE_DEV_SERVER_URL: DEV_URL },
+    env: { ...electronEnv, VITE_DEV_SERVER_URL: DEV_URL },
   })
   electron.on('exit', () => {
     // Electron 退出即结束整个调试会话

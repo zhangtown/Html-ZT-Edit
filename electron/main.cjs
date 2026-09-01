@@ -4,6 +4,15 @@
 // ES 模块 / blob URL / iframe 的兼容问题。
 
 const { app, BrowserWindow, ipcMain, dialog, session, screen } = require('electron')
+// 防御：若 ELECTRON_RUN_AS_NODE=1 被置位，electron.exe 会以纯 Node 模式运行，
+// require('electron') 只返回可执行文件路径字符串，app 解构为 undefined。
+// 给出明确诊断而非第 14 行的裸 TypeError。
+if (!app || typeof app.commandLine !== 'object') {
+  console.error('[main] require("electron") 未返回 Electron API（app 缺失）。')
+  console.error('[main] 可能原因：ELECTRON_RUN_AS_NODE 被置位，或 main.cjs 被纯 Node 直接执行。')
+  console.error('[main] 请改用 npm run dev:electron / start-dev.bat 启动。')
+  process.exit(1)
+}
 // OBS 录制后端（方案 A）：系统级录屏，主进程只经 obs-websocket 触发起停。
 // 依赖在连接时才 lazy require，缺依赖不会拖垮编辑器启动。
 const obsRecorder = require('./obsRecorder.cjs')
