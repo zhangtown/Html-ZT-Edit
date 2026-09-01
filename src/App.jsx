@@ -351,10 +351,13 @@ export default function App() {
   // 铺满画布、缺音源自动补桌面音频，成片直接写到当前 HTML 所在目录。
   // 渲染端只给 outdir；窗口标题与全屏尺寸由主进程补齐（只有主进程拿得到原生窗口句柄）。
   // 取当前编辑的最终 HTML（内存落盘用）：触发 iframe 序列化 → 回包经 restoreAndWrap 还原相对资源/脚本。
+  // 注意：必须发 requestSerialize（iframe 回 type:'serialize' 原始 HTML），不要发 requestExport——
+  // requestExport 走 exportClean，会回 type:'export' 并触发「下载 edited.html」保存框，且永远不会回 serialize，
+  // 会导致录制 Promise 永不 resolve、卡在「导出 HTML…」、还误生成 edited.html。
   function getEditedFinalHtml() {
     return new Promise((resolve) => {
       pendingRecordRef.current = { resolve }
-      send({ type: 'requestExport' })
+      send({ type: 'requestSerialize' })
     }).then((h) => restoreAndWrap(h, relMapRef.current, scriptsRef.current))
   }
 
