@@ -154,6 +154,8 @@ export default function App() {
   const obsAutoStopRef = useRef(false)
   const [recRoot, setRecRoot] = useState('') // 当前编辑 HTML 所在目录（OBS 成片落点，经主进程取）
   const recRootRef = useRef('') // 同上，ref 版供异步回调用
+  const [exportMsg, setExportMsg] = useState('') // 导出 HTML 后状态（已保存到源目录 / 失败原因）
+  const exportMsgRef = useRef('')
   const pendingExportRef = useRef(null) // 等待 iframe 回传 HTML 的 Promise（导出用）
   const pendingRecordRef = useRef(null) // 临时录制落盘专用：等 iframe 回传序列化 HTML（与导出通道互不干扰）
 
@@ -466,7 +468,16 @@ export default function App() {
         let finalHtml = restoreAndWrap(m.html, relMapRef.current, scriptsRef.current)
         // 导出 HTML 也带上「音频开始延迟」：手动把文件丢进 OBS 浏览器源时同样先放动画再出音频
         if (obsInteractDelay) finalHtml = injectAudioStartDelay(finalHtml, Math.round(obsInteractDelay * 1000))
-        download('edited.html', finalHtml)
+        // 直接覆盖保存到源 HTML 所在目录下的 edited.html，不弹保存框（Electron 桌面端走主进程落盘）
+        if (window.ztSave && window.ztSave.editedHtml) {
+          window.ztSave.editedHtml(finalHtml).then((r) => {
+            if (r && r.ok) setExportMsg('已导出：' + (r.path || 'edited.html'))
+            else setExportMsg('导出失败：' + String((r && r.error) || '未知错误').slice(0, 120))
+          }).catch((e) => setExportMsg('导出失败：' + String(e && e.message).slice(0, 120)))
+        } else {
+          // 浏览器模式（无主进程）：退回下载框，保证功能不中断
+          download('edited.html', finalHtml)
+        }
       } else if (m.type === 'zoom') {
         // Ctrl+滚轮缩放模拟画布：50% ~ 150%，10% 步进
         setZoom((z) => {
@@ -910,6 +921,11 @@ export default function App() {
         <button onClick={handleExport} disabled={!ready || playMode} style={btn('#2563eb')}>
           导出 HTML
         </button>
+        {exportMsg && (
+          <span style={{ fontSize: 11, color: exportMsg.indexOf('已导出') === 0 ? '#a7f3d0' : '#fca5a5' }} title={exportMsg}>
+            {exportMsg}
+          </span>
+        )}
         <button onClick={handleClearDraft} disabled={!restored} title="清除本地草稿" style={btn('#4b5563')}>
           清除草稿
         </button>

@@ -135,9 +135,10 @@ function generatePlaybackScript(scripts, iframeHtml) {
 
   return `
 (function(){
-// OBS 浏览器源（CEF offscreen）会把 requestAnimationFrame 节流到≈0，导致 loop() 只跑一帧就冻结，
-// 而 audio.play() 由音频线程独立推进 → 录屏「画面不动、声音正常」。这里注入 rAF→setTimeout 垫片：
-// 在 OBS 里 loop 改走 33ms 定时器持续推进画面；真实 Edge 里 rAF 本就正常，垫片不影响其行为。
+// 传输层兼容垫片（非逻辑改动）：OBS 浏览器源（CEF offscreen）会把 requestAnimationFrame 节流到≈0，
+// 导致 loop() 只跑一帧就冻结，而 audio.play() 由音频线程独立推进 → 录屏「画面不动、声音正常」。
+// 这里把 rAF 换成 33ms 定时器，仅影响 loop 的驱动节奏；loop 内部仍读 audio.currentTime、仍走与源 HTML
+// 一致的 updateSlide/updateSubtitle/focus 触发逻辑。真实浏览器里 rAF 本就正常，垫片无害。
 (function(){if(window.__ztRafShim)return;window.__ztRafShim=1;var __ztRealRaf=window.requestAnimationFrame;window.requestAnimationFrame=function(cb){return setTimeout(function(){cb(performance.now?performance.now():Date.now())},33)};window.cancelAnimationFrame=function(id){clearTimeout(id)};})();
 
 ${animEngineSource()}
@@ -149,18 +150,34 @@ ${slideTimingsStr}
 var audio=document.getElementById('bgAudio')||document.querySelector('audio');
 const slides=document.querySelectorAll('.slide');
 document.querySelectorAll('[data-zt-anim-effect="highlight-sweep"]').forEach(function(el){el.classList.add('zt-hl-sweep')});
+// 字幕/进度条容器：源 HTML 不一定自带这两个 id（如新建项目模板、或老文件缺此结构），
+// 这里做容错回退，避免 getElementById 返回 null 后 updateSubtitle 抛错把整个 loop 打断
+// （表现为「双击打开不动、OBS 里只有语音没字幕」）。优先用既有 id，否则复用 #subtitle-bar，
+// 再否则动态创建一个挂到 body，保证字幕一定能显示。
 var subtitleEl=document.getElementById('subtitleCurrent');
+if(!subtitleEl){
+  subtitleEl=document.getElementById('subtitle-bar');
+  if(!subtitleEl){
+    subtitleEl=document.createElement('div');
+    subtitleEl.id='subtitleCurrent';
+    subtitleEl.style.cssText='position:absolute;bottom:46px;left:0;right:0;text-align:center;z-index:20;font-size:2.2rem;font-weight:700;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.6),0 6px 18px rgba(0,0,0,.5),0 12px 40px rgba(0,0,0,.4)';
+    document.body.appendChild(subtitleEl);
+  }
+}
 var progressBar=document.getElementById('progressBar');
+if(!progressBar){progressBar=document.getElementById('progress')} // 兼容旧模板用 #progress 命名
+if(!progressBar){
+  progressBar=document.createElement('div');
+  progressBar.id='progressBar';
+  progressBar.style.cssText='position:absolute;bottom:0;left:0;height:4px;background:#C41E24;width:0;z-index:30;transition:width .2s linear';
+  document.body.appendChild(progressBar);
+}
 let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0;
-// 音频不可用时的退化计时基准：autoplay 被拦 / 页面无 <audio> / 无音轨时，
-// loop 改走墙钟（performance.now）推进时间轴，画面照常播放（无声）。
-// 有声时 loop 优先用 audio.currentTime，这条基准只在退化路径生效。
-var __ztClockBase=0;
 
 function showSlide(idx,seekAudio){
   slides.forEach(function(s,i){s.classList.remove('active');if(i===idx)s.classList.add('active')});
   currentSlide=idx;
-  // 尾页三连动画
+  // 尾页三连动画（仅当页面存在 #s12 video 时生效；源 HTML 无此结构则整段不触发，与源逻辑一致）
   var v=document.querySelector('#s12 video');
   if(v){if(idx===12)v.play();else v.pause()}
   if(seekAudio&&isPlaying){
@@ -188,12 +205,11 @@ function updateSlide(time){
 
 function loop(){
   if(!isPlaying)return;
-  // 时间轴来源：有声且正在播 → 用 audio.currentTime（声画同步）；
-  // 否则退化到墙钟（autoplay 被拦 / 无 <audio> / 无音轨 / file:// 双击无手势）→ 画面照常推进（无声）。
-  var t;
-  if(audio && !audio.paused && isFinite(audio.duration) && audio.duration>0){ t=audio.currentTime }
-  else { t=(performance.now()-__ztClockBase)/1000 }
-  if(!isFinite(t))t=0;
+  // 与源 HTML 逻辑一致：时间轴一律由 audio.currentTime 驱动（声画同步）。
+  // 不做墙钟退化——autoplay 被拦（file:// 双击无手势）时 audio.currentTime 停在 0，
+  // loop 因 isPlaying 仍为 false 不会启动，页面保持静止，等待用户空格/点击这一真实手势解锁，
+  // 这与源 HTML 在 file:// 下的表现完全一致。
+  var t=audio.currentTime;
   updateSlide(t);updateSubtitle(t);
   var cur=document.querySelector('.slide.active');
   if(cur){
@@ -209,12 +225,11 @@ function loop(){
       if(effect.indexOf('focus-')===0){
         if(boundEl.dataset.focusDone)return;
         if(t>=absStart){boundEl.dataset.focusDone='1';var grp=boundEl.closest('.focus-group');if(grp)grp.classList.add('dim-others');boundEl.classList.add('zt-focus-active')}
-      }else if(effect==='highlight-sweep'){
-        if(boundEl.dataset.focusDone)return;
-        if(t>=absStart){boundEl.dataset.focusDone='1';if(!boundEl.classList.contains('zt-hl-sweep'))boundEl.classList.add('zt-hl-sweep');requestAnimationFrame(function(){requestAnimationFrame(function(){boundEl.classList.add('zt-hl-active')})})}
       }else{
+        // 非 focus 类效果（含 highlight-sweep / zoom-in 等）一律走 playAnimation，
+        // 由引擎 applyStateEffect 内部识别 highlight-sweep 并加 zt-hl-active，与源逻辑一致
         if(boundEl.dataset.animDone)return;
-        if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';var duration=boundEl.getAttribute('data-zt-anim-duration');var delay=boundEl.getAttribute('data-zt-anim-delay');var returnSec=boundEl.getAttribute('data-zt-anim-return');var easing=boundEl.getAttribute('data-zt-anim-easing');var grp=boundEl.closest('.focus-group');if(grp){grp.classList.remove('dim-others');boundEl.classList.remove('zt-focus-active')}playAnimation(boundEl,effect,duration,delay,returnSec,easing)}
+        if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';playAnimation(boundEl,effect,boundEl.getAttribute('data-zt-anim-duration'),boundEl.getAttribute('data-zt-anim-delay'),boundEl.getAttribute('data-zt-anim-return'),boundEl.getAttribute('data-zt-anim-easing'))}
       }
     })
   }
@@ -222,32 +237,27 @@ function loop(){
   requestAnimationFrame(loop)
 }
 
+// 与源 HTML 完全一致：尝试自动播放，成功则启动 loop；被 autoplay 策略拦截则静默（.catch 吞掉），
+// 页面静止，等用户空格/点击手势再次触发 startPlayback 解锁声音。OBS 浏览器源允许自动播放 → 有声有画。
 function startPlayback(){
   if(isPlaying)return;
-  var begin=function(){isPlaying=true;__ztClockBase=performance.now();loop()};
-  try{
-    if(!audio){begin();return}
-    var p=audio.play();
-    if(p&&p.then)p.then(begin).catch(begin); // autoplay 被拦 → 退化墙钟，无声也播放
-    else begin()
-  }catch(e){begin()} // 无 audio / play() 抛错 → 退化墙钟
+  if(!audio){isPlaying=true;loop();return}
+  audio.play().then(function(){isPlaying=true;loop()}).catch(function(){})
 }
-
-// 手动翻页时清除动画状态
-var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');el.classList.remove('zt-hl-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
-
 document.addEventListener('keydown',function(e){
   if(e.key==='ArrowRight'){e.preventDefault();if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}
   else if(e.key==='ArrowLeft'){e.preventDefault();if(currentSlide>0){showSlide(currentSlide-1,true);manualOverrideUntil=Date.now()+3000}}
   else if(e.key===' '){e.preventDefault();if(!isPlaying)startPlayback()}
-})
-
+});
 document.addEventListener('click',function(e){
   if(!isPlaying){startPlayback();return}
   var x=e.clientX/window.innerWidth;
   if(x>0.5){if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}
   else{if(currentSlide>0){showSlide(currentSlide-1,true);manualOverrideUntil=Date.now()+3000}}
-})
+});
+
+// 手动翻页时清除动画状态
+var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');el.classList.remove('zt-hl-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
 
 window.addEventListener('load',function(){setTimeout(startPlayback,300)});
 

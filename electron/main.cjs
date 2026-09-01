@@ -224,6 +224,21 @@ function registerIpc() {
     return { root: recRoot }
   })
 
+  // 导出 HTML：直接落盘到当前 HTML 所在目录、覆盖同名 edited.html，不弹保存框。
+  // 与「选择 HTML 文件」解耦——源目录就是 recRoot（已在 zt:open-html-folder 时记下）。
+  // 若 recRoot 为空（理论上不会，因为打开文件才会进来），回报错误由渲染端提示。
+  ipcMain.handle('zt:save-edited-html', async (event, html) => {
+    if (!recRoot) return { ok: false, error: '未确定源 HTML 目录，无法保存。请先「选择 HTML 文件」。' }
+    try {
+      fs.mkdirSync(recRoot, { recursive: true })
+      const out = path.join(recRoot, 'edited.html')
+      fs.writeFileSync(out, html || '', 'utf8')
+      return { ok: true, path: out }
+    } catch (e) {
+      return { ok: false, error: String(e && e.message) }
+    }
+  })
+
   // ------------------------------------------------------------
   // OBS 录制后端：连接 OBS → 全自动起录 / 停止 → 查状态
   // 渲染端 window.ztRecSession.startOBS/stopOBS/obsStatus 对应此处

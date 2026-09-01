@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('ztRoot', {
   set: (root) => ipcRenderer.invoke('zt:set-root', root),
 })
 
+// 导出 HTML：直接覆盖保存到源目录下的 edited.html（不弹保存框）
+contextBridge.exposeInMainWorld('ztSave', {
+  editedHtml: (html) => ipcRenderer.invoke('zt:save-edited-html', html),
+})
+
 // OBS 系统级录制（全自动一键）：连接 OBS → 开始/停止录制 → 查状态。
 // 渲染端 window.ztRecSession.startOBS/stopOBS/obsStatus 对应主进程 zt:obs-*。
 contextBridge.exposeInMainWorld('ztRecSession', {
