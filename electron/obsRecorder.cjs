@@ -300,22 +300,28 @@ async function listWindows() {
   }
 }
 
-// 自动认出 ztEdit 主窗口：以主进程传来的真实窗口标题为准，逐级放宽。
-// 全部落空时把 OBS 实际看到的窗口名列出来，用户一眼能看出是标题变了还是 OBS 没刷新。
-async function autoPickWindow(title) {
+// 自动认出目标窗口：以主进程传来的标题为准，逐级放宽。
+// 两种模式：
+//   - 默认（录制 ztEdit 主窗口）：按标题匹配、或名字像 ztEdit。
+//   - captureMode==='browser'（录制落盘的临时 HTML，用系统浏览器打开）：
+//     优先匹配浏览器进程（msedge/chrome/...），因为 Edge 全屏窗口的标题是页面 <title>，
+//     不保证等于临时文件名，按 exe 识别最稳。
+async function autoPickWindow(title, opt = {}) {
   const r = await listWindows()
   if (!r.ok) return r
   const list = r.windows || []
   if (!list.length) return { ok: false, error: 'OBS 返回的可捕获窗口列表为空（OBS 可能刚启动，或运行在无窗口采集权限的会话里）。' }
   const t = String(title || '').trim()
+  const preferExe = opt && opt.preferExe
   const score = (w) => {
     const n = w.name || ''
     const v = w.value || ''
-    if (t && n === t) return 0                                  // 标题完全一致
-    if (t && v.indexOf(t) >= 0) return 1                        // 标识串里含标题
-    if (t && n.indexOf(t) >= 0) return 2                        // 窗口名包含标题
-    if (/html-ztedit|ztedit|zt-edit/i.test(n)) return 3         // 名字像 ztEdit
-    if (/electron\.exe/i.test(v)) return 4                      // Electron 进程
+    if (preferExe && preferExe.test(v)) return 0                // 浏览器模式：优先匹配浏览器 exe（itemValue 形如 "标题:类:msedge.exe"）
+    if (t && n === t) return 1                                  // 标题完全一致
+    if (t && v.indexOf(t) >= 0) return 2                        // 标识串里含标题
+    if (t && n.indexOf(t) >= 0) return 3                        // 窗口名包含标题
+    if (/html-ztedit|ztedit|zt-edit/i.test(n)) return 4         // 名字像 ztEdit
+    if (/electron\.exe/i.test(v)) return 5                      // Electron 进程
     return 99
   }
   let best = null
@@ -538,7 +544,10 @@ async function start(opts) {
     await ensureScene(SCENE_NAME)
 
     // 2) 自动认窗口 + 建窗口捕获源（缺了它就是黑屏）
-    const pw = await autoPickWindow(a.windowTitle)
+    //    浏览器模式：优先按 exe 认出 msedge/chrome 等（Edge 全屏窗口标题是页面 title，未必等于临时文件名）。
+    const pw = await autoPickWindow(a.windowTitle, a.captureMode === 'browser'
+      ? { preferExe: /msedge\.exe|chrome\.exe|brave\.exe|firefox\.exe|edge\.exe|opera\.exe|iexplore\.exe/i }
+      : {})
     if (!pw.ok) return pw
     await ensureWindowCapture(SCENE_NAME, pw.value)
 

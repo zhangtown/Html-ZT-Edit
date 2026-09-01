@@ -22,4 +22,6 @@ contextBridge.exposeInMainWorld('ztRecSession', {
   startOBS: (opts) => ipcRenderer.invoke('zt:obs-start', opts),
   stopOBS: () => ipcRenderer.invoke('zt:obs-stop'),
   obsStatus: () => ipcRenderer.invoke('zt:obs-status'),
+  // 主进程在捕获用的浏览器窗口被关掉时推送：渲染端据此自动退出「录制中」态
+  onBrowserClosed: (cb) => ipcRenderer.on('zt:obs-browser-closed', (_e, r) => cb(r || {})),
 })

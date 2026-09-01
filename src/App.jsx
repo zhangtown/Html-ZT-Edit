@@ -14,6 +14,7 @@ import {
   restoreAndWrap,
   stripEditorParts,
   fileUrlMapper,
+  injectAudioStartDelay,
 } from './htmlProcess.js'
 import { saveDraft, loadDraft, clearDraft } from './draftStore.js'
 import { ANIM_EFFECTS, ANIM_ENGINE_PARTS, animEngineBootstrap } from './animEffects.js'
@@ -144,6 +145,7 @@ export default function App() {
   const [playCurrent, setPlayCurrent] = useState(0) // 播放中的当前页
   // OBS 系统级录制（全自动一键，成片直接落在当前 HTML 所在目录）
   const [obsRec, setObsRec] = useState({ recording: false, msg: '', filePath: '' })
+  const [obsInteractDelay, setObsInteractDelay] = useState(0) // OBS 起播/导出 HTML 的「音频开始延迟」（秒，0.3 起即几百 ms 量级）：进画面先放首屏动画，N 秒后才出音频
   const obsRecRef = useRef(obsRec) // 异步/守卫里读最新值
   // 「录制 + 播放」联动标记：由「● OBS 录制」一键拉起的这次录制，播放结束要自动停录。
   // 单独点「▶ 本页预览」播放时不置位，播完不会误停正在进行的录制。
@@ -151,6 +153,7 @@ export default function App() {
   const [recRoot, setRecRoot] = useState('') // 当前编辑 HTML 所在目录（OBS 成片落点，经主进程取）
   const recRootRef = useRef('') // 同上，ref 版供异步回调用
   const pendingExportRef = useRef(null) // 等待 iframe 回传 HTML 的 Promise（导出用）
+  const pendingRecordRef = useRef(null) // 临时录制落盘专用：等 iframe 回传序列化 HTML（与导出通道互不干扰）
 
   gridOnRef.current = gridOn
   activeHtmlRef.current = activeHtml
@@ -347,24 +350,43 @@ export default function App() {
   // OBS 系统级录制（全自动一键）：控制器自建场景、自动认 ztEdit 主窗口建窗口捕获源、
   // 铺满画布、缺音源自动补桌面音频，成片直接写到当前 HTML 所在目录。
   // 渲染端只给 outdir；窗口标题与全屏尺寸由主进程补齐（只有主进程拿得到原生窗口句柄）。
+  // 取当前编辑的最终 HTML（内存落盘用）：触发 iframe 序列化 → 回包经 restoreAndWrap 还原相对资源/脚本。
+  function getEditedFinalHtml() {
+    return new Promise((resolve) => {
+      pendingRecordRef.current = { resolve }
+      send({ type: 'requestExport' })
+    }).then((h) => restoreAndWrap(h, relMapRef.current, scriptsRef.current))
+  }
+
+  // OBS 录制（脱离 ztEdit）：把内存 HTML 落盘到源目录临时文件，用系统浏览器打开，OBS 捕获浏览器窗口。
+  // 互动延迟：起录后延迟 N 秒开始播放（给 OBS 稳定/画面对齐留时间；file:// 下默认已自动播放）。
   async function startObsRec() {
-    setObsRec({ recording: false, msg: '连接 OBS…', filePath: '' })
+    setObsRec({ recording: false, msg: '导出 HTML…', filePath: '' })
     const outdir = recRootRef.current || (await getResourceRoot())
-    const r = await window.ztRecSession.startOBS({ outdir })
+    if (!outdir) {
+      setObsRec({ recording: false, msg: '未选择 HTML 文件，无法确定临时文件目录。请先「选择 HTML 文件」。' })
+      return
+    }
+    let finalHtml
+    try { finalHtml = await getEditedFinalHtml() }
+    catch (e) {
+      setObsRec({ recording: false, msg: '导出 HTML 失败，未开始录制' })
+      return
+    }
+    const r = await window.ztRecSession.startOBS({
+      outdir,
+      html: finalHtml,
+      captureMode: 'browser',
+      interactDelaySec: obsInteractDelay,
+    })
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
       const fit = r.fit ? `画布已对齐 ${r.fit}` : ''
       setObsRec({
         recording: true,
-        msg: (noAudio ? '录制中（⚠自动补音频源失败，成片可能无声）' : '录制中（OBS 系统级）') + (fit ? ' · ' + fit : ''),
+        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : '录制中（浏览器窗口 + OBS）') + (fit ? ' · ' + fit : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
         filePath: '',
       })
-      // 关键：起录成功后立刻从头播放。
-      // 不自动播放的话，OBS 录到的是停在起始状态的编辑页面 —— 成片就是一张静止画面，
-      // 而且没有音频输出（自然也没声音）、画面不变导致码率极低（文件异常小）。
-      // 播放结束由 playState 分支自动收尾停录，形成「一键 = 起录 + 播放 + 播完停录」闭环。
-      obsAutoStopRef.current = true
-      handleStartPlay(0)
     } else setObsRec({ recording: false, msg: String((r && r.error) || '启动失败').slice(0, 140), filePath: '' })
   }
   async function stopObsRec() {
@@ -419,19 +441,26 @@ export default function App() {
         setSelectedSubIdx(-1)
       } else if (m.type === 'changed') {
         scheduleSave()
-      } else if (m.type === 'serialize') {
-        // 录制取页与草稿保存共用同一份回包，两条链路互不干扰
-        const p = pendingExportRef.current
-        if (p) {
-          pendingExportRef.current = null
-          p.resolve(m.html)
-        }
-        if (pendingSaveRef.current) {
+    } else if (m.type === 'serialize') {
+      // 录制取页与草稿保存共用同一份回包，两条链路互不干扰
+      const p = pendingExportRef.current
+      if (p) {
+        pendingExportRef.current = null
+        p.resolve(m.html)
+      }
+      const pr = pendingRecordRef.current
+      if (pr) {
+        pendingRecordRef.current = null
+        pr.resolve(m.html)
+      }
+      if (pendingSaveRef.current) {
           pendingSaveRef.current = false
           actuallySave(m.html, m.current)
         }
       } else if (m.type === 'export') {
-        const finalHtml = restoreAndWrap(m.html, relMapRef.current, scriptsRef.current)
+        let finalHtml = restoreAndWrap(m.html, relMapRef.current, scriptsRef.current)
+        // 导出 HTML 也带上「音频开始延迟」：手动把文件丢进 OBS 浏览器源时同样先放动画再出音频
+        if (obsInteractDelay) finalHtml = injectAudioStartDelay(finalHtml, Math.round(obsInteractDelay * 1000))
         download('edited.html', finalHtml)
       } else if (m.type === 'zoom') {
         // Ctrl+滚轮缩放模拟画布：50% ~ 150%，10% 步进
@@ -518,6 +547,18 @@ export default function App() {
       window.removeEventListener('keydown', onKey)
     }
   }, [selCount, selected])
+
+  // 捕获用的浏览器窗口被用户关掉 → 主进程已自动停 OBS + 删临时文件，这里同步退出「录制中」UI 态
+  useEffect(() => {
+    if (!window.ztRecSession || !window.ztRecSession.onBrowserClosed) return
+    window.ztRecSession.onBrowserClosed((r) => {
+      setObsRec((prev) =>
+        prev && prev.recording
+          ? { recording: false, msg: (r && r.skipped) ? '已停止' : '浏览器已关闭 · 已停止', filePath: (r && r.filePath) || '' }
+          : prev
+      )
+    })
+  }, [])
 
   // 打开 HTML 文件时，同步提取图片/视频素材
   const assetUrlsRef = useRef([])
@@ -826,6 +867,27 @@ export default function App() {
             >
               ▶ 本页预览
             </button>
+            <label
+              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#d1d5db' }}
+              title="进画面后延迟多久才出音频：先放首屏 / 标题动画，避免一进画面就爆音、观众没准备。应用于 OBS 录制（落盘临时 HTML）与导出 HTML。"
+            >
+              音频延迟
+              <select
+                value={obsInteractDelay}
+                onChange={(e) => setObsInteractDelay(parseFloat(e.target.value))}
+                disabled={obsRec.recording}
+                style={{ ...btn('#374151'), minWidth: 70 }}
+              >
+                <option value={0}>不延迟</option>
+                <option value={0.3}>300ms</option>
+                <option value={0.5}>500ms</option>
+                <option value={0.8}>800ms</option>
+                <option value={1}>1.0s</option>
+                <option value={1.5}>1.5s</option>
+                <option value={2}>2.0s</option>
+                <option value={3}>3.0s</option>
+              </select>
+            </label>
             <button
               onClick={obsRec.recording ? stopObsRec : startObsRec}
               disabled={!recRoot && !obsRec.recording}

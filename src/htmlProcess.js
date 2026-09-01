@@ -13,6 +13,18 @@ const ASSET_TAGS = [
   ['iframe', 'src'],
 ]
 
+// 注入「音频/播放开始延迟」：把生成引擎里 `setTimeout(startPlayback, 300)` 的触发时间
+// 改为 delayMs（毫秒）。延迟期间页面停在首屏（含 CSS 入场动画），delayMs 后才启动
+// audio.play() + 时间轴驱动的整体播放——实现「进画面先放动画/标题，再接音频」。
+// 注意：本引擎的动画时间轴就是音频时间轴（loop() 读 audio.currentTime），两者绑死，
+// 所以无法做到「动画已跑、音频延后」的精细解耦；能做的只有把整体 startPlayback 延后 N 毫秒。
+// delayMs <= 0 时不处理（保留引擎默认的 300ms 自动播放）。
+export function injectAudioStartDelay(html, delayMs) {
+  if (!html || !(delayMs > 0)) return html
+  const ms = Math.max(0, Math.round(delayMs))
+  return html.replace(/setTimeout\(\s*startPlayback\s*,\s*\d+\s*\)/, 'setTimeout(startPlayback, ' + ms + ')')
+}
+
 function isExternal(val) {
   return /^(https?:|data:|blob:|#|mailto:)/i.test(val || '')
 }
