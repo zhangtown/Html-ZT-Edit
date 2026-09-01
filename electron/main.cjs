@@ -28,6 +28,7 @@ const http = require('http')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const { pathToFileURL } = require('url')
 const { spawn, spawnSync } = require('child_process')
 
 let mainWin = null // 主编辑器窗口
@@ -289,6 +290,7 @@ function registerIpc() {
   // 这两样只有主进程知道（渲染进程拿不到自己的原生窗口句柄/所在显示器）。
   ipcMain.handle('zt:obs-start', async (event, opts) => {
     const a = Object.assign({}, opts || {})
+    let writtenTempFile = '' // 本次落盘的临时 HTML 绝对路径（回传渲染端用于显示/排错）
     try {
       // 浏览器模式：把内存 HTML 落盘到源目录的临时文件，用系统浏览器全屏打开，
       // OBS 捕获的是浏览器窗口（不再是 ztEdit 编辑界面），最小化 ztEdit 也不影响录制。
@@ -312,9 +314,12 @@ function registerIpc() {
         if (delayMs) html = html.replace(/setTimeout\(\s*startPlayback\s*,\s*\d+\s*\)/, 'setTimeout(startPlayback, ' + delayMs + ')')
         fs.writeFileSync(tempFile, html, 'utf8')
         tempRecFile = tempFile
+        writtenTempFile = tempFile
         const bExe = resolveBrowserExe()
         if (!bExe) return { ok: false, error: '未找到系统浏览器（Edge/Chrome），无法脱离 ztEdit 播放。请安装 Edge 或 Chrome。' }
-        const fileUrl = 'file:///' + tempFile.replace(/\\/g, '/')
+        // 关键：用 pathToFileURL 正确百分号编码路径。源目录含中文 / 全角标点（如 `D:\11、codefile\测试工程`）
+        // 时，裸 `file:///` + 字符串替换生成的 URL 在 Edge 里经常加载失败 → 浏览器开了但白屏不播放。
+        const fileUrl = pathToFileURL(tempFile).href
         browserChild = spawn(bExe, ['--app=' + fileUrl, '--new-window', '--start-fullscreen'], {
           detached: true, stdio: 'ignore', windowsHide: false,
         })
@@ -343,6 +348,8 @@ function registerIpc() {
         a.height = Math.round(b.height * sf)
       }
       const r = await obsRecorder.start(a)
+      // 把临时文件路径回传渲染端，方便用户在录制中 / 排错时直接定位文件（注意：浏览器关闭后会自动删除）。
+      if (writtenTempFile) try { r = Object.assign({}, r, { tempFile: writtenTempFile }) } catch (e) {}
       // 延迟兜底：延迟期间向浏览器窗口发一次真实空格键。file:// 下引擎已按 delayMs 自动起播，
       // 这里主要作为「自动播放策略万一拦住音频」的兜底手势（真实按键算用户手势，可解锁）。
       // 与上面的 startPlayback 延后同源，时间点一致、且 startPlayback 内部 `if(isPlaying)return` 幂等。

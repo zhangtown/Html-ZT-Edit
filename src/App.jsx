@@ -388,7 +388,7 @@ export default function App() {
       setObsRec({
         recording: true,
         msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : '录制中（浏览器窗口 + OBS）') + (fit ? ' · ' + fit : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
-        filePath: '',
+        filePath: r.tempFile || '',
       })
     } else setObsRec({ recording: false, msg: String((r && r.error) || '启动失败').slice(0, 140), filePath: '' })
   }
