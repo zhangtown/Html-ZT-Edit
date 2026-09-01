@@ -1189,8 +1189,8 @@
       '.zt-hl-sweep{position:relative}',
       '.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}',
       '.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}',
-      // 组外被绑元素的独立强调（绑定不一定发生在 focus-group 内）
-      '.zt-focus-active{outline:3px solid rgba(196,30,36,.85);outline-offset:3px;opacity:1!important;filter:brightness(1)!important}',
+      // 组外被绑元素的独立强调（绑定不一定发生在 focus-group 内）：放大+红色光晕，与导出 HTML 一致
+      '.zt-focus-active{outline:2px solid rgba(196,30,36,.5);outline-offset:2px;opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 40px rgba(196,30,36,.4);z-index:3}',
     ].join('\n')
     document.head.appendChild(sweepStyleEl)
   }

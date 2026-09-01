@@ -464,6 +464,27 @@ async function start(opts) {
 
 // 停止录制，回传成片路径。
 // 优先用起录时 OBS 回传的 outputPath（精确，且目录里可能本来就有素材视频）；
+// 停止录制后关闭 OBS 进程：浏览器源是 OBS 内置 CEF 持续渲染，
+// 只停录制不关 OBS，HTML 会在场景里继续播放（动画/音频仍在跑）。
+// 用户要求「结束录制即杀 OBS」，这里按镜像名精确结束 obs64.exe（Windows）。
+// 非 Windows 直接走 disconnect（无 taskkill）。
+function killOBS() {
+  if (process.platform !== 'win32') {
+    try { if (obs) obs.disconnect() } catch (e) {}
+    return { ok: true, killed: false, note: '非 Windows，未杀进程' }
+  }
+  try {
+    const out = spawnSync('taskkill', ['/IM', 'obs64.exe', '/F'], { windowsHide: true })
+    const s = out.stdout ? out.stdout.toString() : ''
+    const err = out.stderr ? out.stderr.toString() : ''
+    try { if (obs) obs.disconnect() } catch (e) {}
+    connected = false
+    return { ok: true, killed: /SUCCESS|已结束/.test(s) || /没有.*运行/.test(err), raw: (s + err).trim() }
+  } catch (e) {
+    return { ok: false, error: String(e && e.message) }
+  }
+}
+
 // 拿不到再退回"按 mtime 取目录内最新视频文件"。
 async function stop() {
   // 即便界面认为"没连上"也尝试重连一次：残留的录制必须由 OBS 自己停掉。
@@ -580,6 +601,6 @@ async function disconnect() {
 
 module.exports = {
   SCENE_NAME,
-  connect, ensureOBSRunning, resolveObsExe, start, stop, status, listScenes, sceneHealth,
+  connect, ensureOBSRunning, resolveObsExe, start, stop, killOBS, status, listScenes, sceneHealth,
   disconnect, isConnected: () => connected,
 }
