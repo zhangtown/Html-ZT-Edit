@@ -152,6 +152,10 @@ document.querySelectorAll('[data-zt-anim-effect="highlight-sweep"]').forEach(fun
 var subtitleEl=document.getElementById('subtitleCurrent');
 var progressBar=document.getElementById('progressBar');
 let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0;
+// 音频不可用时的退化计时基准：autoplay 被拦 / 页面无 <audio> / 无音轨时，
+// loop 改走墙钟（performance.now）推进时间轴，画面照常播放（无声）。
+// 有声时 loop 优先用 audio.currentTime，这条基准只在退化路径生效。
+var __ztClockBase=0;
 
 function showSlide(idx,seekAudio){
   slides.forEach(function(s,i){s.classList.remove('active');if(i===idx)s.classList.add('active')});
@@ -184,7 +188,12 @@ function updateSlide(time){
 
 function loop(){
   if(!isPlaying)return;
-  var t=audio.currentTime;
+  // 时间轴来源：有声且正在播 → 用 audio.currentTime（声画同步）；
+  // 否则退化到墙钟（autoplay 被拦 / 无 <audio> / 无音轨 / file:// 双击无手势）→ 画面照常推进（无声）。
+  var t;
+  if(audio && !audio.paused && isFinite(audio.duration) && audio.duration>0){ t=audio.currentTime }
+  else { t=(performance.now()-__ztClockBase)/1000 }
+  if(!isFinite(t))t=0;
   updateSlide(t);updateSubtitle(t);
   var cur=document.querySelector('.slide.active');
   if(cur){
@@ -209,11 +218,20 @@ function loop(){
       }
     })
   }
-  if(audio.duration)progressBar.style.width=(t/audio.duration*100)+'%';
+  if(audio && audio.duration)progressBar.style.width=(t/audio.duration*100)+'%';
   requestAnimationFrame(loop)
 }
 
-function startPlayback(){if(isPlaying)return;audio.play().then(function(){isPlaying=true;loop()}).catch(function(){})}
+function startPlayback(){
+  if(isPlaying)return;
+  var begin=function(){isPlaying=true;__ztClockBase=performance.now();loop()};
+  try{
+    if(!audio){begin();return}
+    var p=audio.play();
+    if(p&&p.then)p.then(begin).catch(begin); // autoplay 被拦 → 退化墙钟，无声也播放
+    else begin()
+  }catch(e){begin()} // 无 audio / play() 抛错 → 退化墙钟
+}
 
 // 手动翻页时清除动画状态
 var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');el.classList.remove('zt-hl-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
