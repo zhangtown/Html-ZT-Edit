@@ -146,7 +146,8 @@ export default function App() {
   // OBS 系统级录制（全自动一键，成片直接落在当前 HTML 所在目录）
   const [obsRec, setObsRec] = useState({ recording: false, msg: '', filePath: '' })
   const [obsInteractDelay, setObsInteractDelay] = useState(0) // OBS 起播/导出 HTML 的「音频开始延迟」（秒，0.3 起即几百 ms 量级）：进画面先放首屏动画，N 秒后才出音频
-  const [obsCaptureMode, setObsCaptureMode] = useState('obs-browser-source') // OBS 录制方式：默认用 OBS 原生浏览器源（无临时窗口/文件）；'browser'=系统浏览器窗口被 OBS 捕获（仅作 CEF 自动播放失败时的兜底）
+  // OBS 录制方式固定为原生浏览器源（无临时窗口/文件，OBS 内置 CEF 直接渲染 HTML）。不再提供选择器。
+  const OBS_CAPTURE_MODE = 'obs-browser-source'
   const obsRecRef = useRef(obsRec) // 异步/守卫里读最新值
   // 「录制 + 播放」联动标记：由「● OBS 录制」一键拉起的这次录制，播放结束要自动停录。
   // 单独点「▶ 本页预览」播放时不置位，播完不会误停正在进行的录制。
@@ -342,8 +343,7 @@ export default function App() {
 
   async function handleStartPlay(from) {
     const nativeScript = getNativePlayerScript()
-    // 单独点「▶ 本页预览」只播放、不录制。
-    // 但「● OBS 录制」会在起录成功后反过来调用本函数自动从头播放（见 startObsRec）——
+    // 「▶ 本页预览」只播放、不录制；「● OBS 录制」会在起录成功后反过来调用本函数自动从头播放（见 startObsRec）。
     // 录制必须伴随播放，否则录进去的是静止画面且没声音。
     send({ type: 'startPlay', from, nativeScript })
   }
@@ -380,13 +380,13 @@ export default function App() {
     const r = await window.ztRecSession.startOBS({
       outdir,
       html: finalHtml,
-      captureMode: obsCaptureMode,
+      captureMode: OBS_CAPTURE_MODE,
       interactDelaySec: obsInteractDelay,
     })
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
       const fit = r.fit ? `画布已对齐 ${r.fit}` : ''
-      const modeLabel = obsCaptureMode === 'obs-browser-source' ? 'OBS 浏览器源' : '浏览器窗口 + OBS'
+      const modeLabel = 'OBS 浏览器源'
       setObsRec({
         recording: true,
         msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + (fit ? ' · ' + fit : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
@@ -857,14 +857,6 @@ export default function App() {
         ) : (
           <>
             <button
-              onClick={() => handleStartPlay(0)}
-              disabled={!ready || !total}
-              title="从头开始自动播放（含音频/字幕/动画）"
-              style={btn('#0F6E56')}
-            >
-              ▶ 从头播放
-            </button>
-            <button
               onClick={() => handleStartPlay(current)}
               disabled={!ready || !total}
               title="从当前页开始播放预览（含音频）"
@@ -891,21 +883,6 @@ export default function App() {
                 <option value={1.5}>1.5s</option>
                 <option value={2}>2.0s</option>
                 <option value={3}>3.0s</option>
-              </select>
-            </label>
-            <label
-              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#d1d5db' }}
-              title="OBS 录制方式：浏览器窗口=系统浏览器全屏打开、OBS 捕获其窗口（所见即所得，依赖最新 Chromium）；OBS 浏览器源=HTML 直接交给 OBS 内置 CEF 渲染（无临时窗口/文件，但用较旧 CEF，需在装 OBS 的机器实测 audio 自动播放）。"
-            >
-              录制方式
-              <select
-                value={obsCaptureMode}
-                onChange={(e) => setObsCaptureMode(e.target.value)}
-                disabled={obsRec.recording}
-                style={{ ...btn('#374151'), minWidth: 120 }}
-              >
-                <option value="obs-browser-source">OBS 浏览器源</option>
-                <option value="browser">浏览器窗口（兜底）</option>
               </select>
             </label>
             <button

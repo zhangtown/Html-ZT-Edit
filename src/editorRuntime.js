@@ -2177,6 +2177,15 @@
     if (nativeScriptEl) return
     // 先换掉脚本里的旧动画引擎，再做其它改写（见 patchNativeEngine 注释）
     code = patchNativeEngine(code)
+    // OBS 浏览器源（CEF offscreen）会把 requestAnimationFrame 节流到≈0，导致原生 loop() 只跑一帧就冻结，
+    // 而音频由 audio.play() 独立推进 → 录屏「画面不动、声音正常」。这里注入 rAF→setTimeout 垫片：
+    // 在 OBS 里 loop 改走 33ms 定时器持续推进画面；真实 Edge 里 rAF 本就正常，垫片不影响其行为。
+    var rafShim = '(function(){if(window.__ztRafShim)return;window.__ztRafShim=1;'
+      + 'var __ztRealRaf=window.requestAnimationFrame;'
+      + 'window.requestAnimationFrame=function(cb){return setTimeout(function(){cb(performance.now?performance.now():Date.now())},33)};'
+      + 'window.cancelAnimationFrame=function(id){clearTimeout(id)};'
+      + '})();'
+    code = rafShim + '\n' + code
     // 去掉原生脚本里绑在 document/window 上的交互监听（前进/后退由编辑器 UI 负责），
     // 仅保留播放引擎本身，并把 startPlayback 暴露为全局以便外部启动；同时支持外部停止残留循环。
     code = code
