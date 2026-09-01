@@ -31,7 +31,8 @@ const os = require('os')
 const { spawn, spawnSync } = require('child_process')
 
 const SCENE_NAME = 'ZT-录制'                 // 全自动维护的专用场景
-const WIN_SOURCE = 'zt-window'               // 窗口捕获源（指向 ztEdit 主窗口）
+const WIN_SOURCE = 'zt-window'               // 窗口捕获源（指向 ztEdit 主窗口 / 系统浏览器窗口）
+const BROWSER_SOURCE = 'zt-html'             // OBS 原生浏览器源（HTML 直接交给 OBS 内置 CEF 渲染）
 const AUDIO_SOURCE = 'zt-desktop-audio'      // 场景/全局都没音源时自动补的「桌面音频」
 
 // 场景里能出画面的源类型（一个都没有 → 录出来是黑屏）
@@ -389,6 +390,41 @@ async function ensureWindowCapture(sceneName, windowVal) {
   return true
 }
 
+// 建/更新「OBS 原生浏览器源」：HTML 直接交给 OBS 内置 CEF 渲染，无需临时窗口/文件管理。
+// 浏览器源自带音轨（VIDEO_KINDS/AUDIO_KINDS 都已含 browser_source），所以不补桌面音频。
+// 分辨率由我们显式设（width/height），OBS 画布对齐到它即可 1:1 最锐利。
+async function ensureBrowserSource(sceneName, url, width, height) {
+  const o = getObs()
+  const w = width || 1920
+  const h = height || 1080
+  let exists = false
+  try {
+    const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
+    exists = si.sceneItemId != null
+  } catch (e) { exists = false }
+  const settings = {
+    url: url,
+    width: w,
+    height: h,
+    fps: 30,
+    css: '',
+    // OBS 浏览器源基于 CEF，默认放开自动播放（含带声）。若个别 OBS 版本拦自动播放，
+    // 可在 OBS 设置→高级 里把「浏览器源」相关自动播放策略放宽；本工具不强行改用户配置。
+  }
+  if (!exists) {
+    await o.call('CreateInput', {
+      sceneName,
+      inputName: BROWSER_SOURCE,
+      inputKind: 'browser_source',
+      inputSettings: settings,
+      setVisible: true,
+    })
+  } else {
+    await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
+  }
+  return true
+}
+
 // 读取源在 OBS 里的真实像素尺寸（GetSceneItemTransform 回传的 sourceWidth/Height）。
 // 画布比源大 → 放大（糊）；比源小 → 缩小（丢清晰度）；只有 1:1 最锐利。
 // 不能拿主进程传来的显示器尺寸当画布——捕获的是窗口，窗口通常比显示器小。
@@ -543,61 +579,76 @@ async function start(opts) {
     // 1) 专用场景
     await ensureScene(SCENE_NAME)
 
-    // 2) 自动认窗口 + 建窗口捕获源（缺了它就是黑屏）
-    //    浏览器模式：优先按 exe 认出 msedge/chrome 等（Edge 全屏窗口标题是页面 title，未必等于临时文件名）。
-    const pw = await autoPickWindow(a.windowTitle, a.captureMode === 'browser'
-      ? { preferExe: /msedge\.exe|chrome\.exe|brave\.exe|firefox\.exe|edge\.exe|opera\.exe|iexplore\.exe/i }
-      : {})
-    if (!pw.ok) return pw
-    await ensureWindowCapture(SCENE_NAME, pw.value)
-
-    // 3) 画布对齐到「窗口捕获源的真实像素尺寸」，1:1 不缩放。
-    //    以前用的是整块显示器尺寸（比窗口大）→ OBS 把窗口放大铺满画布 → 成片异常模糊。
+    // 2) + 3) + 4) 画面源与音频：按 captureMode 分流
+    const maxW = parseInt(a.maxWidth || process.env.OBS_MAX_WIDTH || 1920, 10)
+    const even = (n) => Math.max(2, Math.round(n / 2) * 2)
     let fit = null
-    if (a.autoFit !== false) {
-      try {
-        await wait(700) // 窗口捕获源要一两帧才量得到真实尺寸
-        const sz = await getSourceSize(SCENE_NAME, WIN_SOURCE)
-        let w = (sz && sz.width) || parseInt(a.width, 10)
-        let h = (sz && sz.height) || parseInt(a.height, 10)
-        // x264 等编码器要求宽高为偶数，奇数会被 OBS 拒绝或出怪问题
-        const even = (n) => Math.max(2, Math.round(n / 2) * 2)
-        // 只缩不放：源超过上限就等比降采样（降采样依然锐利，不像放大那样糊），
-        // 同时避免 x264 软编在高分辨率下必然掉帧 → 成片抖动。
-        // 想录更高分辨率就传 maxWidth（或设环境变量 OBS_MAX_WIDTH）。
-        const maxW = parseInt(a.maxWidth || process.env.OBS_MAX_WIDTH || 1920, 10)
-        if (w > maxW) { h = Math.round((h * maxW) / w); w = maxW }
-        w = even(w)
-        h = even(h)
-        if (w && h) {
-          fit = await fitVideo(w, h)
-          // 画布尺寸可能刚变过，重铺一次：左上角对齐 + bounds 等于源尺寸（即 1:1）
-          const si = await o.call('GetSceneItemId', { sceneName: SCENE_NAME, sourceName: WIN_SOURCE })
-          if (si.sceneItemId != null) {
-            await o.call('SetSceneItemTransform', {
-              sceneName: SCENE_NAME,
-              sceneItemId: si.sceneItemId,
-              sceneItemTransform: {
-                positionX: 0,
-                positionY: 0,
-                boundsType: 'OBS_BOUNDS_SCALE_INNER',
-                boundsAlignment: 0,
-                boundsWidth: w,
-                boundsHeight: h,
-              },
-            })
-          }
-        }
-      } catch (e) { /* 不致命 */ }
-    }
-
-    // 4) 音频兜底：必须确认存在「桌面音频」这类能抓系统回放的源。
-    //    用 hasAnyAudio() 会被 OBS 自带的麦克风骗过去 → 成片无声。
     let audio = 'exists'
-    try {
-      if (!(await hasDesktopAudio())) audio = await ensureDesktopAudio(SCENE_NAME)
-    } catch (e) {
-      audio = 'failed: ' + ((e && e.message) || e)
+    if (a.captureMode === 'obs-browser-source') {
+      // ── OBS 原生浏览器源模式 ──
+      // HTML 直接交给 OBS 内置 CEF 渲染：无临时窗口、无临时文件生命周期、分辨率=我们设的画布。
+      // 浏览器源自带音轨，不补桌面音频（避免声音翻倍）。这是比"捕获 Edge 窗口"更稳的路线，
+      // 但依赖 OBS 的 CEF 能跑你的播放引擎（尤其 audio 自动播放）——需在装 OBS 的机器上实测。
+      if (!a.browserUrl) return { ok: false, error: '浏览器源模式缺少 HTML 地址（browserUrl）。' }
+      const bw = parseInt(a.width, 10) || 1920
+      const bh = parseInt(a.height, 10) || 1080
+      await ensureBrowserSource(SCENE_NAME, a.browserUrl, bw, bh)
+      // 画布对齐到浏览器源尺寸（1:1 最锐利）；超上限只缩不放
+      let w = even(bw), h = even(bh)
+      if (w > maxW) { h = even(Math.round((h * maxW) / w)); w = even(maxW) }
+      if (w && h) fit = await fitVideo(w, h)
+      audio = 'browser-source'
+      a.windowTitle = '' // 浏览器源模式不需要匹配窗口标题
+    } else {
+      // ── 窗口捕获模式（默认）：录制 ztEdit 主窗口 或 系统浏览器窗口 ──
+      // 2) 自动认窗口 + 建窗口捕获源（缺了它就是黑屏）
+      //    浏览器模式：优先按 exe 认出 msedge/chrome 等（Edge 全屏窗口标题是页面 title，未必等于临时文件名）。
+      const pw = await autoPickWindow(a.windowTitle, a.captureMode === 'browser'
+        ? { preferExe: /msedge\.exe|chrome\.exe|brave\.exe|firefox\.exe|edge\.exe|opera\.exe|iexplore\.exe/i }
+        : {})
+      if (!pw.ok) return pw
+      await ensureWindowCapture(SCENE_NAME, pw.value)
+
+      // 3) 画布对齐到「窗口捕获源的真实像素尺寸」，1:1 不缩放。
+      //    以前用的是整块显示器尺寸（比窗口大）→ OBS 把窗口放大铺满画布 → 成片异常模糊。
+      if (a.autoFit !== false) {
+        try {
+          await wait(700) // 窗口捕获源要一两帧才量得到真实尺寸
+          const sz = await getSourceSize(SCENE_NAME, WIN_SOURCE)
+          let w = (sz && sz.width) || parseInt(a.width, 10)
+          let h = (sz && sz.height) || parseInt(a.height, 10)
+          if (w > maxW) { h = Math.round((h * maxW) / w); w = maxW }
+          w = even(w)
+          h = even(h)
+          if (w && h) {
+            fit = await fitVideo(w, h)
+            // 画布尺寸可能刚变过，重铺一次：左上角对齐 + bounds 等于源尺寸（即 1:1）
+            const si = await o.call('GetSceneItemId', { sceneName: SCENE_NAME, sourceName: WIN_SOURCE })
+            if (si.sceneItemId != null) {
+              await o.call('SetSceneItemTransform', {
+                sceneName: SCENE_NAME,
+                sceneItemId: si.sceneItemId,
+                sceneItemTransform: {
+                  positionX: 0,
+                  positionY: 0,
+                  boundsType: 'OBS_BOUNDS_SCALE_INNER',
+                  boundsAlignment: 0,
+                  boundsWidth: w,
+                  boundsHeight: h,
+                },
+              })
+            }
+          }
+        } catch (e) { /* 不致命 */ }
+      }
+
+      // 4) 音频兜底：必须确认存在「桌面音频」这类能抓系统回放的源。
+      //    用 hasAnyAudio() 会被 OBS 自带的麦克风骗过去 → 成片无声。
+      try {
+        if (!(await hasDesktopAudio())) audio = await ensureDesktopAudio(SCENE_NAME)
+      } catch (e) {
+        audio = 'failed: ' + ((e && e.message) || e)
+      }
     }
 
     // 5) 切场景 + 起录前体检（没视频源 = 黑屏，直接拦下而不是录完才发现）
@@ -652,12 +703,13 @@ async function start(opts) {
     return {
       ok: true,
       scene: SCENE_NAME,
-      window: pw.name,
+      window: a.captureMode === 'obs-browser-source' ? 'OBS 浏览器源' : (pw && pw.name),
+      captureMode: a.captureMode,
       outdir,
       fit,
       audio,
       health,
-      warn: audio.indexOf('failed') === 0 ? '⚠自动补音频源失败，成片可能无声' : '',
+      warn: (audio && audio.indexOf && audio.indexOf('failed') === 0) ? '⚠自动补音频源失败，成片可能无声' : '',
     }
   } catch (e) {
     const msg = (e && e.message) ? e.message : String(e)

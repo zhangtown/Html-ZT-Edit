@@ -294,7 +294,27 @@ function registerIpc() {
     try {
       // 浏览器模式：把内存 HTML 落盘到源目录的临时文件，用系统浏览器全屏打开，
       // OBS 捕获的是浏览器窗口（不再是 ztEdit 编辑界面），最小化 ztEdit 也不影响录制。
-      if (a.captureMode === 'browser') {
+      if (a.captureMode === 'obs-browser-source') {
+        // OBS 原生浏览器源：把内存 HTML 落盘为稳定文件「录屏源.html」，交给 OBS 内置 CEF 渲染。
+        // 不打开系统浏览器窗口、不依赖窗口捕获；文件持久保留（区别于浏览器窗口模式的临时文件会被删除）。
+        const outdir = a.outdir ? path.resolve(a.outdir) : ''
+        if (!outdir) return { ok: false, error: '没有拿到 HTML 所在目录，无法落盘浏览器源文件。请先「选择 HTML 文件」。' }
+        try { fs.mkdirSync(outdir, { recursive: true }) } catch (e) {}
+        const stableFile = path.join(outdir, '录屏源.html')
+        let html = a.html || ''
+        if (!/<title>/i.test(html)) {
+          if (/<head[^>]*>/i.test(html)) html = html.replace(/<head[^>]*>/i, '$&<title>ZT录屏源</title>')
+          else if (/<html[^>]*>/i.test(html)) html = html.replace(/<html[^>]*>/i, '$&<head><title>ZT录屏源</title></head>')
+          else html = '<head><title>ZT录屏源</title></head>' + html
+        }
+        const delayMs = a.interactDelaySec > 0 ? Math.max(300, Math.round(a.interactDelaySec * 1000)) : 0
+        if (delayMs) html = html.replace(/setTimeout\(\s*startPlayback\s*,\s*\d+\s*\)/, 'setTimeout(startPlayback, ' + delayMs + ')')
+        fs.writeFileSync(stableFile, html, 'utf8')
+        writtenTempFile = stableFile // 复用回传通道：UI 显示路径；此文件不删，录完仍在项目目录
+        a.browserUrl = pathToFileURL(stableFile).href
+        a.width = a.width || 1920
+        a.height = a.height || 1080
+      } else if (a.captureMode === 'browser') {
         const outdir = a.outdir ? path.resolve(a.outdir) : ''
         if (!outdir) return { ok: false, error: '没有拿到 HTML 所在目录，无法落盘临时文件。请先「选择 HTML 文件」。' }
         try { fs.mkdirSync(outdir, { recursive: true }) } catch (e) {}

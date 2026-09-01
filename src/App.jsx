@@ -146,6 +146,7 @@ export default function App() {
   // OBS 系统级录制（全自动一键，成片直接落在当前 HTML 所在目录）
   const [obsRec, setObsRec] = useState({ recording: false, msg: '', filePath: '' })
   const [obsInteractDelay, setObsInteractDelay] = useState(0) // OBS 起播/导出 HTML 的「音频开始延迟」（秒，0.3 起即几百 ms 量级）：进画面先放首屏动画，N 秒后才出音频
+  const [obsCaptureMode, setObsCaptureMode] = useState('browser') // OBS 录制方式：'browser'=系统浏览器窗口被 OBS 捕获；'obs-browser-source'=HTML 直接交给 OBS 内置 CEF 渲染（无临时窗口/文件管理）
   const obsRecRef = useRef(obsRec) // 异步/守卫里读最新值
   // 「录制 + 播放」联动标记：由「● OBS 录制」一键拉起的这次录制，播放结束要自动停录。
   // 单独点「▶ 本页预览」播放时不置位，播完不会误停正在进行的录制。
@@ -379,15 +380,16 @@ export default function App() {
     const r = await window.ztRecSession.startOBS({
       outdir,
       html: finalHtml,
-      captureMode: 'browser',
+      captureMode: obsCaptureMode,
       interactDelaySec: obsInteractDelay,
     })
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
       const fit = r.fit ? `画布已对齐 ${r.fit}` : ''
+      const modeLabel = obsCaptureMode === 'obs-browser-source' ? 'OBS 浏览器源' : '浏览器窗口 + OBS'
       setObsRec({
         recording: true,
-        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : '录制中（浏览器窗口 + OBS）') + (fit ? ' · ' + fit : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
+        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + (fit ? ' · ' + fit : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
         filePath: r.tempFile || '',
       })
     } else setObsRec({ recording: false, msg: String((r && r.error) || '启动失败').slice(0, 140), filePath: '' })
@@ -891,11 +893,26 @@ export default function App() {
                 <option value={3}>3.0s</option>
               </select>
             </label>
+            <label
+              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#d1d5db' }}
+              title="OBS 录制方式：浏览器窗口=系统浏览器全屏打开、OBS 捕获其窗口（所见即所得，依赖最新 Chromium）；OBS 浏览器源=HTML 直接交给 OBS 内置 CEF 渲染（无临时窗口/文件，但用较旧 CEF，需在装 OBS 的机器实测 audio 自动播放）。"
+            >
+              录制方式
+              <select
+                value={obsCaptureMode}
+                onChange={(e) => setObsCaptureMode(e.target.value)}
+                disabled={obsRec.recording}
+                style={{ ...btn('#374151'), minWidth: 120 }}
+              >
+                <option value="browser">浏览器窗口</option>
+                <option value="obs-browser-source">OBS 浏览器源</option>
+              </select>
+            </label>
             <button
               onClick={obsRec.recording ? stopObsRec : startObsRec}
               disabled={!recRoot && !obsRec.recording}
               style={btn(obsRec.recording ? '#7f1d1d' : '#1d4ed8')}
-              title="OBS 系统级录制：自动建场景/窗口捕获源/桌面音频，成片直接落在当前 HTML 所在目录"
+              title="OBS 系统级录制：自动建场景 + 画面源（窗口捕获 / 浏览器源）+ 音频兜底，成片直接落在当前 HTML 所在目录"
             >
               {obsRec.recording ? '■ 停止 OBS' : '● OBS 录制'}
             </button>
