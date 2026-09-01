@@ -53,3 +53,6 @@ vo-pipeline/test_tts.py
 # 录制产物不入库（OBS 默认命名 YYYY-MM-DD HH-MM-SS.mp4，已不适用旧 *-录屏-* 模式）
 测试工程/*.mp4
 测试工程/*绑定复现*.html
+
+# WorkBuddy 项目数据/本地备份不入库
+.workbuddy/
