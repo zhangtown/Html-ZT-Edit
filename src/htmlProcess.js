@@ -69,6 +69,7 @@ export function rewriteAssets(html, baseDir, fileMap, relMap) {
 export function stripEditorParts(html) {
   return html
     .replace(/<style id="zt-editor-style">[\s\S]*?<\/style>/g, '')
+    .replace(/<style id="zt-editor-fonts">[\s\S]*?<\/style>/g, '')   // 编辑器字体注入样式（data-zt-ff/fs/fw 变量），同其他编辑器样式一起不进草稿/产物
     .replace(/<style id="zt-anim-sweep">[\s\S]*?<\/style>/g, '')   // 编辑器动画预览样式（含 .zt-focus-active 红框 outline），不进草稿/产物
     .replace(/<script id="zt-editor-runtime">[\s\S]*?<\/script>/g, '')
     .replace(/\s+class="([^"]*)"/g, (m, cls) => {
@@ -81,7 +82,7 @@ export function stripEditorParts(html) {
 
 // 导出：把 iframe 回传的 html 中的 blob URL 恢复为原始相对引用，
 // 并把脚本片段还原回 body，最后包裹成完整文档
-const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n/* 组外被绑元素的独立强调：导出 HTML 里 focus-item 往往不被 .focus-group 包裹（编辑器运行时才建组），\n   激活也要有「放大+红色光晕」的正确视觉效果，而不是只剩裸 outline 红框。\n   组内规则优先级更高（带 .focus-group.dim-others 前缀），这条做兜底。 */\n.zt-focus-active{opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 50px rgba(196,30,36,.55);z-index:3}\n.zt-hl-sweep{position:relative}\n.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}\n.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}\n'
+const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n/* 组外元素（未包 .focus-group 的独立 focus-item，如印章）激活时只放大、不加 box-shadow 光晕：源 HTML 里这些组外元素激活本无光晕（光晕只在 .focus-group 组内元素上有）。 */\n.zt-focus-active{opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);z-index:3}\n.zt-hl-sweep{position:relative}\n.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}\n.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}\n'
 
 // 在产物侧剥离编辑器注入物（改的是 doc 副本，iframe 里的编辑器完全不受影响）。
 //
