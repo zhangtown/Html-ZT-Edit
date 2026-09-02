@@ -37,6 +37,8 @@
   var playBaseTime = 0 // 无音频时的基准时间（秒）
   var playStartStamp = 0 // 无音频时的起始 performance.now()
   var playAudioOk = false // 音频是否真正播放成功（被自动播放策略拦截时走计时器兜底）
+  var playLimitToPage = false // 本页预览：只播起始页，越界自动停
+  var playLimitEnd = 0 // 本页预览：起始页的结束时间（秒）
 
   function post(msg) {
     window.parent.postMessage(msg, '*')
@@ -1175,8 +1177,8 @@
       '.zt-hl-sweep{position:relative}',
       '.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}',
       '.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}',
-      // 组外被绑元素的独立强调（绑定不一定发生在 focus-group 内）：放大+红色光晕，与导出 HTML 一致
-      '.zt-focus-active{outline:2px solid rgba(196,30,36,.5);outline-offset:2px;opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 40px rgba(196,30,36,.4);z-index:3}',
+      // 组外被绑元素的独立强调（绑定不一定发生在 focus-group 内）：只放大，不加红框/光晕，与导出 FOCUS_CSS 一致
+      '.zt-focus-active{opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);z-index:3}',
     ].join('\n')
     document.head.appendChild(sweepStyleEl)
   }
@@ -2147,6 +2149,7 @@
   function playLoop() {
     if (!playMode) return
     var t = playCurrentTime()
+    if (playLimitToPage && playLimitEnd > 0 && t >= playLimitEnd) { stopPlay(false, 'manual'); return }
     playUpdateSlide(t)
     playUpdateSubtitle(t)
     playTriggerBoundAnims(t)
@@ -2193,6 +2196,9 @@
 
   function nativeTick() {
     if (!nativeMode) return
+    // 本页预览：原生播放器越界时手动收尾（原生 loop 由 isPlaying=false 退出）
+    var pa2 = getPlayAudio()
+    if (playLimitToPage && playLimitEnd > 0 && pa2 && pa2.currentTime >= playLimitEnd) { stopPlay(false, 'manual'); return }
     // 音频播完 → 通知父层收尾（reason=ended，录屏据此延时停录）；原生脚本自身没有结束回调
     var pa = getPlayAudio()
     if (pa && pa.ended) { stopPlay(false, 'ended'); return }
@@ -2205,8 +2211,9 @@
     nativeRaf = requestAnimationFrame(nativeTick)
   }
 
-  function startPlay(fromIndex, nativeScript) {
+  function startPlay(fromIndex, nativeScript, limitToPage) {
     if (playMode) stopPlay(true)
+    playLimitToPage = !!limitToPage
     slides = getSlides()
     if (!slides.length) return
     // 退出可能进行中的编辑交互
@@ -2231,6 +2238,8 @@
       injectNativePlayer(nativeScript)
       window.__ztKillNative = false
       var startIdx = (typeof fromIndex === 'number' && fromIndex > 0) ? fromIndex : 0
+      var limSt = playTimingFor(startIdx)
+      playLimitEnd = playLimitToPage && limSt ? limSt.end : 0
       // 原生播放器错过了 load 自动启动，这里显式启动（暴露的 startPlayback）
       setTimeout(function () {
         if (!nativeMode) return
@@ -2256,6 +2265,7 @@
     if (fromIndex > slides.length - 1) fromIndex = slides.length - 1
     var st = playTimingFor(fromIndex)
     playBaseTime = st ? st.start : 0
+    playLimitEnd = playLimitToPage && st ? st.end : 0
     playStartStamp = performance.now()
     playShowSlide(fromIndex, false)
     if (playAudio) {
@@ -2281,6 +2291,8 @@
   function stopPlay(silent, reason) {
     if (playRaf) { cancelAnimationFrame(playRaf); playRaf = null }
     if (nativeRaf) { cancelAnimationFrame(nativeRaf); nativeRaf = null }
+    playLimitToPage = false
+    playLimitEnd = 0
     nativeMode = false
     window.__ztKillNative = true
     // 停止原生播放循环：置 isPlaying=false，让原生 loop 自行退出（移除 script 无法停掉已排程的 rAF）
@@ -2401,7 +2413,7 @@
       else if (m.type === 'next') show(current + 1)
       else if (m.type === 'prev') show(current - 1)
       else if (m.type === 'animEngine') setAnimEngine(m.bootstrap, m.parts)
-      else if (m.type === 'startPlay') startPlay(m.from, m.nativeScript)
+      else if (m.type === 'startPlay') startPlay(m.from, m.nativeScript, m.limitToPage)
       else if (m.type === 'stopPlay') stopPlay()
       else if (m.type === 'playGoto') playGoto(m.index)
       else if (m.type === 'toggleGrid') {

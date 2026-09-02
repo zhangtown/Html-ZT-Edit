@@ -342,9 +342,9 @@ export default function App() {
 
   async function handleStartPlay(from) {
     const nativeScript = getNativePlayerScript()
-    // 「▶ 本页预览」只播放、不录制；「● OBS 录制」会在起录成功后反过来调用本函数自动从头播放（见 startObsRec）。
+    // 「▶ 本页预览」只播放、不录制，且只播当前页（limitToPage）；「● OBS 录制」在起录成功后反过来调用本函数自动从头播放（见 startObsRec）。
     // 录制必须伴随播放，否则录进去的是静止画面且没声音。
-    send({ type: 'startPlay', from, nativeScript })
+    send({ type: 'startPlay', from, nativeScript, limitToPage: true })
   }
 
   // OBS 系统级录制（全自动一键）：控制器自建场景、自动认 ztEdit 主窗口建窗口捕获源、
