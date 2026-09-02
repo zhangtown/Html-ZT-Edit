@@ -97,6 +97,55 @@ export function fileUrlMapper(rootDir) {
   }
 }
 
+// 在产物侧剥离编辑器注入物（改的是 doc 副本，iframe 里的编辑器完全不受影响）。
+//
+// 这是「动画问题」的根治点：serialize() 只是把 iframe 当前 DOM 原样回传，里面带着编辑器
+// 运行时脚本与编辑器样式表。而 <style id="zt-editor-style"> 的第一条规则就是
+//     *{animation:none!important;transition:none!important}
+// 它会被原样烤进录制/导出的 HTML —— 产物里所有 CSS 动画与过渡全部失效：
+// 开场飞入不飞、文字动画不出现、焦点光晕没有过渡「直接显示」。
+// 之前只在 exportClean()（导出路径）里清，录制走的是 serialize()，所以录制产物长期带着它，
+// 表现为「样例工程动画不对、双击打开录屏源.html 和 OBS 录出来一个样」。
+//
+// 同时清掉 zt-selected / zt-bound-highlight 等编辑器状态类（红线框 outline 的来源）
+// 与 dim-others（会让同组元素 opacity .35 + blur(1px)，是「画面暗/发糊」的来源之一）。
+function stripEditorFromDoc(doc) {
+  // 1) 编辑器注入的节点：样式表、运行时脚本、字体注入
+  ;['zt-editor-style', 'zt-editor-runtime', 'zt-editor-fonts'].forEach(function (id) {
+    var el = doc.getElementById(id)
+    if (el && el.parentNode) el.parentNode.removeChild(el)
+  })
+  // 2) 编辑器状态类（只剥类，不动元素本身）
+  var ZT_STATE = [
+    'zt-selected', 'zt-focus-active', 'zt-bound-highlight', 'zt-bound-mark',
+    'zt-binding-target', 'dim-others', 'zt-grid', 'zt-hl-sweep', 'zt-hl-active',
+  ]
+  try {
+    doc.querySelectorAll('[class]').forEach(function (el) {
+      var hit = false
+      ZT_STATE.forEach(function (c) {
+        if (el.classList.contains(c)) { el.classList.remove(c); hit = true }
+      })
+      if (hit && !el.getAttribute('class')) el.removeAttribute('class')
+    })
+  } catch (e) {}
+  // 3) 编辑器内部 data 属性，避免污染产物
+  try {
+    doc.querySelectorAll('[data-zt-original-style],[data-zt-ff],[data-zt-fs],[data-zt-fw]').forEach(function (el) {
+      el.removeAttribute('data-zt-original-style')
+      el.removeAttribute('data-zt-ff')
+      el.removeAttribute('data-zt-fs')
+      el.removeAttribute('data-zt-fw')
+    })
+  } catch (e) {}
+  // 4) 回到开场页：否则 active 停留在编辑时的当前页，与播放脚本 currentSlide=0 不一致
+  try {
+    var sl = doc.querySelectorAll('.slide')
+    sl.forEach(function (s) { s.classList.remove('active') })
+    if (sl.length) sl[0].classList.add('active')
+  } catch (e) {}
+}
+
 // mapValue 可选：把「原始相对引用」改写后再回填，用于录屏页把资源指向磁盘绝对地址。
 // 不传则原样还原为相对引用（导出行为，保证 edited.html 可独立分发）。
 export function restoreAndWrap(iframeHtml, relMap, scripts, mapValue) {
@@ -106,6 +155,8 @@ export function restoreAndWrap(iframeHtml, relMap, scripts, mapValue) {
     html = html.split(blob).join(target)
   }
   const doc = new DOMParser().parseFromString(html, 'text/html')
+  // 先剥离编辑器注入物与状态类，再做后续注入（顺序不能反，否则会把手写样式也误伤）
+  stripEditorFromDoc(doc)
   const body = doc.body || doc.documentElement
   // 生成新播放脚本替换原脚本
   const newScript = generatePlaybackScript(scripts, html)
@@ -121,19 +172,14 @@ export function restoreAndWrap(iframeHtml, relMap, scripts, mapValue) {
   // 注入聚焦强调效果所需 CSS（确保导出后 focus-group 联动可用）
   var headEl = doc.head || doc.documentElement
   headEl.insertAdjacentHTML('beforeend', '<style>' + FOCUS_CSS + '</style>')
-  // 补回焦点组：源 HTML 里 focus-zoom 等焦点元素天然被 .focus-group 容器包着
-  // （tl-row / img-row / flow-chart / media-grid 等直接带 focus-group 类），激活时才能走
-  // 「光晕 + transition 平滑过渡 + 同组其他元素 dim-others 变暗」的组效果。
-  // 但序列化/导出时这个组信息会丢（编辑器运行时建组、或 DOM 重排），导致导出产物里焦点元素裸奔、
-  // 只能走兜底规则（旧版带 outline 红线框且无 transition）→ 录制画面出现「红线框 + 无过渡」。
-  // 这里在生成产物前，给每个 focus-* 元素的父容器补上 focus-group 类，对齐源 HTML 行为。
-  // 注：只针对 data-zt-anim-effect 以 focus- 开头的元素（wipe/zoom-in 等非焦点类不带组，不动其父）。
-  try {
-    doc.querySelectorAll('[data-zt-anim-effect^="focus-"]').forEach(function (el) {
-      var p = el.parentElement
-      if (p && !p.classList.contains('focus-group')) p.classList.add('focus-group')
-    })
-  } catch (e) {}
+  // 注意：不要在这里"补 focus-group"。
+  // 源 HTML 的焦点组是作者显式写在 class 上的（如 <div class="tl-row focus-group" id="fg-timeline">），
+  // 序列化 outerHTML 会原样保留，产物里组信息并不会丢（已实证：录屏源.html 里 fg-timeline 等组都在）。
+  // 而"给每个 focus-* 元素的父容器加 focus-group"是有害的：父容器常常是 .lr-left / .lr-right /
+  // .slide-content 这类大布局容器，一旦被当成组，同组内只要有任一焦点激活，
+  // .focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
+  // 就会把整片区域的元素压暗并加 1px 模糊 —— 直接表现就是"画面偏暗、清晰度不高"。
+  // 组只认源 HTML 的标注；没有组的元素走下面 FOCUS_CSS 的兜底规则（纯光晕、无 outline）。
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML
 }
 

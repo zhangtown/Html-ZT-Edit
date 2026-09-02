@@ -390,10 +390,11 @@ export default function App() {
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
       const fit = r.fit ? `画布已对齐 ${r.fit}` : ''
+      const qual = Array.isArray(r.quality) && r.quality.length ? `画质已提升 ${r.quality.join('、')}` : ''
       const modeLabel = 'OBS 浏览器源'
       setObsRec({
         recording: true,
-        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + (fit ? ' · ' + fit : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
+        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + (fit ? ' · ' + fit : '') + (qual ? ' · ' + qual : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
         filePath: r.tempFile || '',
       })
     } else setObsRec({ recording: false, msg: String((r && r.error) || '启动失败').slice(0, 140), filePath: '' })

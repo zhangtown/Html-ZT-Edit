@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Html-ZT-Edit 可视化编辑器 · 演示</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600;700;900&amp;family=Noto+Sans+SC:wght@300;400;500;700&amp;display=swap" rel="stylesheet">
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  :root{ --bg:#F5F0E8; --card:#FAF6F0; --ink:#2C2C2C; --red:#C41E24; --zhu:#8B3A3A; --gold:#B8860B; --line:#D4C9B8; }
+  html,body{width:100%;height:100%;overflow:hidden;font-family:'Noto Sans SC',sans-serif;background:var(--bg);color:var(--ink)}
+  #stage{position:relative;width:100%;height:100%}
+
+  /* slide 用 opacity/visibility/transform 切换，与技能模板一致 */
+  .slide{
+    position:absolute;inset:0;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:60px 80px;background:var(--bg);
+    opacity:0;visibility:hidden;
+    transform:translateX(30px) scale(.97);
+    transition:opacity .8s ease-in-out,transform .8s ease-in-out,visibility .8s ease;
+    overflow:hidden;
+  }
+  .slide.active{opacity:1;visibility:visible;transform:translateX(0) scale(1)}
+  .slide-subtitles{display:none}
+
+  /* 进度条 */
+  #progress{position:absolute;top:0;left:0;height:5px;background:var(--red);width:0;z-index:20}
+
+  /* 封面 */
+  .cover-title{font-family:'Noto Serif SC',serif;font-weight:900;font-size:4.6rem;color:var(--ink);text-align:center;line-height:1.2}
+  .cover-sub{font-size:1.6rem;color:var(--zhu);letter-spacing:.12em;margin-top:10px}
+  .cover-seal{margin-top:34px;width:96px;height:96px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;transform:rotate(-8deg);box-shadow:0 8px 24px rgba(196,30,36,.25)}
+  .cover-seal span{color:#fff;font-family:'Noto Serif SC',serif;font-weight:700;font-size:1rem;text-align:center;line-height:1.2}
+
+  /* 拼贴墙飞入：与技能模板一致，用 backwards + 分批 animation-delay */
+  .collage{position:absolute;inset:0;z-index:0}
+  .collage img{position:absolute;object-fit:cover;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.55);opacity:.9;transform:rotate(var(--r,0deg));animation:flyIn .85s cubic-bezier(.22,.9,.32,1.08) backwards}
+  @keyframes flyIn{0%{opacity:0;transform:translate(var(--fx,0),var(--fy,-110vh)) rotate(calc(var(--r,0deg)*4)) scale(1.3)}70%{opacity:1}100%{opacity:1;transform:translate(0,0) rotate(var(--r,0deg)) scale(1)}}
+  .collage .c1{width:18%;left:3%;top:6%;--r:-8deg;--fx:-24vw;--fy:-105vh;animation-delay:.5s}
+  .collage .c2{width:17%;right:4%;top:4%;--r:7deg;--fx:22vw;--fy:-110vh;animation-delay:.5s}
+  .collage .c3{width:16%;left:6%;bottom:7%;--r:6deg;--fx:-26vw;--fy:105vh;animation-delay:.5s}
+  .collage .c4{width:18%;right:5%;bottom:6%;--r:-6deg;--fx:24vw;--fy:108vh;animation-delay:.5s}
+  .collage .c5{width:15%;left:50%;bottom:2%;--r:-2deg;--fx:0vw;--fy:115vh;animation-delay:3.5s;opacity:.7;transform:translateX(-50%) rotate(-2deg)}
+
+  /* 内容页 */
+  .lr-row{display:flex;gap:40px;align-items:center;width:100%;max-width:1280px;position:relative;z-index:2}
+  .lr-left{flex:1;min-width:0}
+  .lr-right{flex:1;min-width:0;display:flex;justify-content:center}
+  .page-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:2.6rem;color:var(--zhu);border-left:4px solid var(--zhu);padding-left:18px;margin-bottom:24px}
+  .page-text{font-size:1.5rem;line-height:1.9;color:var(--ink)}
+  .mat-img{max-width:100%;max-height:48vh;width:auto;display:block;object-fit:contain;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.12)}
+
+  /* focus 联动 */
+  .focus-group .focus-item{transition:all .6s ease;position:relative}
+  .focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
+  .focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}
+  .focus-group.dim-others .focus-item-text{opacity:.35;filter:blur(0)}
+  .focus-group.dim-others .focus-item-text.zt-focus-active{opacity:1;transform:scale(1.06);color:var(--red);font-weight:700}
+
+  /* 结尾 */
+  .end-card{background:var(--card);border-radius:36px;padding:50px 70px;text-align:center;box-shadow:0 4px 22px rgba(0,0,0,.05)}
+  .end-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:2.8rem;color:var(--ink);margin-bottom:14px}
+  .end-sub{color:var(--zhu);font-size:1.4rem}
+
+  #subtitle-bar{position:absolute;bottom:46px;left:0;right:0;text-align:center;z-index:20;font-size:2.2rem;font-weight:700;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.6),0 6px 18px rgba(0,0,0,.5),0 12px 40px rgba(0,0,0,.4)}
+  #hint{position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#999;font-size:.9rem;z-index:20}
+</style>
+<style id="zt-anim-sweep">.zt-hl-sweep{position:relative}
+.zt-hl-sweep::after{content:'';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}
+.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}
+.zt-focus-active{outline:2px solid rgba(196,30,36,.5);outline-offset:2px;opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 40px rgba(196,30,36,.4);z-index:3}</style><style>
+.focus-group .focus-item{transition:all .6s ease;position:relative}
+.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
+.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}
+/* 组外被绑元素的独立强调：导出 HTML 里 focus-item 往往不被 .focus-group 包裹（编辑器运行时才建组），
+   激活也要有「放大+红色光晕」的正确视觉效果，而不是只剩裸 outline 红框。
+   组内规则优先级更高（带 .focus-group.dim-others 前缀），这条做兜底。 */
+.zt-focus-active{outline:2px solid rgba(196,30,36,.5);outline-offset:2px;opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 40px rgba(196,30,36,.4);z-index:3}
+.zt-hl-sweep{position:relative}
+.zt-hl-sweep::after{content:'';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}
+.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}
+</style></head>
+<body>
+<div id="stage">
+  <div id="progress"></div>
+
+  <!-- Slide 0 封面 -->
+  <div class="slide active" id="s0">
+    <div class="slide-subtitles" style="display:none">
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0.1" data-zt-subtitle-end="3.525" data-zt-bound-to="[data-zt-id='el-0-0']">欢迎收看本次产品演示，我是小踏</div>
+    </div>
+    <div class="cover-title focus-item" data-zt-id="el-0-0" data-zt-anim-effect="focus-zoom">Html-ZT-Edit</div>
+    <div class="cover-sub">可视化编辑器 · 产品演示</div>
+    <div class="collage">
+      <img class="c1" src="red.png" alt="红">
+      <img class="c2" src="blue.png" alt="蓝">
+      <img class="c3" src="green.png" alt="绿">
+      <img class="c4" src="yellow.png" alt="黄">
+      <img class="c5" src="dark.png" alt="深">
+    </div>
+    <div class="cover-seal"><span>小踏<br>出品</span></div>
+  </div>
+
+  <!-- Slide 1 介绍 -->
+  <div class="slide" id="s1">
+    <div class="slide-subtitles" style="display:none">
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="4.225" data-zt-bound-to="[data-zt-id='el-1-0']">今天我们用几分钟，快速了解这款可视化编辑器</div>
+    </div>
+    <div class="lr-row">
+      <div class="lr-left">
+        <div class="page-title">为什么需要它</div>
+        <div class="focus-group">
+          <div class="page-text focus-item focus-item-text" data-zt-id="el-1-0" data-zt-anim-effect="focus-zoom">今天我们用几分钟，快速了解这款可视化编辑器。</div>
+        </div>
+      </div>
+      <div class="lr-right"><img class="mat-img" src="red.png" alt="示例"></div>
+    </div>
+  </div>
+
+  <!-- Slide 2 亮点1 -->
+  <div class="slide" id="s2">
+    <div class="slide-subtitles" style="display:none">
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="4.7" data-zt-bound-to="[data-zt-id='el-2-0']">第一个亮点，拖拽元素即时生效，所见即所得</div>
+    </div>
+    <div class="lr-row">
+      <div class="lr-left">
+        <div class="page-title">亮点一 · 拖拽即时生效</div>
+        <div class="focus-group">
+          <div class="page-text focus-item focus-item-text" data-zt-id="el-2-0" data-zt-anim-effect="focus-zoom">第一个亮点，拖拽元素即时生效，所见即所得。</div>
+        </div>
+      </div>
+      <div class="lr-right"><img class="mat-img" src="blue.png" alt="示例"></div>
+    </div>
+  </div>
+
+  <!-- Slide 3 亮点2 -->
+  <div class="slide" id="s3">
+    <div class="slide-subtitles" style="display:none">
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="4.362" data-zt-bound-to="[data-zt-id='el-3-0']">第二个亮点，多页切换稳定可靠，状态不丢失</div>
+    </div>
+    <div class="lr-row">
+      <div class="lr-left">
+        <div class="page-title">亮点二 · 多页稳定</div>
+        <div class="focus-group">
+          <div class="page-text focus-item focus-item-text" data-zt-id="el-3-0" data-zt-anim-effect="focus-zoom">第二个亮点，多页切换稳定可靠，状态不丢失。</div>
+        </div>
+      </div>
+      <div class="lr-right"><img class="mat-img" src="green.png" alt="示例"></div>
+    </div>
+  </div>
+
+  <!-- Slide 4 亮点3 -->
+  <div class="slide" id="s4">
+    <div class="slide-subtitles" style="display:none">
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="6.7" data-zt-bound-to="[data-zt-id='el-4-0']">第三个亮点，属性面板可以改大小颜色字体，还能一键对齐</div>
+    </div>
+    <div class="lr-row">
+      <div class="lr-left">
+        <div class="page-title">亮点三 · 属性面板</div>
+        <div class="focus-group">
+          <div class="page-text focus-item focus-item-text" data-zt-id="el-4-0" data-zt-anim-effect="focus-zoom">第三个亮点，属性面板可以改大小、颜色、字体，还能一键对齐。</div>
+        </div>
+      </div>
+      <div class="lr-right"><img class="mat-img" src="yellow.png" alt="示例"></div>
+    </div>
+  </div>
+
+  <!-- Slide 5 结尾 -->
+  <div class="slide" id="s5">
+    <div class="slide-subtitles" style="display:none">
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="5.325" data-zt-bound-to="[data-zt-id='el-5-0']">感谢观看，欢迎使用 Html-ZT-Edit，我们下次再见</div>
+    </div>
+    <div class="focus-group">
+      <div class="end-card focus-item" data-zt-id="el-5-0" data-zt-anim-effect="focus-zoom">
+        <div class="end-title">感谢观看</div>
+        <div class="end-sub">欢迎使用 Html-ZT-Edit，我们下次再见</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="subtitle-bar"></div>
+  <div id="hint">空格 / 点击播放 · ← → 翻页（同步音频）</div>
+  <audio id="bgAudio" src="口播音频.mp3" preload="metadata"></audio>
+</div>
+
+
+
+
+<script>window.__ztSubtitles=[];window.__ztSlideTimings=[{"slide":0,"start":0,"end":3.625},{"slide":1,"start":3.575,"end":7.8},{"slide":2,"start":7.8,"end":12.5},{"slide":3,"start":12.5,"end":16.862},{"slide":4,"start":16.862,"end":23.562},{"slide":5,"start":23.562,"end":28.887}];</script><script>
+(function(){
+// OBS 浏览器源（CEF offscreen）会把 requestAnimationFrame 节流到≈0，导致 loop() 只跑一帧就冻结，
+// 而 audio.play() 由音频线程独立推进 → 录屏「画面不动、声音正常」。这里注入 rAF→setTimeout 垫片：
+// 在 OBS 里 loop 改走 33ms 定时器持续推进画面；真实 Edge 里 rAF 本就正常，垫片不影响其行为。
+(function(){if(window.__ztRafShim)return;window.__ztRafShim=1;var __ztRealRaf=window.requestAnimationFrame;window.requestAnimationFrame=function(cb){return setTimeout(function(){cb(performance.now?performance.now():Date.now())},33)};window.cancelAnimationFrame=function(id){clearTimeout(id)};})();
+
+function getEffectKeyframes(effect) {
+  switch (effect) {
+    case 'zoom-in': return { from: { transform: 'scale(0.6)', opacity: 0 }, to: { transform: 'scale(1.3)', opacity: 1 } }
+    case 'zoom-out': return { from: { transform: 'scale(1)', opacity: 1 }, to: { transform: 'scale(0.6)', opacity: 0 } }
+    case 'fade-in': return { from: { opacity: 0 }, to: { opacity: 1 } }
+    case 'fly-left': return { from: { transform: 'translateX(-120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
+    case 'fly-right': return { from: { transform: 'translateX(120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
+    case 'fly-top': return { from: { transform: 'translateY(-120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
+    case 'fly-bottom': return { from: { transform: 'translateY(120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
+    case 'bounce': return { from: { transform: 'scale(0.8)', opacity: 0 }, to: { transform: 'scale(1.15)', opacity: 1 } }
+    case 'rotate': return { from: { transform: 'rotate(-15deg) scale(0.9)', opacity: 0 }, to: { transform: 'rotate(0deg) scale(1)', opacity: 1 } }
+    case 'wipe': return { from: { transform: 'translateX(-24px)', clipPath: 'inset(0 100% 0 0)', opacity: 1 }, to: { transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)', opacity: 1 } }
+    case 'flip': return { from: { transform: 'perspective(900px) rotateY(88deg) scale(0.94)', opacity: 0 }, to: { transform: 'perspective(900px) rotateY(0deg) scale(1)', opacity: 1 } }
+    case 'blur-in': return { from: { transform: 'scale(1.08)', filter: 'blur(14px)', opacity: 0 }, to: { transform: 'scale(1)', filter: 'blur(0px)', opacity: 1 } }
+    case 'slide-spin': return { from: { transform: 'translateX(-140px) rotate(-14deg) scale(0.85)', opacity: 0 }, to: { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 1 } }
+    default: return null
+  }
+}
+function kfFrameEntries(kf, dly, dur, ret, baseTransform) {
+  var totalDur = dur + ret
+  var startOff = dly > 0 ? dly / totalDur : 0
+  var endOff = (dly + dur) / totalDur
+  var usesExtra = !!(kf.from.clipPath || kf.from.filter || kf.to.clipPath || kf.to.filter)
+  function frame(offset, src, reset) {
+    var f = { offset: offset, transform: baseTransform + (reset ? 'scale(1)' : (src.transform || 'none')), opacity: reset ? 1 : (src.opacity != null ? src.opacity : 1) }
+    if (usesExtra) { f.clipPath = reset ? 'none' : (src.clipPath || 'none'); f.filter = reset ? 'none' : (src.filter || 'none') }
+    return f
+  }
+  var keyframes = []
+  if (dly > 0) keyframes.push(frame(0, null, true))
+  keyframes.push(frame(startOff, kf.from, false))
+  keyframes.push(frame(endOff, kf.to, false))
+  if (ret > 0) keyframes.push(frame(1, null, true))
+  return keyframes
+}
+function applyStateEffect(el, effect) {
+  if (!el || !effect) return false
+  if (effect === 'highlight-sweep') {
+    if (!el.classList.contains('zt-hl-sweep')) {
+      el.classList.add('zt-hl-sweep')
+      requestAnimationFrame(function () { requestAnimationFrame(function () { el.classList.add('zt-hl-active') }) })
+    } else {
+      el.classList.add('zt-hl-active')
+    }
+    return true
+  }
+  if (effect.indexOf('focus-') === 0) {
+    var grp = el.closest ? el.closest('.focus-group') : null
+    if (grp) grp.classList.add('dim-others')
+    el.classList.add('zt-focus-active')
+    return true
+  }
+  return false
+}
+function playAnimation(el, effect, duration, delay, returnSec, easing) {
+  if (!el) return
+  if (!effect) return
+  if (applyStateEffect(el, effect)) return
+  var kf = getEffectKeyframes(effect)
+  if (!kf) { if (typeof console !== 'undefined' && console.warn) console.warn('[ztEdit] 未知动画效果：', effect); return }
+  var dur = parseFloat(duration) || 1
+  var dly = parseFloat(delay) || 0
+  var ret = parseFloat(returnSec) || 0
+  var ease = easing || 'ease'
+  var totalDur = dur + ret
+  var baseTransform = el.style.transform || (getComputedStyle(el).transform && getComputedStyle(el).transform !== 'none' ? getComputedStyle(el).transform : '')
+  if (baseTransform) baseTransform += ' '
+  if (el.getAnimations) el.getAnimations().forEach(function (a) { a.cancel() })
+  el.animate(kfFrameEntries(kf, dly, dur, ret, baseTransform), { duration: totalDur * 1000, easing: ease, fill: 'none' })
+}
+
+const slideTimings=[
+    {slide:0, start:0.0, end:3.625},
+    {slide:1, start:3.575, end:7.8},
+    {slide:2, start:7.8, end:12.5},
+    {slide:3, start:12.5, end:16.862},
+    {slide:4, start:16.862, end:23.562},
+    {slide:5, start:23.562, end:28.887}
+  ]
+
+// 别写死 bgAudio：页面可能用别的 id，取不到 audio 就会整条时间轴哑掉
+// （此时画面靠 CSS 动画仍在动，很容易被误判成"录屏没声音"）
+var audio=document.getElementById('bgAudio')||document.querySelector('audio');
+const slides=document.querySelectorAll('.slide');
+document.querySelectorAll('[data-zt-anim-effect="highlight-sweep"]').forEach(function(el){el.classList.add('zt-hl-sweep')});
+// 字幕/进度条容器：源 HTML 不一定自带这两个 id（如新建项目模板、或老文件缺此结构），
+// 这里做容错回退，避免 getElementById 返回 null 后 updateSubtitle 抛错把整个 loop 打断
+// （表现为「双击打开不动、OBS 里只有语音没字幕」）。优先用既有 id，否则复用 #subtitle-bar，
+// 再否则动态创建一个挂到 body，保证字幕一定能显示。
+var subtitleEl=document.getElementById('subtitleCurrent');
+if(!subtitleEl){
+  subtitleEl=document.getElementById('subtitle-bar');
+  if(!subtitleEl){
+    subtitleEl=document.createElement('div');
+    subtitleEl.id='subtitleCurrent';
+    subtitleEl.style.cssText='position:absolute;bottom:46px;left:0;right:0;text-align:center;z-index:20;font-size:2.2rem;font-weight:700;color:#fff;text-shadow:0 2px 6px rgba(0,0,0,.6),0 6px 18px rgba(0,0,0,.5),0 12px 40px rgba(0,0,0,.4)';
+    document.body.appendChild(subtitleEl);
+  }
+}
+var progressBar=document.getElementById('progressBar');
+if(!progressBar){
+  progressBar=document.createElement('div');
+  progressBar.id='progressBar';
+  progressBar.style.cssText='position:absolute;bottom:0;left:0;height:4px;background:#C41E24;width:0;z-index:30;transition:width .2s linear';
+  document.body.appendChild(progressBar);
+}
+let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0;
+// 音频不可用时的退化计时基准：autoplay 被拦 / 页面无 <audio> / 无音轨时，
+// loop 改走墙钟（performance.now）推进时间轴，画面照常播放（无声）。
+// 有声时 loop 优先用 audio.currentTime，这条基准只在退化路径生效。
+var __ztClockBase=0;
+
+function showSlide(idx,seekAudio){
+  slides.forEach(function(s,i){s.classList.remove('active');if(i===idx)s.classList.add('active')});
+  currentSlide=idx;
+  // 尾页三连动画
+  var v=document.querySelector('#s12 video');
+  if(v){if(idx===12)v.play();else v.pause()}
+  if(seekAudio&&isPlaying){
+    var st=slideTimings.find(function(t){return t.slide===idx});
+    if(st)audio.currentTime=st.start
+  }
+}
+
+function updateSubtitle(time){
+  var ns=-1;
+  for(var i=0;i<subtitles.length;i++){if(time>=subtitles[i].startSec&&time<subtitles[i].endSec){ns=i;break}}
+  if(ns!==currentSubtitle&&ns!==-1){
+    subtitleEl.classList.add('is-changing');
+    setTimeout(function(){subtitleEl.textContent=subtitles[ns].text;subtitleEl.classList.remove('is-changing')},350);
+    currentSubtitle=ns
+  }
+}
+
+function updateSlide(time){
+  if(Date.now()<manualOverrideUntil)return;
+  for(var i=slideTimings.length-1;i>=0;i--){
+    if(time>=slideTimings[i].start){if(currentSlide!==slideTimings[i].slide)showSlide(slideTimings[i].slide);break}
+  }
+}
+
+function loop(){
+  if(!isPlaying)return;
+  // 时间轴来源：有声且正在播 → 用 audio.currentTime（声画同步）；
+  // 否则退化到墙钟（autoplay 被拦 / 无 <audio> / 无音轨 / file:// 双击无手势）→ 画面照常推进（无声）。
+  var t;
+  if(audio && !audio.paused && isFinite(audio.duration) && audio.duration>0){ t=audio.currentTime }
+  else { t=(performance.now()-__ztClockBase)/1000 }
+  if(!isFinite(t))t=0;
+  updateSlide(t);updateSubtitle(t);
+  var cur=document.querySelector('.slide.active');
+  if(cur){
+    cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
+      var boundSel=subEl.getAttribute('data-zt-bound-to');
+      if(!boundSel)return;
+      var boundEl=document.querySelector(boundSel);
+      if(!boundEl)return;
+      var effect=boundEl.getAttribute('data-zt-anim-effect')||'';
+      var subStart=parseFloat(subEl.getAttribute('data-zt-subtitle-start'));
+      var slideStart=slideTimings[currentSlide]?slideTimings[currentSlide].start:0;
+      var absStart=(subStart||0)+slideStart;
+      if(effect.indexOf('focus-')===0){
+        if(boundEl.dataset.focusDone)return;
+        if(t>=absStart){boundEl.dataset.focusDone='1';var grp=boundEl.closest('.focus-group');if(grp)grp.classList.add('dim-others');boundEl.classList.add('zt-focus-active')}
+      }else if(effect==='highlight-sweep'){
+        if(boundEl.dataset.focusDone)return;
+        if(t>=absStart){boundEl.dataset.focusDone='1';if(!boundEl.classList.contains('zt-hl-sweep'))boundEl.classList.add('zt-hl-sweep');requestAnimationFrame(function(){requestAnimationFrame(function(){boundEl.classList.add('zt-hl-active')})})}
+      }else{
+        if(boundEl.dataset.animDone)return;
+        if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';var duration=boundEl.getAttribute('data-zt-anim-duration');var delay=boundEl.getAttribute('data-zt-anim-delay');var returnSec=boundEl.getAttribute('data-zt-anim-return');var easing=boundEl.getAttribute('data-zt-anim-easing');var grp=boundEl.closest('.focus-group');if(grp){grp.classList.remove('dim-others');boundEl.classList.remove('zt-focus-active')}playAnimation(boundEl,effect,duration,delay,returnSec,easing)}
+      }
+    })
+  }
+  if(audio && audio.duration)progressBar.style.width=(t/audio.duration*100)+'%';
+  requestAnimationFrame(loop)
+}
+
+function startPlayback(){
+  if(isPlaying)return;
+  var begin=function(){isPlaying=true;__ztClockBase=performance.now();loop()};
+  try{
+    if(!audio){begin();return}
+    var p=audio.play();
+    if(p&&p.then)p.then(begin).catch(function(){begin();__ztAudioBlocked=true;__ztTryUnlock()}); // autoplay 被拦 → 退化墙钟，并等用户手势解锁声音
+    else begin()
+  }catch(e){begin();__ztAudioBlocked=true;__ztTryUnlock()} // 无 audio / play() 抛错 → 退化墙钟
+}
+
+// autoplay 被拦时（file:// 双击打开、无用户手势），画面用墙钟无声播放；
+// 用户首次按空格/点击 = 真实手势，可解锁 audio 自动播放策略 → 补一次 play() 让声音出来。
+// loop 已在跑，解锁后 audio.paused 变 false，loop 自动切回 audio.currentTime 轴，声画同步。
+var __ztAudioBlocked=false;
+function __ztTryUnlock(){
+  if(!audio||!__ztAudioBlocked)return;
+  try{
+    var p=audio.play();
+    if(p&&p.then)p.then(function(){__ztAudioBlocked=false}).catch(function(){});
+    else __ztAudioBlocked=false
+  }catch(e){}
+}
+document.addEventListener('keydown',function(e){
+  if(e.key==='ArrowRight'){e.preventDefault();if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}
+  else if(e.key==='ArrowLeft'){e.preventDefault();if(currentSlide>0){showSlide(currentSlide-1,true);manualOverrideUntil=Date.now()+3000}}
+  else if(e.key===' '){e.preventDefault();if(!isPlaying)startPlayback();else __ztTryUnlock()}
+});
+document.addEventListener('click',function(e){
+  if(!isPlaying){startPlayback();return}
+  __ztTryUnlock();
+  var x=e.clientX/window.innerWidth;
+  if(x>0.5){if(currentSlide<slides.length-1){showSlide(currentSlide+1,true);manualOverrideUntil=Date.now()+3000}}
+  else{if(currentSlide>0){showSlide(currentSlide-1,true);manualOverrideUntil=Date.now()+3000}}
+});
+
+// 手动翻页时清除动画状态
+var _origShow=showSlide;showSlide=function(idx,seekAudio){_origShow(idx,seekAudio);document.querySelectorAll('.slide').forEach(function(sl){sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(sub){var sel=sub.getAttribute('data-zt-bound-to');if(sel){var el=document.querySelector(sel);if(el){delete el.dataset.animDone;delete el.dataset.focusDone;el.classList.remove('zt-focus-active');el.classList.remove('zt-hl-active');var g=el.closest('.focus-group');if(g)g.classList.remove('dim-others')}}})})}
+
+window.addEventListener('load',function(){setTimeout(startPlayback,300)});
+
+// 读取 DOM 字幕构建 subtitles 数组
+var subtitles=[];
+slides.forEach(function(sl,si){
+  var st=slideTimings[si];
+  if(!st)return;
+  sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(el){
+    var rStart=parseFloat(el.getAttribute('data-zt-subtitle-start'))||0;
+    var rEnd=parseFloat(el.getAttribute('data-zt-subtitle-end'))||0;
+    subtitles.push({startSec:st.start+rStart,endSec:st.start+rEnd,text:el.textContent})
+  })
+})
+})();
+</script></body></html>

@@ -343,6 +343,22 @@ async function ensureBrowserSource(sceneName, url, width, height) {
     if (cs.url !== settings.url || cs.width !== settings.width || cs.height !== settings.height || cs.control_audio_via_os !== true) changed = true
   } catch (e) { changed = true }
   if (changed) await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
+  // 强制 1:1 铺满画布：复用的旧源可能带着上次（或用户在 OBS 里手工拖动/缩放）留下的 transform。
+  // 只要 scale≠1 或没对齐左上角，画面就会被缩放或裁切 —— 表现为"发糊""内容少一截"。
+  // 源尺寸已等于画布，这里把变换复位即可保证像素级 1:1。
+  try {
+    const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
+    if (si && si.sceneItemId != null) {
+      await o.call('SetSceneItemTransform', {
+        sceneName,
+        sceneItemId: si.sceneItemId,
+        sceneItemTransform: {
+          positionX: 0, positionY: 0, scaleX: 1, scaleY: 1,
+          boundsType: 'OBS_BOUNDS_NONE', alignment: 5,
+        },
+      })
+    }
+  } catch (e) { /* 读不到/设不动就算了，源本身已是 1:1 */ }
   return true
 }
 
@@ -407,6 +423,60 @@ async function fitVideo(width, height) {
 }
 
 // ---------------------------------------------------------------------------
+// 录制画质兜底
+// ---------------------------------------------------------------------------
+
+// 成片糊不糊，除分辨率外主要由「码率 / CRF」决定：1080p 下 CBR 低于 ~10Mbps、
+// CRF 大于 ~20 就会肉眼可见地发糊（尤其 HTML 里的细文字与描边）。
+// 这套配置是用户在 OBS 里长期用的，工具不该全盘覆盖，所以这里只做**只升不降**的兜底：
+// 仅当当前设置明显低于高清档时才抬上去；用户已经是高清/无损则一个字节都不动。
+// 改的是 OBS 配置，在 StartRecord 之前调用即可生效（录制进行中改会失败）。
+const HD_BITRATE_KBPS = 16000   // 1080p 高清档
+const HD_CRF = 16               // CRF/CQP 数值越小越清晰
+
+async function ensureRecordQuality() {
+  const o = getObs()
+  const notes = []
+  const readP = async (cat, name) => {
+    try {
+      const r = await o.call('GetProfileParameter', { parameterCategory: cat, parameterName: name })
+      const v = r && r.parameterValue
+      return (v === undefined || v === null || v === '') ? undefined : v
+    } catch (e) { return undefined }
+  }
+  const setP = async (cat, name, val) => {
+    try {
+      await o.call('SetProfileParameter', { parameterCategory: cat, parameterName: name, parameterValue: val })
+      return true
+    } catch (e) { return false }
+  }
+
+  // 简单输出：录制画质保存在 SimpleOutput，通常是「与推流相同(Stream)」→ 看推流码率
+  for (const [cat, name, min, target, label] of [
+    ['SimpleOutput', 'VBitrate', 12000, HD_BITRATE_KBPS, '推流/录制码率'],
+    ['AdvOut', 'Recbitrate', 12000, HD_BITRATE_KBPS, '录制码率'],
+  ]) {
+    const v = parseInt(await readP(cat, name), 10)
+    if (Number.isFinite(v) && v > 0 && v < min) {
+      if (await setP(cat, name, target)) notes.push(`${label} ${v}→${target}kbps`)
+    }
+  }
+  // CRF / CQP：数值越大越糊
+  for (const [cat, name] of [['AdvOut', 'RecCRF'], ['AdvOut', 'RecCQP']]) {
+    const v = parseInt(await readP(cat, name), 10)
+    if (Number.isFinite(v) && v > HD_CRF) {
+      if (await setP(cat, name, HD_CRF)) notes.push(`${name} ${v}→${HD_CRF}`)
+    }
+  }
+  // 简单输出的录制质量档：Small（省空间，最糊）抬到 HQ，其余（Stream/HQ/Lossless）不动
+  const q = String(await readP('SimpleOutput', 'RecQuality') || '').toLowerCase()
+  if (q === 'small') {
+    if (await setP('SimpleOutput', 'RecQuality', 'HQ')) notes.push('录制质量档 Small→HQ')
+  }
+  return notes
+}
+
+// ---------------------------------------------------------------------------
 // 起停
 // ---------------------------------------------------------------------------
 
@@ -437,17 +507,23 @@ async function start(opts) {
       const even = (n) => Math.max(2, Math.round(n / 2) * 2)
       let fit = null
       let audio = 'exists'
+      let qualityNotes = []
       // ── OBS 原生浏览器源模式 ──
       // HTML 直接交给 OBS 内置 CEF 渲染：无临时窗口、无临时文件生命周期、分辨率=我们设的画布。
       // 浏览器源自带音轨，不补桌面音频（避免声音翻倍）。
       if (!a.browserUrl) return { ok: false, error: '浏览器源模式缺少 HTML 地址（browserUrl）。' }
       const bw = parseInt(a.width, 10) || 1920
       const bh = parseInt(a.height, 10) || 1080
-      await ensureBrowserSource(SCENE_NAME, a.browserUrl, bw, bh)
-      // 画布对齐到浏览器源尺寸（1:1 最锐利）；超上限只缩不放
+      // 先定画布、再建源：源尺寸必须等于画布才能 1:1 最锐利。
+      // 顺序反了的话，一旦画布被 maxW 缩小，源会比画布大 → 画面被裁掉一圈
+      //（表现为"内容少一截/边缘被切"），而且缩放下采样会让细文字发糊。
       let w = even(bw), h = even(bh)
       if (w > maxW) { h = even(Math.round((h * maxW) / w)); w = even(maxW) }
       if (w && h) fit = await fitVideo(w, h)
+      await ensureBrowserSource(SCENE_NAME, a.browserUrl, w, h)
+      // 录制画质兜底（只升不降）：1080p 下码率过低/CRF 过高会明显发糊
+      const qnotes = await ensureRecordQuality()
+      if (qnotes.length) qualityNotes = qnotes
       audio = 'browser-source'
       a.windowTitle = '' // 浏览器源模式不需要匹配窗口标题
 
@@ -509,6 +585,7 @@ async function start(opts) {
       fit,
       audio,
       health,
+      quality: qualityNotes,
       warn: (audio && audio.indexOf && audio.indexOf('failed') === 0) ? '⚠自动补音频源失败，成片可能无声' : '',
     }
   } catch (e) {
