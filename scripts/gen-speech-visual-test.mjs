@@ -273,6 +273,7 @@ const PLAYER = `(function(){
   var subtitleEl = document.getElementById('subtitle-bar');
   var progressBar = document.getElementById('progress');
   var currentSlide = 0, currentSubtitle = -1, isPlaying = false, manualOverrideUntil = 0;
+  var pageEnterAt = Date.now(); // 记录最近一次翻页时刻，入场动画须等转场结束（防页首效果被转场盖住）
 
   const slideTimings=[${JSON.stringify(slideTimings).slice(1, -1)}];
 
@@ -291,6 +292,7 @@ const PLAYER = `(function(){
   function showSlide(idx, seekAudio){
     slides.forEach(function(s, i){ s.classList.toggle('active', i === idx); });
     currentSlide = idx;
+    pageEnterAt = Date.now();
     document.querySelectorAll('.focus-item').forEach(function(el){
       delete el.dataset.animDone; delete el.dataset.focusDone;
       el.classList.remove('zt-focus-active');
@@ -374,7 +376,9 @@ const PLAYER = `(function(){
             }
           }
         } else {
-          if(!boundEl.dataset.animDone && t >= absStart && t < absStart + 0.5){
+          // 入场动画延迟到转场完成后再播（转场 0.8s，留 850ms 余量），否则页首字幕的
+          // 入场效果会被翻页转场盖住（淡入/飞入/擦除等看着像没播）
+          if(!boundEl.dataset.animDone && t >= absStart && Date.now() - pageEnterAt >= 850){
             boundEl.dataset.animDone = '1';
             playAnimation(boundEl, effect, boundEl.getAttribute('data-zt-anim-duration'), boundEl.getAttribute('data-zt-anim-delay'), boundEl.getAttribute('data-zt-anim-return'), boundEl.getAttribute('data-zt-anim-easing'));
           }

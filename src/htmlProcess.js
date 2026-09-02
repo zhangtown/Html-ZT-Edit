@@ -221,11 +221,12 @@ if(!progressBar){
   progressBar.style.cssText='position:absolute;bottom:0;left:0;height:4px;background:#C41E24;width:0;z-index:30;transition:width .2s linear';
   document.body.appendChild(progressBar);
 }
-let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0;
+let currentSlide=0,currentSubtitle=-1,isPlaying=false,manualOverrideUntil=0,pageEnterAt=Date.now();
 
 function showSlide(idx,seekAudio){
   slides.forEach(function(s,i){s.classList.remove('active');if(i===idx)s.classList.add('active')});
   currentSlide=idx;
+  pageEnterAt=Date.now();
   // 尾页三连动画（仅当页面存在 #s12 video 时生效；源 HTML 无此结构则整段不触发，与源逻辑一致）
   var v=document.querySelector('#s12 video');
   if(v){if(idx===12)v.play();else v.pause()}
@@ -278,7 +279,9 @@ function loop(){
         // 非 focus 类效果（含 highlight-sweep / zoom-in 等）一律走 playAnimation，
         // 由引擎 applyStateEffect 内部识别 highlight-sweep 并加 zt-hl-active，与源逻辑一致
         if(boundEl.dataset.animDone)return;
-        if(t>=absStart&&t<absStart+0.5){boundEl.dataset.animDone='1';playAnimation(boundEl,effect,boundEl.getAttribute('data-zt-anim-duration'),boundEl.getAttribute('data-zt-anim-delay'),boundEl.getAttribute('data-zt-anim-return'),boundEl.getAttribute('data-zt-anim-easing'))}
+        // 入场动画延迟到转场完成后再播（转场 0.8s，留 850ms 余量），否则页首字幕的
+        // 入场效果会被翻页转场盖住（淡入/飞入/擦除等看着像没播）
+        if(t>=absStart&&Date.now()-pageEnterAt>=850){boundEl.dataset.animDone='1';playAnimation(boundEl,effect,boundEl.getAttribute('data-zt-anim-duration'),boundEl.getAttribute('data-zt-anim-delay'),boundEl.getAttribute('data-zt-anim-return'),boundEl.getAttribute('data-zt-anim-easing'))}
       }
     })
   }
