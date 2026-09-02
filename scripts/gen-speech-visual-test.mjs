@@ -163,6 +163,7 @@ const pages = [
 // 否则回退到 pages 里手写的时间。SRT 顺序须与 pages.subs 展开顺序一致（20 条）。
 const SRT_PATH = path.join(root, '测试工程/口播音频.srt')
 const PAGE_TAIL = 1.4 // 每页末字幕结束后的页尾缓冲（秒），给动画收尾
+const PAGE_LEAD = 0.8 // 翻页提前量（秒）：音频页间停顿 0.8s，翻页提前到停顿起点，转场在停顿期播完再触发首字幕动画
 
 function parseSrt(filePath) {
   const txt = fs.readFileSync(filePath, 'utf8')
@@ -194,16 +195,21 @@ function applySrtTimeline(pagesArr, srt) {
     const end = next ? Math.max(cur.end, next.start) : cur.end + 0.6
     return { pageIdx: f.pageIdx, subIdx: f.subIdx, absStart: cur.start, absEnd: end }
   })
-  // 每页边界：start=首字幕起点；end=下一页首字幕起点（无缝衔接，动画余量已含在字幕显示窗口里），末页=末字幕结束+PAGE_TAIL
+  // 每页边界：start=首字幕起点 - PAGE_LEAD（翻页提前到页间停顿起点，转场在停顿期播完，首字幕动画不被盖）；首页恒首字幕起点；
+  // end=下一页 start（无缝衔接），末页=末字幕结束+PAGE_TAIL
   const pageAbs = pagesArr.map(() => ({ start: 0, end: 0 }))
   abs.forEach((a) => {
     const pa = pageAbs[a.pageIdx]
     if (pa.start === 0 || a.absStart < pa.start) pa.start = a.absStart
   })
   for (let pi = 0; pi < pageAbs.length; pi++) {
+    const firstSubAbs = abs.find((a) => a.pageIdx === pi)
+    if (pi > 0 && firstSubAbs) pageAbs[pi].start = Math.max(0, firstSubAbs.absStart - PAGE_LEAD)
+  }
+  for (let pi = 0; pi < pageAbs.length; pi++) {
     const nextPageFirst = abs.find((a) => a.pageIdx === pi + 1)
     if (nextPageFirst) {
-      pageAbs[pi].end = nextPageFirst.absStart
+      pageAbs[pi].end = nextPageFirst.absStart - PAGE_LEAD
     } else {
       pageAbs[pi].end = abs.filter((a) => a.pageIdx === pi).reduce((m, a) => Math.max(m, a.absEnd), 0) + PAGE_TAIL
     }
@@ -234,7 +240,10 @@ for (let i = 0; i < slideTimings.length; i++) {
     throw new Error(`页 ${cur.slide} end(${cur.end}) 与下一页 start(${next.start}) 不一致`)
   }
   for (const s of pages[i].subs) {
-    if (s.t < 0 || s.t + s.d > cur.end - cur.start + 0.01) {
+    // 起点必须落在页内；终点允许延伸到下一页（字幕窗口连续覆盖，翻页提前量 PAGE_LEAD 内都合法）
+    const absStart = cur.start + s.t
+    const absEnd = absStart + s.d
+    if (s.t < -0.01 || absStart > cur.end + 0.01 || absEnd > cur.end + PAGE_LEAD + 0.1) {
       throw new Error(`页 ${cur.slide} 字幕超界：t=${s.t} d=${s.d} 页长=${(cur.end - cur.start).toFixed(1)}`)
     }
   }
