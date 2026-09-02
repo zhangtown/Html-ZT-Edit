@@ -13,7 +13,6 @@ import {
   rewriteAssets,
   restoreAndWrap,
   stripEditorParts,
-  fileUrlMapper,
   injectAudioStartDelay,
 } from './htmlProcess.js'
 import { saveDraft, loadDraft, clearDraft } from './draftStore.js'
@@ -116,7 +115,6 @@ export default function App() {
   const saveTimerRef = useRef(null)
   const restoredRef = useRef(false)
   const pendingCurrentRef = useRef(0)
-  const lastSavedRef = useRef(0)
 
   const [activeHtml, setActiveHtml] = useState('')
   const [srcdoc, setSrcdoc] = useState('')
@@ -155,7 +153,6 @@ export default function App() {
   const [recRoot, setRecRoot] = useState('') // 当前编辑 HTML 所在目录（OBS 成片落点，经主进程取）
   const recRootRef = useRef('') // 同上，ref 版供异步回调用
   const [exportMsg, setExportMsg] = useState('') // 导出 HTML 后状态（已保存到源目录 / 失败原因）
-  const exportMsgRef = useRef('')
   const pendingExportRef = useRef(null) // 等待 iframe 回传 HTML 的 Promise（导出用）
   const pendingRecordRef = useRef(null) // 临时录制落盘专用：等 iframe 回传序列化 HTML（与导出通道互不干扰）
 
@@ -284,7 +281,6 @@ export default function App() {
         root: recRootRef.current, // 一并存下，刷新恢复后离屏录制仍可用
         savedAt: Date.now(),
       })
-      lastSavedRef.current = Date.now()
     } catch (e) {
       console.warn('草稿保存失败', e)
     }
@@ -445,10 +441,6 @@ export default function App() {
         // 注意：画布元素选中【不应】清空字幕选中（selectedSubIdx），
         // 否则点字幕块后 runtime 回传 selection 会把选中态冲掉，
         // 导致「解除绑定」按钮走到 unbindSelectedElement 分支而解不掉字幕。
-      } else if (m.type === 'deselected') {
-        setSelCount(0)
-        setSelected(null)
-        setSelectedSubIdx(-1)
       } else if (m.type === 'changed') {
         scheduleSave()
     } else if (m.type === 'serialize') {

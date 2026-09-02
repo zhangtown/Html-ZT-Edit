@@ -201,10 +201,6 @@
       border: cs.border,
       borderRadius: cs.borderRadius,
       boxShadow: cs.boxShadow,
-      animScaleFrom: el.getAttribute('data-zt-anim-scale-from') || '',
-      animScaleTo: el.getAttribute('data-zt-anim-scale-to') || '',
-      animOpacityFrom: el.getAttribute('data-zt-anim-opacity-from') || '',
-      animOpacityTo: el.getAttribute('data-zt-anim-opacity-to') || '',
       animDuration: el.getAttribute('data-zt-anim-duration') || '',
       animDelay: el.getAttribute('data-zt-anim-delay') || '',
       animEasing: el.getAttribute('data-zt-anim-easing') || '',
@@ -516,15 +512,6 @@
     document.addEventListener('pointerup', up)
   }
 
-  // 图片 + 布局容器联动：img 的直接父级若是 flex 容器，选中时一并带上
-  function layoutWrapperOf(el) {
-    if (!el || el.tagName !== 'IMG') return null
-    var p = el.parentElement
-    if (!p || p.tagName !== 'DIV') return null
-    var cs = getComputedStyle(p)
-    if (cs.display === 'flex' || cs.display === 'inline-flex') return p
-    return null
-  }
 
   // ---- 素材放置模式 ----
   function startPlacementMode(url, assetType) {
@@ -673,7 +660,6 @@
 
   // 拖拽素材到画布（从素材面板拖入，或文件拖入）
   var assetDragActive = false // 面板拖拽进行中
-  var fileDropPending = [] // 暂存拖入的文件（等待父窗口响应）
 
   function insertAssetAt(url, assetType, x, y) {
     var slide = slides[current]
@@ -2447,7 +2433,6 @@
       else if (m.type === 'startTextEdit') { startTextEditOnLayer(m.index) }
       else if (m.type === 'startTextEditOnSubtitle') { startTextEditOnSubtitle(m.subIdx) }
       else if (m.type === 'reorderLayers') { reorderLayers(m.fromIdx, m.toIdx); post({ type: 'layers', layers: getLayers(), current: current, total: slides.length }) }
-      else if (m.type === 'requestLayers') post({ type: 'layers', layers: getLayers(), current: current, total: slides.length })
       else if (m.type === 'selectBound') selectBySelector(m.selector)
       else if (m.type === 'clearBoundHighlight') clearBoundHighlight()
       else if (m.type === 'moveSubtitle') moveSubtitleToPage(m.direction, m.subtitleIndex)

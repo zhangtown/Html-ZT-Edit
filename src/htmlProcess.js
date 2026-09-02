@@ -82,21 +82,6 @@ export function stripEditorParts(html) {
 // 并把脚本片段还原回 body，最后包裹成完整文档
 const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:relative}\n.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}\n.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}\n/* 组外被绑元素的独立强调：导出 HTML 里 focus-item 往往不被 .focus-group 包裹（编辑器运行时才建组），\n   激活也要有「放大+红色光晕」的正确视觉效果，而不是只剩裸 outline 红框。\n   组内规则优先级更高（带 .focus-group.dim-others 前缀），这条做兜底。 */\n.zt-focus-active{opacity:1;transform:scale(1.08);transition:all .5s cubic-bezier(.25,.9,.3,1.08);box-shadow:0 0 50px rgba(196,30,36,.55);z-index:3}\n.zt-hl-sweep{position:relative}\n.zt-hl-sweep::after{content:\'\';position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}\n.zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}\n'
 
-// 录屏专用 mapper：把相对引用改写成 file:// 绝对地址。
-// 录屏页是系统临时目录里的 HTML，只有指回磁盘原位置才能加载到图片/音频。
-// rootDir 为空（浏览器模式）时原样返回，调用方会退回窗口捕获方案。
-export function fileUrlMapper(rootDir) {
-  const base = String(rootDir || '').replace(/\\/g, '/').replace(/\/+$/, '')
-  return function (rel) {
-    if (!base) return rel
-    if (/^(https?:|data:|blob:|#|mailto:|\/)/i.test(rel || '')) return rel
-    const segs = String(rel).replace(/\\/g, '/').split('/').filter(Boolean)
-    if (!segs.length) return rel
-    const full = base + '/' + segs.join('/')
-    return 'file:///' + full.split('/').map((s, i) => (i === 0 ? s : encodeURIComponent(s))).join('/')
-  }
-}
-
 // 在产物侧剥离编辑器注入物（改的是 doc 副本，iframe 里的编辑器完全不受影响）。
 //
 // 这是「动画问题」的根治点：serialize() 只是把 iframe 当前 DOM 原样回传，里面带着编辑器

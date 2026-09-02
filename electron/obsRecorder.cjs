@@ -713,22 +713,6 @@ async function stop() {
   }
 }
 
-// 读取 OBS 真实场景列表（诊断用）
-async function listScenes() {
-  const o = getObs()
-  const r = await connect()
-  if (!r.ok) return r
-  try {
-    const s = await o.call('GetSceneList')
-    const scenes = (s.scenes || [])
-      .map((x) => ({ name: x.sceneName || x.name, index: typeof x.sceneIndex === 'number' ? x.sceneIndex : 0 }))
-      .filter((x) => x.name)
-    scenes.sort((a, b) => b.index - a.index) // obs-websocket 返回顺序与界面相反，排回来
-    return { ok: true, current: s.currentProgramSceneName || '', scenes: scenes.map((x) => x.name) }
-  } catch (e) {
-    return { ok: false, error: '读取 OBS 场景列表失败：' + ((e && e.message) || e) }
-  }
-}
 
 async function status() {
   if (!connected || !obs) return { connected: false }
@@ -749,6 +733,6 @@ async function disconnect() {
 
 module.exports = {
   SCENE_NAME,
-  connect, ensureOBSRunning, resolveObsExe, start, stop, killOBS, status, listScenes, sceneHealth,
+  connect, ensureOBSRunning, resolveObsExe, start, stop, killOBS, status, sceneHealth,
   disconnect, isConnected: () => connected,
 }

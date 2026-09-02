@@ -1,25 +1,6 @@
 // 文件夹选择 + 文件映射 + 相对路径解析
 // 用户通过 webkitdirectory 选择包含 HTML 及其资源（图片/视频等）的整个文件夹
 
-export function pickFolder() {
-  return new Promise((resolve, reject) => {
-    const input = document.createElement('input')
-    input.type = 'file'
-    input.webkitdirectory = true
-    input.multiple = true
-    input.onchange = () => {
-      const files = Array.from(input.files || [])
-      if (files.length === 0) {
-        reject(new Error('未选择任何文件'))
-        return
-      }
-      resolve(files)
-    }
-    input.oncancel = () => reject(new Error('已取消'))
-    input.click()
-  })
-}
-
 // 原生文件浏览框，文件类型自动筛选为 HTML
 // 选择单个 HTML 文件后直接返回该 File（含它的文件名）
 export function pickHtmlFile() {
@@ -107,17 +88,6 @@ export function buildFileMap(files) {
   return map
 }
 
-// 列出目录下所有 HTML 文件（返回相对根目录的路径）
-export function listHtmlFiles(files) {
-  return files
-    .filter(
-      (f) =>
-        /\.html?$/i.test(f.name) &&
-        !/(^|\/)(node_modules|\.git)\//.test(f.webkitRelativePath || f.name)
-    )
-    .map((f) => f.webkitRelativePath || f.name)
-    .sort()
-}
 
 // 主 HTML 所在目录（去掉文件名，保留根目录名）
 export function dirOf(relPath) {

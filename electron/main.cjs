@@ -3,7 +3,7 @@
 // 再用 BrowserWindow 加载 http://127.0.0.1:<port>/ ，避免 file:// 下
 // ES 模块 / blob URL / iframe 的兼容问题。
 
-const { app, BrowserWindow, ipcMain, dialog, session } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog } = require('electron')
 // 防御：若 ELECTRON_RUN_AS_NODE=1 被置位，electron.exe 会以纯 Node 模式运行，
 // require('electron') 只返回可执行文件路径字符串，app 解构为 undefined。
 // 给出明确诊断而非第 14 行的裸 TypeError。
@@ -26,11 +26,9 @@ app.commandLine.appendSwitch('disable-background-timer-throttling')
 
 const http = require('http')
 const fs = require('fs')
-const os = require('os')
 const path = require('path')
 const { pathToFileURL } = require('url')
 
-let mainWin = null // 主编辑器窗口
 
 // 打包后 app.getAppPath() 指向 resources/app；开发时指向项目根
 function getDistDir() {
@@ -117,7 +115,6 @@ function createWindow(url) {
   })
 
   win.loadURL(url)
-  mainWin = win
   return win
 }
 
@@ -326,7 +323,4 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
-})
-
-app.on('before-quit', () => {
 })
