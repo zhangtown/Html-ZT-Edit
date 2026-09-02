@@ -48,6 +48,7 @@ let obs = null            // OBSWebSocket 实例（单例）
 let connected = false
 let lastOutputPath = ''   // 起录时 OBS 回传的准确输出路径（stop 时优先用它，比扫目录可靠）
 let lastOutputDir = ''    // 起录时的输出目录（stop 时扫目录兜底用）
+let lastEncoder = ''       // 本次选定的录制硬件编码器（按显卡自动：NVIDIA NVENC / AMD AMF / Intel QSV / x264）
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -206,6 +207,67 @@ function ensureObsWebsocketEnabled() {
   }
 }
 
+// 按显卡厂商选录制硬件编码器：NVIDIA→NVENC、AMD→AMF、Intel→QSV、无独显/核显→x264(CPU)。
+// 用 Electron app.getGPUInfo('basic') 读 gpuDevice 的 vendorId 判断厂商（0x10DE=NVIDIA / 0x1002=AMD / 0x8086=Intel）。
+async function detectEncoderId() {
+  let vendor = ''
+  try {
+    const { app } = require('electron')
+    if (app && app.getGPUInfo) {
+      const info = await app.getGPUInfo('basic')
+      const devs = (info && info.gpuDevice) || []
+      const vendors = new Set()
+      for (const d of devs) {
+        const s = String(d.vendorId == null ? '' : d.vendorId).trim().toLowerCase()
+        let v = 0
+        if (/^0x/.test(s)) v = parseInt(s, 16)
+        else if (/^\d+$/.test(s)) v = parseInt(s, 10)
+        if (v === 0x10de) vendors.add('nvidia')
+        else if (v === 0x1002) vendors.add('amd')
+        else if (v === 0x8086) vendors.add('intel')
+      }
+      if (vendors.has('nvidia')) vendor = 'nvidia'
+      else if (vendors.has('amd')) vendor = 'amd'
+      else if (vendors.has('intel')) vendor = 'intel'
+    }
+  } catch (e) { /* 读不到就当无独显，用 CPU */ }
+  switch (vendor) {
+    case 'nvidia': return { id: 'obs_nvenc_h264_tex', name: 'NVIDIA NVENC', vendor: 'nvidia' }
+    case 'amd': return { id: 'obs_amf_h264', name: 'AMD AMF', vendor: 'amd' }
+    case 'intel': return { id: 'obs_qsv_h264', name: 'Intel QSV', vendor: 'intel' }
+    default: return { id: 'obs_x264', name: 'x264 (CPU)', vendor: 'cpu' }
+  }
+}
+
+// 把要用的录制编码器写进 OBS 配置 [AdvOut].RecEncoder（Advanced 输出模式真正生效的键）。
+// 必须在 OBS 启动前写好，OBS 一起动即读到。只改 [AdvOut]（录制走 Advanced 模式），SimpleOutput 无需动。
+function setRecEncoderIni(encoderId) {
+  try {
+    const root = obsConfigRoot()
+    const profiles = path.join(root, 'basic', 'profiles')
+    if (!fs.existsSync(profiles)) return { ok: true, note: 'no profiles dir' }
+    let changed = 0
+    for (const dir of fs.readdirSync(profiles)) {
+      const ini = path.join(profiles, dir, 'basic.ini')
+      if (!fs.existsSync(ini)) continue
+      const lines = fs.readFileSync(ini, 'utf8').split(/\r?\n/)
+      let inAdvOut = false
+      let changedThis = false
+      for (let i = 0; i < lines.length; i++) {
+        if (/^\s*\[/.test(lines[i])) inAdvOut = /^\s*\[AdvOut\]/.test(lines[i])
+        if (inAdvOut && /^\s*RecEncoder\s*=/.test(lines[i])) {
+          const cur = lines[i].split('=')[1].trim()
+          if (cur !== encoderId) { lines[i] = lines[i].replace(/=.*/, '=' + encoderId); changedThis = true }
+        }
+      }
+      if (changedThis) { fs.writeFileSync(ini, lines.join('\n'), 'utf8'); changed++ }
+    }
+    return changed ? { ok: true, note: 'RecEncoder → ' + encoderId } : { ok: true, note: 'RecEncoder 已是 ' + encoderId }
+  } catch (e) {
+    return { ok: false, error: '改录制编码器失败：' + ((e && e.message) || e) }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // OBS 可执行文件定位 + 自动拉起
 // ---------------------------------------------------------------------------
@@ -335,6 +397,13 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000 } = {}) {
     try { const r = ensureRecordEncoderJson(); if (r && r.note) console.log('[obsRecorder] 编码器：', r.note) } catch (e) {}
     // 确保 obs-websocket 服务启用（默认关闭 → 连不上）：在 OBS 启动前写好，OBS 一起动即开启
     try { const r = ensureObsWebsocketEnabled(); if (r && r.note) console.log('[obsRecorder] WebSocket：', r.note) } catch (e) {}
+    // 按显卡自动选硬件编码器（NVENC/AMF/QSV，回退 x264）：同样在 OBS 启动前写入 [AdvOut].RecEncoder，OBS 一起动即用对应硬件编码
+    try {
+      const enc = await detectEncoderId()
+      lastEncoder = enc.name
+      const r = setRecEncoderIni(enc.id)
+      if (r && r.note) console.log('[obsRecorder] 编码器：', enc.name + ' (' + enc.id + ') · ' + r.note)
+    } catch (e) { console.log('[obsRecorder] 编码器检测失败：', (e && e.message) || e) }
     try {
       const child = spawn(ex.exe, [], {
         cwd: path.dirname(ex.exe),
@@ -713,6 +782,7 @@ async function start(opts) {
     return {
       ok: true,
       scene: SCENE_NAME,
+      encoder: lastEncoder,
       window: 'OBS 浏览器源',
       captureMode: a.captureMode,
       outdir,
