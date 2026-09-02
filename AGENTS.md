@@ -1,6 +1,6 @@
 # Html-ZtEdit Agent 指引
 
-ztEdit：手写 HTML 页面的可视化编辑器（React + Vite + Electron）。核心：`src/App.jsx`（界面）、`src/editorRuntime.js`（注入 iframe 的编辑内核）、`src/htmlProcess.js`（导入/导出/播放脚本生成）、`src/recorder.js`（录屏）。
+ztEdit：手写 HTML 页面的可视化编辑器（React + Vite + Electron）。核心：`src/App.jsx`（界面）、`src/editorRuntime.js`（注入 iframe 的编辑内核）、`src/htmlProcess.js`（导入/导出/播放脚本生成）、`electron/obsRecorder.cjs`（OBS 录屏）。
 
 ## ⚠️ 跨仓库契约同步（最重要规则）
 

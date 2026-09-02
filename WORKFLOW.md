@@ -41,7 +41,8 @@ MP3 音频 + SRT/时间轴字幕 + 素材图片(素材1.png…)
 
 - **多个 AI 会话并行开发**（注意：开工前先 `git pull`，提交后及时 `git push`，避免各会话进度互不知晓）
 - Vite/React 本地开发 → `npm run build` 验证 → 中文提交信息（`fix:` / `cleanup:` + 根因描述）
-- Electron 打包：双击 `打包.bat`（内置国内镜像）；`stop-dev.bat` 一键释放调试端口
+- Electron 调试：双击 `start-dev.bat`（检查依赖 + 国内镜像 + 起 dev:electron，自动清残留端口）；进程残留时 `stop-dev.bat` 一键释放
+- Electron 打包：双击 `打包.bat`（内置国内镜像）
 - `样例HTML工程/` 与 `测试工程/` 充当回归测试夹具
 - 设计稿（如输入框数字步进）作为 UI 开发参考，功能完成后移出仓库
 
@@ -113,14 +114,13 @@ git clone https://github.com/zhangtown/my-skills.git ~/.agents/skills   # 主库
 HTML-ZtEdit/
 ├── WORKFLOW.md            # 本文档
 ├── README.md              # 功能特性 / 快捷键 / 字幕绑定约定
-├── 打包.bat / stop-dev.bat # 一键打包 / 释放调试端口
 ├── src/
 │   ├── App.jsx            # 主界面：工具栏/画布/属性面板/时间轴/通信 (~2300行)
 │   ├── editorRuntime.js   # 注入iframe的编辑内核：选中/拖拽/绑定/动画/导出 (~2400行)
 │   ├── htmlProcess.js     # 脚本剥离/资源blob重写/导出还原/播放脚本生成
-│   ├── recorder.js        # 录屏管线：getDisplayMedia→裁剪iframe→混音→MediaRecorder
-│   ├── loadFolder.js / draftStore.js
-├── electron/              # 桌面壳（main/preload/dev-runner/sign）
+│   ├── loadFolder.js / draftStore.js / animEffects.js
+├── electron/              # 桌面壳（main / preload / obsRecorder / dev-runner）
+├── start-dev.bat / stop-dev.bat / 打包.bat  # 一键启动 / 释放调试端口 / 打包
 ├── （AI 技能已迁至 my-skills 私有仓库，见「换环境恢复指南」）
 ├── 测试工程/              # v5.3 原生格式回归测试页（已入库）
 ├── 样例HTML工程/          # 完整样例：MP3+素材+成品（gitignore，换机要拷）

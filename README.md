@@ -105,8 +105,8 @@
 | 能力 | 说明 |
 | --- | --- |
 | 一键录制 | 勾选顶栏「录屏」后点播放即开始录制；停止播放或音频播完自动保存视频 |
-| 输出 MP4 | Electron 31（Chromium 126）起 MediaRecorder 原生支持 H.264 + AAC，成片可直接进剪映 / PR |
-| 分辨率与窗口无关 | 录制时主进程开一个**隐藏的定尺寸窗口**离屏跑时间轴，编辑器窗口拖多小都不影响成片 |
+| 输出 MP4 | **OBS 浏览器源捕获**（系统级），H.264 + AAC，成片可直接进剪映 / PR |
+| 分辨率与窗口无关 | 主进程自动拉起 OBS，用固定尺寸的浏览器源离屏跑时间轴，编辑器窗口拖多小都不影响成片 |
 | 分辨率档位 | 顶栏可切换 1080P / 2K / 4K |
 | 音轨 | 取自编辑器内正在播放的页面；离屏页静音，不会出现双声源 |
 | 浏览器兜底 | 纯浏览器模式（非 Electron）拿不到资源根目录，自动退回「捕获编辑器窗口 + 裁剪画布」方案，输出 webm、分辨率随窗口 |
@@ -116,7 +116,7 @@
 ## 技术栈
 
 - React 18 + Vite 5
-- Electron 31（Chromium 126）桌面壳 —— 提供文件夹级资源读取与原生 MP4 录屏
+- Electron 31（Chromium 126）桌面壳 —— 提供文件夹级资源读取与 OBS 系统级 MP4 录屏
 - 纯前端，无后端依赖
 - 编辑器以 `iframe` 沙箱承载被编辑页面，父窗口（React）与 iframe 通过 `postMessage` 通信
 - 草稿持久化：`IndexedDB`
@@ -136,10 +136,17 @@ HTML-ZtEdit/
 │   ├── loadFolder.js     # 文件夹选择、相对路径解析
 │   ├── htmlProcess.js    # 剥离脚本 / 资源重写 blob / 导出还原 / 自动播放脚本生成
 │   ├── draftStore.js     # IndexedDB 草稿自动存 / 恢复
-│   ├── recorder.js       # 录屏管线：离屏窗口捕获 / 音轨混入 / MediaRecorder 输出
+│   ├── animEffects.js    # 动画效果名常量表（编辑器与导出共用）
 │   └── index.css
-├── electron/           # Electron 桌面壳（入口 / 镜像配置 / 开发调试）
-├── scripts/            # 辅助脚本（如字幕转 DOM）
+├── electron/           # Electron 桌面壳（入口 / 录屏引擎 obsRecorder / 开发调试）
+│   ├── main.cjs           # 主进程：本地静态服务 / IPC / 文件选取
+│   ├── preload.cjs        # 预加载桥：暴露 ztPick / ztRoot / ztSave / OBS 控制
+│   ├── obsRecorder.cjs    # OBS 系统级自动录制（浏览器源捕获，MP4 输出）
+│   └── dev-runner.cjs     # 开发调试启动器（Vite + Electron 联动）
+├── scripts/            # 辅助脚本（契约校验 / 动画回归 / 字幕转换 / mp4 诊断）
+├── start-dev.bat       # 一键启动调试（检查依赖 → 国内镜像 → 起 dev:electron）
+├── stop-dev.bat        # 一键释放调试进程（清 5173-5179 端口 + 杀 electron）
+├── 打包.bat            # 一键打包 Windows 安装包（内置国内镜像）
 ├── dist/               # Vite web 构建产物
 └── dist-electron/      # Electron 打包产物
 ```
@@ -167,6 +174,8 @@ npm run dev
 - **F12** 或 **Ctrl+Shift+I**：开合 DevTools
 - `src/` 下的代码改完自动热更新；改 `electron/` 主进程代码**需重启调试会话**
 - 进程残留导致端口占用时，运行 `stop-dev.bat` 一键释放
+
+> `.bat` 工具说明：`start-dev.bat` 负责一键启动（检查 node/npm → 缺依赖时自动 `npm install`（国内镜像）→ 确保 Electron 运行时 → 启动 `dev:electron`，启动前会自动清理 5173-5179 残留端口）；`stop-dev.bat` 负责清理（释放 5173-5179 端口 + 结束 `electron.exe`）。两者都是纯 cmd 实现，**不依赖 PowerShell**（避免中文路径传给 `powershell -File` 不可靠的坑），脚本本身保持 ASCII 编码。
 
 ## 一键打包（Windows 桌面程序）
 
