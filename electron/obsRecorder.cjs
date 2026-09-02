@@ -160,6 +160,46 @@ function ensureRecordEncoderJson() {
   }
 }
 
+// obs-websocket 的 WebSocket 服务默认是关闭的（server_enabled:false），不先启用则应用连不上
+//（表现为 "OBS 能开但连不上/不加载 HTML/不开始录制"）。与 ColorRange/编码器一样，必须在 OBS 启动前写好
+//（OBS 启动时才把插件配置读进内存）。配置已存在：仅把 server_enabled 置 true，保留用户端口/密码；
+// 配置不存在：生成默认开启的配置（写入一份密码供应用连接时读取）。
+function ensureObsWebsocketEnabled() {
+  try {
+    const cfg = path.join(os.homedir(), 'AppData/Roaming/obs-studio/plugin_config/obs-websocket/config.json')
+    let j = null
+    let created = false
+    if (fs.existsSync(cfg)) {
+      try { j = JSON.parse(fs.readFileSync(cfg, 'utf8')) } catch (e) { j = null }
+    }
+    let needWrite = false
+    if (!j || typeof j !== 'object') {
+      const pw = 'zt-' + Math.random().toString(36).slice(2, 10) + '-' + Date.now().toString(36)
+      j = {
+        alerts_enabled: false,
+        auth_required: true,
+        first_load: false,
+        server_enabled: true,
+        server_password: pw,
+        server_port: 4455,
+      }
+      created = true
+      needWrite = true
+    } else {
+      if (j.server_enabled !== true) { j.server_enabled = true; needWrite = true } // 原来是关闭 → 启用
+      j.server_port = j.server_port || 4455
+      if (!j.server_password) j.server_password = 'zt-' + Math.random().toString(36).slice(2, 10)
+    }
+    if (needWrite) {
+      fs.writeFileSync(cfg, JSON.stringify(j, null, 2), 'utf8')
+      return { ok: true, note: created ? '生成 obs-websocket 配置并启用服务' : '已启用 obs-websocket 服务' }
+    }
+    return { ok: true, note: 'obs-websocket 服务已开启' }
+  } catch (e) {
+    return { ok: false, error: '启用 obs-websocket 服务失败：' + ((e && e.message) || e) }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // OBS 可执行文件定位 + 自动拉起
 // ---------------------------------------------------------------------------
@@ -176,6 +216,7 @@ const OBS_SEARCH_PATHS = [
   '%ProgramFiles(x86)%/obs-studio/bin/64bit/obs64.exe',
   '%LOCALAPPDATA%/Programs/obs-studio/bin/64bit/obs64.exe',
   'C:/obs-studio/bin/64bit/obs64.exe',
+  'D:/Program Files/obs-studio/bin/64bit/obs64.exe',
 ]
 
 function expandEnvVars(p) {
@@ -183,6 +224,19 @@ function expandEnvVars(p) {
     .replace(/%ProgramFiles\(x86\)%/gi, process.env['ProgramFiles(x86)'] || '')
     .replace(/%ProgramFiles%/gi, process.env.ProgramFiles || '')
     .replace(/%LOCALAPPDATA%/gi, process.env.LOCALAPPDATA || '')
+}
+
+// 扫描所有盘符下常见的 OBS 安装目录（覆盖 C 盘之外的非标准安装，如 D:\Program Files\obs-studio）。
+// 只返回候选路径，实际是否存在由调用方用 fs.existsSync 判定；不存在的盘符 existsSync 直接 false，零开销。
+function scanObsDrives() {
+  const out = []
+  const drives = ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
+  for (const d of drives) {
+    for (const pf of ['Program Files', 'Program Files (x86)']) {
+      out.push(path.join(d + ':/', pf, 'obs-studio', 'bin', '64bit', 'obs64.exe'))
+    }
+  }
+  return out
 }
 
 function obsStorePath() {
@@ -223,9 +277,12 @@ async function resolveObsExe() {
     persistExe(stored) // 顺手同步回环境变量
     return { ok: true, exe: stored, from: 'store' }
   }
-  // 3) 首次：搜索常见路径，找到即固化，下次不再搜
-  for (const raw of OBS_SEARCH_PATHS) {
-    const p = expandEnvVars(raw)
+  // 3) 首次：搜索常见路径 + 扫描所有盘符的 Program Files（非标准安装也找得到），找到即固化，下次不再搜
+  const searchPaths = [
+    ...OBS_SEARCH_PATHS.map((raw) => expandEnvVars(raw)),
+    ...scanObsDrives(),
+  ]
+  for (const p of searchPaths) {
     if (p && fs.existsSync(p)) {
       persistExe(p)
       return { ok: true, exe: p, from: 'search' }
@@ -270,6 +327,8 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000 } = {}) {
     try { const r = ensureColorRangePartialInIni(); if (r && r.note) console.log('[obsRecorder] 色阶：', r.note) } catch (e) {}
     // 同样在启动前写好录制编码器高清参数（真参在 recordEncoder.json，不在 basic.ini 的 [AdvOut]）
     try { const r = ensureRecordEncoderJson(); if (r && r.note) console.log('[obsRecorder] 编码器：', r.note) } catch (e) {}
+    // 确保 obs-websocket 服务启用（默认关闭 → 连不上）：在 OBS 启动前写好，OBS 一起动即开启
+    try { const r = ensureObsWebsocketEnabled(); if (r && r.note) console.log('[obsRecorder] WebSocket：', r.note) } catch (e) {}
     try {
       const child = spawn(ex.exe, [], {
         cwd: path.dirname(ex.exe),
