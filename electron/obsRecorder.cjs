@@ -73,6 +73,45 @@ function getObs() {
   return obs
 }
 
+// OBS 配置根目录（profile 的 basic.ini 在这里）。websocket config 用的是同一个根。
+function obsConfigRoot() {
+  return path.join(os.homedir(), 'AppData/Roaming/obs-studio')
+}
+
+// 色阶范围：浏览器源是 Full(0-255)，OBS 默认 Partial(16-235) 会把高光压灰、暗部抬灰 → 画面发暗发灰。
+// 这是录出来的视频「比双击打开暗」的根本原因。
+// 关键：OBS 只在「启动时」把 ColorRange 读进内存的 obs_video_info，运行时改 profile 不生效（无 ResetVideo 可用），
+// 所以必须在 OBS 启动之前把 INI 写好，OBS 一启动即读到 Full。这里遍历所有 profile 的 basic.ini 改写。
+function ensureColorRangeFullInIni() {
+  try {
+    const root = obsConfigRoot()
+    const profiles = path.join(root, 'basic', 'profiles')
+    if (!fs.existsSync(profiles)) return { ok: true, note: 'no profiles dir' }
+    let changed = 0
+    for (const dir of fs.readdirSync(profiles)) {
+      const ini = path.join(profiles, dir, 'basic.ini')
+      if (!fs.existsSync(ini)) continue
+      let t = fs.readFileSync(ini, 'utf8')
+      // 只改 [Video] 段里的 ColorRange=Partial → Full（用行级匹配，避免误伤注释/其它段）
+      let modified = false
+      const lines = t.split(/\r?\n/)
+      let inVideo = false
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        if (/^\s*\[/.test(line)) inVideo = /^\s*\[Video\]/.test(line)
+        if (inVideo && /^\s*ColorRange\s*=/.test(line)) {
+          const v = line.split('=')[1].trim()
+          if (v.toLowerCase() !== 'full') { lines[i] = line.replace(/=.*/, '=Full'); modified = true }
+        }
+      }
+      if (modified) { fs.writeFileSync(ini, lines.join('\n'), 'utf8'); changed++ }
+    }
+    return changed ? { ok: true, note: 'wrote ColorRange=Full to ' + changed + ' profile(s)' } : { ok: true, note: 'already Full' }
+  } catch (e) {
+    return { ok: false, error: '改 OBS 色阶 INI 失败：' + ((e && e.message) || e) }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // OBS 可执行文件定位 + 自动拉起
 // ---------------------------------------------------------------------------
@@ -178,6 +217,9 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000 } = {}) {
   if (!ex.ok) return ex
 
   if (!isObsRunning()) {
+    // OBS 未运行才改 INI：此时 OBS 尚没读配置，改完它启动即读到 Full（运行时改无效）。
+    // 若 OBS 已在跑，INI 改了对本次无效，但至少下次启动生效；此处不强制重启，保证录屏流程不被打断。
+    try { const r = ensureColorRangeFullInIni(); if (r && r.note) console.log('[obsRecorder] 色阶：', r.note) } catch (e) {}
     try {
       const child = spawn(ex.exe, [], {
         cwd: path.dirname(ex.exe),
@@ -431,8 +473,8 @@ async function fitVideo(width, height) {
 // 这套配置是用户在 OBS 里长期用的，工具不该全盘覆盖，所以这里只做**只升不降**的兜底：
 // 仅当当前设置明显低于高清档时才抬上去；用户已经是高清/无损则一个字节都不动。
 // 改的是 OBS 配置，在 StartRecord 之前调用即可生效（录制进行中改会失败）。
-const HD_BITRATE_KBPS = 16000   // 1080p 高清档
-const HD_CRF = 16               // CRF/CQP 数值越小越清晰
+const HD_BITRATE_KBPS = 20000   // 1080p 高清档（清晰度优先，固定码率上限）
+const HD_CRF = 12               // CRF/CQP 数值越小越清晰（极致档）
 
 async function ensureRecordQuality() {
   const o = getObs()
@@ -450,6 +492,9 @@ async function ensureRecordQuality() {
       return true
     } catch (e) { return false }
   }
+
+  // 色阶：OBS 运行时改 profile 不生效（启动时才读入内存 obs_video_info，无 ResetVideo），
+  // 已由 ensureOBSRunning() 在 OBS 启动前写 INI 保证 Full。这里无需再走运行时 setP。
 
   // 简单输出：录制画质保存在 SimpleOutput，通常是「与推流相同(Stream)」→ 看推流码率
   for (const [cat, name, min, target, label] of [
