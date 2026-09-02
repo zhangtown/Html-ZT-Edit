@@ -123,7 +123,9 @@ function ensureColorRangePartialInIni() {
 // Recbitrate/RecCRF/RecCQP —— 那些键在 OBS 里根本不存在（真参在 recordEncoder.json），所以一直没生效。
 // 这里改为直接读写 recordEncoder.json，只升不降：CRF/CQP 过大（会糊）抬回高清档；CBR/VBR 码率过低抬到高清档。
 // 和 ColorRange 一样必须在 OBS 启动前写好（OBS 启动时才把编码器设置读进内存），运行时改无效。
-function ensureRecordEncoderJson() {
+function ensureRecordEncoderJson(opts) {
+  const o = opts || {}
+  const tgt = targetBitrate(o.width, o.height)
   try {
     const root = obsConfigRoot()
     const profiles = path.join(root, 'basic', 'profiles')
@@ -145,7 +147,11 @@ function ensureRecordEncoderJson() {
         if (Number.isFinite(v) && v > HD_CRF) { cfg.cqp = HD_CRF; note = 'CQP ' + v + '→' + HD_CRF }
       } else if (rc === 'CBR' || rc === 'VBR') {
         const v = Number(cfg.bitrate)
-        if (Number.isFinite(v) && v > 0 && v < 12000) { cfg.bitrate = HD_BITRATE_KBPS; note = 'bitrate ' + v + '→' + HD_BITRATE_KBPS + 'kbps' }
+        // 缺省(undefined)或低于目标 → 抬到目标码率（之前缺省时 OBS 用默认 10M，太糊）
+        if (!Number.isFinite(v) || v < tgt) {
+          note = (Number.isFinite(v) ? 'bitrate ' + v + '→' : 'bitrate 缺省→') + tgt + 'kbps'
+          cfg.bitrate = tgt
+        }
       }
       if (note) {
         fs.writeFileSync(p, JSON.stringify(cfg), 'utf8')
@@ -582,17 +588,25 @@ async function fitVideo(width, height) {
 // 这套配置是用户在 OBS 里长期用的，工具不该全盘覆盖，所以这里只做**只升不降**的兜底：
 // 仅当当前设置明显低于高清档时才抬上去；用户已经是高清/无损则一个字节都不动。
 // 改的是 OBS 配置，在 StartRecord 之前调用即可生效（录制进行中改会失败）。
-const HD_BITRATE_KBPS = 20000   // 1080p 高清档（清晰度优先，固定码率上限）
+const HD_BITRATE_KBPS = 30000   // 1080p 高清档（清晰度优先，固定码率上限）。上到 30M 后细文字/描边基本无可见压缩块。
 const HD_CRF = 18               // 可接受的最高 CRF/CQP：数值越大越糊，超过 18（如 23 默认值）会肉眼可见发糊，此时抬回 18。
                                 // 注意不是越改越小越好：CRF=12 虽更清晰但文件更大/更耗 CPU，16 已足够清晰，无需强制压低到 12。
+
+// 目标码率：基于录制分辨率线性缩放（1080p ≈ 30Mbps 起，越清晰越好；上限 60M 防文件过大）。
+function targetBitrate(width, height) {
+  const w = width || 1920, h = height || 1080
+  const px = (w * h) / (1920 * 1080) // 相对 1080p 的倍数
+  const kbps = Math.round(HD_BITRATE_KBPS * px)
+  return Math.max(HD_BITRATE_KBPS, Math.min(60000, kbps))
+}
 
 // 录制画质兜底：真正生效的录制编码器参数在 profile 目录的 recordEncoder.json
 //（rate_control/crf/cqp/bitrate），不在 basic.ini 的 [AdvOut]（哪里的 Recbitrate/RecCRF 键不存在，
 // 之前用 SetProfileParameter 改那里是无效的）。这里直接委托给 ensureRecordEncoderJson()（
 // 已在 OBS 启动前调用过，这里再确认一次并收集说明）。
-async function ensureRecordQuality() {
-  // 编码器质控：CRF/CQP 过大(糊)或 CBR/VBR 码率过低时升到高清档（只升不降）
-  const r = ensureRecordEncoderJson()
+async function ensureRecordQuality(opts) {
+  // 编码器质控：CRF/CQP 过大(糊)或 CBR/VBR 码率过低时升到高清档（只升不降），按录制分辨率缩放目标码率
+  const r = ensureRecordEncoderJson(opts)
   return r && r.note ? [r.note] : []
 }
 
@@ -623,7 +637,7 @@ async function start(opts) {
       await ensureScene(SCENE_NAME)
 
       // 2) + 3) + 4) 画面源与音频（仅 OBS 原生浏览器源模式）
-      const maxW = parseInt(a.maxWidth || process.env.OBS_MAX_WIDTH || 1920, 10)
+      const maxW = parseInt(a.maxWidth || process.env.OBS_MAX_WIDTH || 3840, 10)
       const even = (n) => Math.max(2, Math.round(n / 2) * 2)
       let fit = null
       let audio = 'exists'
@@ -642,7 +656,7 @@ async function start(opts) {
       if (w && h) fit = await fitVideo(w, h)
       await ensureBrowserSource(SCENE_NAME, a.browserUrl, w, h)
       // 录制画质兜底（只升不降）：1080p 下码率过低/CRF 过高会明显发糊
-      const qnotes = await ensureRecordQuality()
+      const qnotes = await ensureRecordQuality({ width: w, height: h })
       if (qnotes.length) qualityNotes = qnotes
       audio = 'browser-source'
       a.windowTitle = '' // 浏览器源模式不需要匹配窗口标题

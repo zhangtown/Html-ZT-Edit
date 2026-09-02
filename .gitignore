@@ -63,3 +63,5 @@ ffmpeg.zip
 
 # 帧/截图临时对比产物
 frames/
+# 录制源临时文件（OBS 浏览器源落盘）
+录屏源.html

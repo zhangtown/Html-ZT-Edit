@@ -267,8 +267,10 @@ function registerIpc() {
       fs.writeFileSync(stableFile, html, 'utf8')
       writtenTempFile = stableFile // 复用回传通道：UI 显示路径；此文件不删，录完仍在项目目录
       a.browserUrl = pathToFileURL(stableFile).href
-      a.width = a.width || 1920
-      a.height = a.height || 1080
+      // 录制分辨率默认 4K：自适应页面（根字号/内容随视口缩放）在 4K 下最锐，且内容占比不变。
+      // 如需其它分辨率，用环境变量 OBS_REC_WIDTH / OBS_REC_HEIGHT 覆盖（如 2560/1440）。
+      a.width = a.width || parseInt(process.env.OBS_REC_WIDTH || '3840', 10)
+      a.height = a.height || parseInt(process.env.OBS_REC_HEIGHT || '2160', 10)
       const r = await obsRecorder.start(a)
       // 把浏览器源文件路径回传渲染端，方便用户在录制中 / 排错时直接定位文件。
       if (writtenTempFile) try { r = Object.assign({}, r, { tempFile: writtenTempFile }) } catch (e) {}
