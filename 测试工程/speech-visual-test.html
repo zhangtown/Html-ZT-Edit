@@ -33,7 +33,7 @@
   .cover-seal{margin-top:34px;width:96px;height:96px;border-radius:50%;background:var(--red);display:flex;align-items:center;justify-content:center;transform:rotate(-8deg);box-shadow:0 8px 24px rgba(196,30,36,.25)}
   .cover-seal span{color:#fff;font-family:'Noto Serif SC',serif;font-weight:700;font-size:1rem;text-align:center;line-height:1.2}
 
-  /* 拼贴墙飞入：与技能模板一致，用 backwards + 分批 animation-delay */
+  /* 拼贴墙飞入（纯 CSS 装饰，不入 ztEdit 动画体系） */
   .collage{position:absolute;inset:0;z-index:0}
   .collage img{position:absolute;object-fit:cover;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,.55);opacity:.9;transform:rotate(var(--r,0deg));animation:flyIn .85s cubic-bezier(.22,.9,.32,1.08) backwards}
   @keyframes flyIn{0%{opacity:0;transform:translate(var(--fx,0),var(--fy,-110vh)) rotate(calc(var(--r,0deg)*4)) scale(1.3)}70%{opacity:1}100%{opacity:1;transform:translate(0,0) rotate(var(--r,0deg)) scale(1)}}
@@ -47,18 +47,33 @@
   .lr-row{display:flex;gap:40px;align-items:center;width:100%;max-width:1280px;position:relative;z-index:2}
   .lr-left{flex:1;min-width:0}
   .lr-right{flex:1;min-width:0;display:flex;justify-content:center}
-  .page-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:2.6rem;color:var(--zhu);border-left:4px solid var(--zhu);padding-left:18px;margin-bottom:24px}
-  .page-text{font-size:1.5rem;line-height:1.9;color:var(--ink)}
+  .page-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:2.4rem;color:var(--zhu);border-left:4px solid var(--zhu);padding-left:18px;margin-bottom:24px}
   .mat-img{max-width:100%;max-height:48vh;width:auto;display:block;object-fit:contain;border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.12)}
 
-  /* focus 联动 */
+  /* 卡片（focus-group 内联动） */
+  .tl-card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 22px;margin-bottom:14px;font-size:1.35rem;display:flex;align-items:center;gap:14px;box-shadow:0 4px 16px rgba(0,0,0,.04)}
+  .card-n{font-family:'Noto Serif SC',serif;font-weight:700;color:var(--red);font-size:1.5rem;min-width:38px}
+
+  /* 动画演示列表/网格 */
+  .demo-list{display:flex;flex-direction:column;gap:14px}
+  .demo-row{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px 20px;font-size:1.35rem;display:flex;align-items:center;gap:14px;box-shadow:0 4px 16px rgba(0,0,0,.04)}
+  .demo-tag{font-family:'Noto Serif SC',serif;font-weight:700;color:var(--red);background:rgba(196,30,36,.08);border-radius:6px;padding:2px 10px;font-size:1rem}
+  .demo-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .demo-cell{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:26px;text-align:center;font-family:'Noto Serif SC',serif;font-weight:700;font-size:1.3rem;color:var(--zhu);box-shadow:0 4px 16px rgba(0,0,0,.04)}
+
+  /* focus 联动（与技能规范一致） */
+
   .focus-group .focus-item{transition:all .6s ease;position:relative}
   .focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
   .focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}
   .focus-group.dim-others .focus-item-text{opacity:.35;filter:blur(0)}
   .focus-group.dim-others .focus-item-text.zt-focus-active{opacity:1;transform:scale(1.06);color:var(--red);font-weight:700}
+  .zt-hl-sweep{position:relative}
+  .zt-hl-sweep::after{content:"";position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}
+  .zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}
 
   /* 结尾 */
+  .end-wrap{width:100%;max-width:1280px;display:flex;justify-content:center}
   .end-card{background:var(--card);border-radius:36px;padding:50px 70px;text-align:center;box-shadow:0 4px 22px rgba(0,0,0,.05)}
   .end-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:2.8rem;color:var(--ink);margin-bottom:14px}
   .end-sub{color:var(--zhu);font-size:1.4rem}
@@ -71,13 +86,15 @@
 <div id="stage">
   <div id="progress"></div>
 
-  <!-- Slide 0 封面 -->
+  <!-- Slide 0 -->
   <div class="slide active" id="s0">
     <div class="slide-subtitles" style="display:none">
-      <div data-zt-role="subtitle" data-zt-subtitle-start="0.1" data-zt-subtitle-end="3.525" data-zt-bound-to="[data-zt-id='el-0-0']">欢迎收看本次产品演示，我是小踏</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="3.400" data-zt-bound-to="[data-zt-id='el-0-0']">欢迎收看本次产品演示，我是小踏</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="3.7" data-zt-subtitle-end="7.000" data-zt-bound-to="[data-zt-id='el-0-1']">这是一款手写 HTML 的可视化编辑器</div>
     </div>
+
     <div class="cover-title focus-item" data-zt-id="el-0-0" data-zt-anim-effect="focus-zoom">Html-ZT-Edit</div>
-    <div class="cover-sub">可视化编辑器 · 产品演示</div>
+    <div class="cover-sub focus-item" data-zt-id="el-0-1" data-zt-anim-effect="highlight-sweep">可视化编辑器 · 产品演示</div>
     <div class="collage">
       <img class="c1" src="red.png" alt="红">
       <img class="c2" src="blue.png" alt="蓝">
@@ -88,79 +105,124 @@
     <div class="cover-seal"><span>小踏<br>出品</span></div>
   </div>
 
-  <!-- Slide 1 介绍 -->
-  <div class="slide" id="s1">
+  <!-- Slide 1 -->
+  <div class="slide " id="s1">
     <div class="slide-subtitles" style="display:none">
-      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="4.225" data-zt-bound-to="[data-zt-id='el-1-0']">今天我们用几分钟，快速了解这款可视化编辑器</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="2.800" data-zt-bound-to="[data-zt-id='el-1-0']">手写 HTML 改起来费时费力</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="3.1" data-zt-subtitle-end="5.900" data-zt-bound-to="[data-zt-id='el-1-1']">字幕与元素难以同步</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="6.2" data-zt-subtitle-end="8.600" data-zt-bound-to="[data-zt-id='el-1-2']">动画绑定更是不直观</div>
     </div>
+
     <div class="lr-row">
       <div class="lr-left">
         <div class="page-title">为什么需要它</div>
         <div class="focus-group">
-          <div class="page-text focus-item focus-item-text" data-zt-id="el-1-0" data-zt-anim-effect="focus-zoom">今天我们用几分钟，快速了解这款可视化编辑器。</div>
+          <div class="tl-card focus-item" data-zt-id="el-1-0" data-zt-anim-effect="focus-zoom"><div class="card-n">01</div><div>手写 HTML 改起来费时费力</div></div>
+          <div class="tl-card focus-item" data-zt-id="el-1-1" data-zt-anim-effect="focus-zoom"><div class="card-n">02</div><div>字幕与元素难同步</div></div>
+          <div class="tl-card focus-item" data-zt-id="el-1-2" data-zt-anim-effect="focus-zoom"><div class="card-n">03</div><div>动画绑定不直观</div></div>
         </div>
       </div>
       <div class="lr-right"><img class="mat-img" src="red.png" alt="示例"></div>
     </div>
   </div>
 
-  <!-- Slide 2 亮点1 -->
-  <div class="slide" id="s2">
+  <!-- Slide 2 -->
+  <div class="slide " id="s2">
     <div class="slide-subtitles" style="display:none">
-      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="4.7" data-zt-bound-to="[data-zt-id='el-2-0']">第一个亮点，拖拽元素即时生效，所见即所得</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="2.800" data-zt-bound-to="[data-zt-id='el-2-0']">第一种效果，淡入出现</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="3.1" data-zt-subtitle-end="5.900" data-zt-bound-to="[data-zt-id='el-2-1']">第二种效果，从左侧飞入</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="6.2" data-zt-subtitle-end="8.600" data-zt-bound-to="[data-zt-id='el-2-2']">第三种效果，放大出现</div>
     </div>
+
     <div class="lr-row">
       <div class="lr-left">
-        <div class="page-title">亮点一 · 拖拽即时生效</div>
-        <div class="focus-group">
-          <div class="page-text focus-item focus-item-text" data-zt-id="el-2-0" data-zt-anim-effect="focus-zoom">第一个亮点，拖拽元素即时生效，所见即所得。</div>
+        <div class="page-title">入场动画 · 淡入与飞入</div>
+        <div class="demo-list">
+          <div class="demo-row focus-item" data-zt-id="el-2-0" data-zt-anim-effect="fade-in"><span class="demo-tag">fade-in</span>淡入出现</div>
+          <div class="demo-row focus-item" data-zt-id="el-2-1" data-zt-anim-effect="fly-left"><span class="demo-tag">fly-left</span>从左侧飞入</div>
+          <div class="demo-row focus-item" data-zt-id="el-2-2" data-zt-anim-effect="zoom-in"><span class="demo-tag">zoom-in</span>放大出现</div>
         </div>
       </div>
       <div class="lr-right"><img class="mat-img" src="blue.png" alt="示例"></div>
     </div>
   </div>
 
-  <!-- Slide 3 亮点2 -->
-  <div class="slide" id="s3">
+  <!-- Slide 3 -->
+  <div class="slide " id="s3">
     <div class="slide-subtitles" style="display:none">
-      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="4.362" data-zt-bound-to="[data-zt-id='el-3-0']">第二个亮点，多页切换稳定可靠，状态不丢失</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="2.200" data-zt-bound-to="[data-zt-id='el-3-0']">从右侧飞入</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="2.5" data-zt-subtitle-end="4.700" data-zt-bound-to="[data-zt-id='el-3-1']">从上方飞入</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="5" data-zt-subtitle-end="6.800" data-zt-bound-to="[data-zt-id='el-3-2']">从下方飞入</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="7.1" data-zt-subtitle-end="8.600" data-zt-bound-to="[data-zt-id='el-3-3']">还有弹跳出现</div>
     </div>
+
     <div class="lr-row">
       <div class="lr-left">
-        <div class="page-title">亮点二 · 多页稳定</div>
-        <div class="focus-group">
-          <div class="page-text focus-item focus-item-text" data-zt-id="el-3-0" data-zt-anim-effect="focus-zoom">第二个亮点，多页切换稳定可靠，状态不丢失。</div>
+        <div class="page-title">入场动画 · 多方向飞入</div>
+        <div class="demo-grid">
+          <div class="demo-cell focus-item" data-zt-id="el-3-0" data-zt-anim-effect="fly-right">fly-right</div>
+          <div class="demo-cell focus-item" data-zt-id="el-3-1" data-zt-anim-effect="fly-top">fly-top</div>
+          <div class="demo-cell focus-item" data-zt-id="el-3-2" data-zt-anim-effect="fly-bottom">fly-bottom</div>
+          <div class="demo-cell focus-item" data-zt-id="el-3-3" data-zt-anim-effect="bounce">bounce</div>
         </div>
       </div>
       <div class="lr-right"><img class="mat-img" src="green.png" alt="示例"></div>
     </div>
   </div>
 
-  <!-- Slide 4 亮点3 -->
-  <div class="slide" id="s4">
+  <!-- Slide 4 -->
+  <div class="slide " id="s4">
     <div class="slide-subtitles" style="display:none">
-      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="6.7" data-zt-bound-to="[data-zt-id='el-4-0']">第三个亮点，属性面板可以改大小颜色字体，还能一键对齐</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="2.200" data-zt-bound-to="[data-zt-id='el-4-0']">擦除滑入效果</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="2.5" data-zt-subtitle-end="4.700" data-zt-bound-to="[data-zt-id='el-4-1']">3D 翻转效果</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="5" data-zt-subtitle-end="6.800" data-zt-bound-to="[data-zt-id='el-4-2']">虚化到清晰</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="7.1" data-zt-subtitle-end="8.600" data-zt-bound-to="[data-zt-id='el-4-3']">旋转滑入效果</div>
     </div>
+
     <div class="lr-row">
       <div class="lr-left">
-        <div class="page-title">亮点三 · 属性面板</div>
-        <div class="focus-group">
-          <div class="page-text focus-item focus-item-text" data-zt-id="el-4-0" data-zt-anim-effect="focus-zoom">第三个亮点，属性面板可以改大小、颜色、字体，还能一键对齐。</div>
+        <div class="page-title">特殊效果 · 擦除与翻转</div>
+        <div class="demo-list">
+          <div class="demo-row focus-item" data-zt-id="el-4-0" data-zt-anim-effect="wipe"><span class="demo-tag">wipe</span>擦除滑入</div>
+          <div class="demo-row focus-item" data-zt-id="el-4-1" data-zt-anim-effect="flip"><span class="demo-tag">flip</span>3D 翻转</div>
+          <div class="demo-row focus-item" data-zt-id="el-4-2" data-zt-anim-effect="blur-in"><span class="demo-tag">blur-in</span>虚化聚焦</div>
+          <div class="demo-row focus-item" data-zt-id="el-4-3" data-zt-anim-effect="slide-spin"><span class="demo-tag">slide-spin</span>旋转滑入</div>
         </div>
       </div>
       <div class="lr-right"><img class="mat-img" src="yellow.png" alt="示例"></div>
     </div>
   </div>
 
-  <!-- Slide 5 结尾 -->
-  <div class="slide" id="s5">
+  <!-- Slide 5 -->
+  <div class="slide " id="s5">
     <div class="slide-subtitles" style="display:none">
-      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="5.325" data-zt-bound-to="[data-zt-id='el-5-0']">感谢观看，欢迎使用 Html-ZT-Edit，我们下次再见</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="4.000" data-zt-bound-to="[data-zt-id='el-5-0']">旋转出现效果</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="4.3" data-zt-subtitle-end="8.600" data-zt-bound-to="[data-zt-id='el-5-1']">由大缩小的缩放效果</div>
     </div>
-    <div class="focus-group">
-      <div class="end-card focus-item" data-zt-id="el-5-0" data-zt-anim-effect="focus-zoom">
+
+    <div class="lr-row">
+      <div class="lr-left">
+        <div class="page-title">复合效果 · 旋转与缩放</div>
+        <div class="demo-list">
+          <div class="demo-row focus-item" data-zt-id="el-5-0" data-zt-anim-effect="rotate"><span class="demo-tag">rotate</span>旋转出现</div>
+          <div class="demo-row focus-item" data-zt-id="el-5-1" data-zt-anim-effect="zoom-out"><span class="demo-tag">zoom-out</span>由大缩小</div>
+        </div>
+      </div>
+      <div class="lr-right"><img class="mat-img" src="dark.png" alt="示例"></div>
+    </div>
+  </div>
+
+  <!-- Slide 6 -->
+  <div class="slide " id="s6">
+    <div class="slide-subtitles" style="display:none">
+      <div data-zt-role="subtitle" data-zt-subtitle-start="0" data-zt-subtitle-end="3.400" data-zt-bound-to="[data-zt-id='el-6-0']">感谢观看，欢迎使用 Html-ZT-Edit</div>
+      <div data-zt-role="subtitle" data-zt-subtitle-start="3.7" data-zt-subtitle-end="7.000" data-zt-bound-to="[data-zt-id='el-6-1']">我们下次再见</div>
+    </div>
+
+    <div class="focus-group end-wrap">
+      <div class="end-card focus-item" data-zt-id="el-6-0" data-zt-anim-effect="focus-zoom">
         <div class="end-title">感谢观看</div>
-        <div class="end-sub">欢迎使用 Html-ZT-Edit，我们下次再见</div>
+        <div class="end-sub focus-item" data-zt-id="el-6-1" data-zt-anim-effect="highlight-sweep">欢迎使用 Html-ZT-Edit，我们下次再见</div>
       </div>
     </div>
   </div>
@@ -172,30 +234,25 @@
 
 <script>
 (function(){
-  const audio = document.getElementById('bgAudio');
-  const slides = document.querySelectorAll('.slide');
-  const subtitleEl = document.getElementById('subtitle-bar');
-  const progressBar = document.getElementById('progress');
-  let currentSlide = 0, currentSubtitle = -1, isPlaying = false, manualOverrideUntil = 0;
+  var audio = document.getElementById('bgAudio');
+  var slides = document.querySelectorAll('.slide');
+  var subtitleEl = document.getElementById('subtitle-bar');
+  var progressBar = document.getElementById('progress');
+  var currentSlide = 0, currentSubtitle = -1, isPlaying = false, manualOverrideUntil = 0;
 
-  const slideTimings = [
-    {slide:0, start:0.0, end:3.625},
-    {slide:1, start:3.575, end:7.8},
-    {slide:2, start:7.8, end:12.5},
-    {slide:3, start:12.5, end:16.862},
-    {slide:4, start:16.862, end:23.562},
-    {slide:5, start:23.562, end:28.887}
-  ];
+  const slideTimings=[{"slide":0,"start":0,"end":8.6},{"slide":1,"start":8.6,"end":17.4},{"slide":2,"start":17.4,"end":26},{"slide":3,"start":26,"end":34.6},{"slide":4,"start":34.6,"end":43.2},{"slide":5,"start":43.2,"end":51.8},{"slide":6,"start":51.8,"end":60.4}];
 
-  const subtitles = [];
+  var subtitles = [];
   slides.forEach(function(sl, si){
-    const st = slideTimings[si]; if(!st) return;
+    var st = slideTimings[si]; if(!st) return;
     sl.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(el){
-      const rStart = parseFloat(el.getAttribute('data-zt-subtitle-start')) || 0;
-      const rEnd = parseFloat(el.getAttribute('data-zt-subtitle-end')) || 0;
+      var rStart = parseFloat(el.getAttribute('data-zt-subtitle-start')) || 0;
+      var rEnd = parseFloat(el.getAttribute('data-zt-subtitle-end')) || 0;
       subtitles.push({ startSec: st.start + rStart, endSec: st.start + rEnd, text: el.textContent });
     });
   });
+
+  document.querySelectorAll('[data-zt-anim-effect="highlight-sweep"]').forEach(function(el){ el.classList.add('zt-hl-sweep'); });
 
   function showSlide(idx, seekAudio){
     slides.forEach(function(s, i){ s.classList.toggle('active', i === idx); });
@@ -206,14 +263,14 @@
     });
     document.querySelectorAll('.focus-group').forEach(function(g){ g.classList.remove('dim-others'); });
     if(seekAudio && isPlaying && audio){
-      const st = slideTimings.find(function(t){ return t.slide === idx; });
+      var st = slideTimings[idx];
       if(st) audio.currentTime = st.start;
     }
   }
 
   function updateSubtitle(time){
-    let ns = -1;
-    for(let i = 0; i < subtitles.length; i++){
+    var ns = -1;
+    for(var i = 0; i < subtitles.length; i++){
       if(time >= subtitles[i].startSec && time < subtitles[i].endSec){ ns = i; break; }
     }
     if(ns !== currentSubtitle && ns !== -1){
@@ -224,7 +281,7 @@
 
   function updateSlide(time){
     if(Date.now() < manualOverrideUntil) return;
-    for(let i = slideTimings.length - 1; i >= 0; i--){
+    for(var i = slideTimings.length - 1; i >= 0; i--){
       if(time >= slideTimings[i].start){
         if(currentSlide !== slideTimings[i].slide) showSlide(slideTimings[i].slide);
         break;
@@ -234,40 +291,53 @@
 
   function playAnimation(el, effect, duration, delay, returnSec, easing){
     if(!el) return;
-    const kfMap = {
-      'zoom-in': {from:{transform:'scale(0.6)',opacity:0}, to:{transform:'scale(1.3)',opacity:1}},
+    var kfMap = {
+      'zoom-in': {from:{transform:'scale(0.6)',opacity:0}, to:{transform:'scale(1)',opacity:1}},
+      'zoom-out': {from:{transform:'scale(1.4)',opacity:0}, to:{transform:'scale(1)',opacity:1}},
       'fade-in': {from:{opacity:0}, to:{opacity:1}},
-      'fly-left': {from:{transform:'translateX(-120px)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
-      'fly-right': {from:{transform:'translateX(120px)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
-      'fly-top': {from:{transform:'translateY(-120px)',opacity:0}, to:{transform:'translateY(0)',opacity:1}},
-      'fly-bottom': {from:{transform:'translateY(120px)',opacity:0}, to:{transform:'translateY(0)',opacity:1}}
+      'fly-left': {from:{transform:'translateX(-160px)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
+      'fly-right': {from:{transform:'translateX(160px)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
+      'fly-top': {from:{transform:'translateY(-160px)',opacity:0}, to:{transform:'translateY(0)',opacity:1}},
+      'fly-bottom': {from:{transform:'translateY(160px)',opacity:0}, to:{transform:'translateY(0)',opacity:1}},
+      'bounce': {from:{transform:'translateY(0) scale(.6)',opacity:0}, to:{transform:'translateY(0) scale(1)',opacity:1}},
+      'rotate': {from:{transform:'rotate(-180deg) scale(.5)',opacity:0}, to:{transform:'rotate(0) scale(1)',opacity:1}},
+      'wipe': {from:{clipPath:'inset(0 100% 0 0)',opacity:1}, to:{clipPath:'inset(0 0 0 0)',opacity:1}},
+      'flip': {from:{transform:'perspective(800px) rotateY(88deg)',opacity:0}, to:{transform:'perspective(800px) rotateY(0deg)',opacity:1}},
+      'blur-in': {from:{filter:'blur(14px)',opacity:0}, to:{filter:'blur(0)',opacity:1}},
+      'slide-spin': {from:{transform:'translateX(-120px) rotate(-40deg) scale(.6)',opacity:0}, to:{transform:'translateX(0) rotate(0) scale(1)',opacity:1}}
     };
-    const kf = kfMap[effect] || {from:{transform:'scale(0.8)',opacity:0}, to:{transform:'scale(1)',opacity:1}};
-    const dur = parseFloat(duration) || 0.8, dly = parseFloat(delay) || 0;
-    el.animate([kf.from, kf.to], { duration: dur * 1000, delay: dly * 1000, easing: easing || 'ease', fill:'forwards' });
+    var kf = kfMap[effect];
+    if(!kf) return;
+    var dur = parseFloat(duration) || 0.8, dly = parseFloat(delay) || 0;
+    if(el.getAnimations) el.getAnimations().forEach(function(a){ a.cancel(); });
+    el.animate([kf.from, kf.to], { duration: dur * 1000, delay: dly * 1000, easing: easing || 'ease', fill: 'both' });
   }
 
   function loop(){
     if(!isPlaying) return;
-    const t = audio.currentTime;
+    var t = audio.currentTime;
     updateSlide(t);
     updateSubtitle(t);
-    const cur = slides[currentSlide];
+    var cur = slides[currentSlide];
     if(cur){
-      const slideStart = slideTimings[currentSlide] ? slideTimings[currentSlide].start : 0;
+      var slideStart = slideTimings[currentSlide] ? slideTimings[currentSlide].start : 0;
       cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
-        const boundSel = subEl.getAttribute('data-zt-bound-to');
+        var boundSel = subEl.getAttribute('data-zt-bound-to');
         if(!boundSel) return;
-        const boundEl = document.querySelector(boundSel);
+        var boundEl = document.querySelector(boundSel);
         if(!boundEl) return;
-        const effect = boundEl.getAttribute('data-zt-anim-effect') || '';
-        const absStart = slideStart + parseFloat(subEl.getAttribute('data-zt-subtitle-start') || 0);
-        if(effect.indexOf('focus-') === 0){
+        var effect = boundEl.getAttribute('data-zt-anim-effect') || '';
+        var absStart = slideStart + parseFloat(subEl.getAttribute('data-zt-subtitle-start') || 0);
+        if(effect.indexOf('focus-') === 0 || effect === 'highlight-sweep'){
           if(!boundEl.dataset.focusDone && t >= absStart){
             boundEl.dataset.focusDone = '1';
-            const grp = boundEl.closest('.focus-group');
-            if(grp) grp.classList.add('dim-others');
-            boundEl.classList.add('zt-focus-active');
+            if(effect === 'highlight-sweep'){
+              boundEl.classList.add('zt-hl-active');
+            } else {
+              var grp = boundEl.closest('.focus-group');
+              if(grp) grp.classList.add('dim-others');
+              boundEl.classList.add('zt-focus-active');
+            }
           }
         } else {
           if(!boundEl.dataset.animDone && t >= absStart && t < absStart + 0.5){
@@ -277,7 +347,7 @@
         }
       });
     }
-    if(audio.duration) progressBar.style.width = (t / audio.duration * 100) + '%';
+    if(audio && audio.duration) progressBar.style.width = (t / audio.duration * 100) + '%';
     requestAnimationFrame(loop);
   }
 
@@ -287,23 +357,16 @@
   }
 
   document.addEventListener('keydown', function(e){
-    if(e.key === 'ArrowRight'){
-      e.preventDefault();
-      if(currentSlide < slides.length - 1){ showSlide(currentSlide + 1, true); manualOverrideUntil = Date.now() + 3000; }
-    } else if(e.key === 'ArrowLeft'){
-      e.preventDefault();
-      if(currentSlide > 0){ showSlide(currentSlide - 1, true); manualOverrideUntil = Date.now() + 3000; }
-    } else if(e.key === ' ' || e.code === 'Space'){
-      e.preventDefault();
-      if(!isPlaying) startPlayback();
-    }
+    if(e.key === 'ArrowRight'){ e.preventDefault(); if(currentSlide < slides.length - 1){ showSlide(currentSlide + 1, true); manualOverrideUntil = Date.now() + 3000; } }
+    else if(e.key === 'ArrowLeft'){ e.preventDefault(); if(currentSlide > 0){ showSlide(currentSlide - 1, true); manualOverrideUntil = Date.now() + 3000; } }
+    else if(e.key === ' ' || e.code === 'Space'){ e.preventDefault(); if(!isPlaying) startPlayback(); }
   });
 
   document.addEventListener('click', function(e){
     if(!isPlaying){ startPlayback(); return; }
-    const x = e.clientX / window.innerWidth;
-    if(x > 0.5){ if(currentSlide < slides.length - 1){ showSlide(currentSlide + 1, true); manualOverrideUntil = Date.now() + 3000; }}
-    else { if(currentSlide > 0){ showSlide(currentSlide - 1, true); manualOverrideUntil = Date.now() + 3000; }}
+    var x = e.clientX / window.innerWidth;
+    if(x > 0.5){ if(currentSlide < slides.length - 1){ showSlide(currentSlide + 1, true); manualOverrideUntil = Date.now() + 3000; } }
+    else { if(currentSlide > 0){ showSlide(currentSlide - 1, true); manualOverrideUntil = Date.now() + 3000; } }
   });
 
   window.addEventListener('load', function(){ setTimeout(startPlayback, 300); });

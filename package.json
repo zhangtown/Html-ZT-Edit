@@ -15,7 +15,8 @@
     "electron:dev": "npm run build && electron .",
     "electron:build": "npm run build && electron-builder --win",
     "check:contract": "node scripts/contract-check.cjs",
-    "check:anim": "node scripts/anim-engine-check.mjs"
+    "check:anim": "node scripts/anim-engine-check.mjs",
+    "check:export": "node scripts/export-regression-check.mjs"
   },
   "dependencies": {
     "obs-websocket-js": "^5.0.8",
@@ -26,6 +27,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "electron": "^31.7.7",
     "electron-builder": "^24.13.3",
+    "jsdom": "^30.0.1",
     "vite": "^5.4.11"
   },
   "build": {
