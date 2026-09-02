@@ -159,6 +159,73 @@ const pages = [
 ]
 
 // ---- 由 pages 生成 slideTimings / 字幕时间（校验一致性）----
+// 方案 B：若存在 口播音频.srt，用其真实朗读时间轴驱动页面（声画同步），
+// 否则回退到 pages 里手写的时间。SRT 顺序须与 pages.subs 展开顺序一致（20 条）。
+const SRT_PATH = path.join(root, '测试工程/口播音频.srt')
+const PAGE_TAIL = 1.4 // 每页末字幕结束后的页尾缓冲（秒），给动画收尾
+
+function parseSrt(filePath) {
+  const txt = fs.readFileSync(filePath, 'utf8')
+  const blocks = txt.split(/\r?\n\r?\n/)
+  const out = []
+  for (const b of blocks) {
+    const lines = b.split(/\r?\n/)
+    if (lines.length < 2) continue
+    const tm = lines[1].match(/(\d{2}):(\d{2}):(\d{2}),(\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2}),(\d{3})/)
+    if (!tm) continue
+    const toSec = (h, m, s, ms) => (+h) * 3600 + (+m) * 60 + (+s) + (+ms) / 1000
+    out.push({ start: toSec(tm[1], tm[2], tm[3], tm[4]), end: toSec(tm[5], tm[6], tm[7], tm[8]) })
+  }
+  return out
+}
+
+function applySrtTimeline(pagesArr, srt) {
+  const flatSubs = []
+  pagesArr.forEach((p, pi) => {
+    p.subs.forEach((s, si) => flatSubs.push({ pageIdx: pi, subIdx: si }))
+  })
+  if (flatSubs.length !== srt.length) {
+    throw new Error(`SRT 条数 ${srt.length} 与页面字幕总数 ${flatSubs.length} 不一致`)
+  }
+  // 平铺计算绝对时间
+  const abs = flatSubs.map((f, i) => {
+    const cur = srt[i]
+    const next = srt[i + 1]
+    const end = next ? Math.max(cur.end, next.start) : cur.end + 0.6
+    return { pageIdx: f.pageIdx, subIdx: f.subIdx, absStart: cur.start, absEnd: end }
+  })
+  // 每页边界：start=首字幕起点；end=下一页首字幕起点（无缝衔接，动画余量已含在字幕显示窗口里），末页=末字幕结束+PAGE_TAIL
+  const pageAbs = pagesArr.map(() => ({ start: 0, end: 0 }))
+  abs.forEach((a) => {
+    const pa = pageAbs[a.pageIdx]
+    if (pa.start === 0 || a.absStart < pa.start) pa.start = a.absStart
+  })
+  for (let pi = 0; pi < pageAbs.length; pi++) {
+    const nextPageFirst = abs.find((a) => a.pageIdx === pi + 1)
+    if (nextPageFirst) {
+      pageAbs[pi].end = nextPageFirst.absStart
+    } else {
+      pageAbs[pi].end = abs.filter((a) => a.pageIdx === pi).reduce((m, a) => Math.max(m, a.absEnd), 0) + PAGE_TAIL
+    }
+  }
+  // 回填
+  pagesArr.forEach((p, pi) => {
+    p.start = pageAbs[pi].start
+    p.end = pageAbs[pi].end
+    p.subs.forEach((s, si) => {
+      const a = abs.find((x) => x.pageIdx === pi && x.subIdx === si)
+      s.t = +(a.absStart - p.start).toFixed(3)
+      s.d = +(a.absEnd - a.absStart).toFixed(3)
+    })
+  })
+}
+
+if (fs.existsSync(SRT_PATH)) {
+  const srt = parseSrt(SRT_PATH)
+  applySrtTimeline(pages, srt)
+  console.log(`采用 SRT 真实时间轴驱动（${srt.length} 条，末条结束 ${srt[srt.length - 1].end.toFixed(1)}s）`)
+}
+
 const slideTimings = pages.map((p) => ({ slide: parseInt(p.id.slice(1), 10), start: p.start, end: p.end }))
 for (let i = 0; i < slideTimings.length; i++) {
   const cur = slideTimings[i]
