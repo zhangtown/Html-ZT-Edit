@@ -69,6 +69,7 @@ export function rewriteAssets(html, baseDir, fileMap, relMap) {
 export function stripEditorParts(html) {
   return html
     .replace(/<style id="zt-editor-style">[\s\S]*?<\/style>/g, '')
+    .replace(/<style id="zt-anim-sweep">[\s\S]*?<\/style>/g, '')   // 编辑器动画预览样式（含 .zt-focus-active 红框 outline），不进草稿/产物
     .replace(/<script id="zt-editor-runtime">[\s\S]*?<\/script>/g, '')
     .replace(/\s+class="([^"]*)"/g, (m, cls) => {
       const cleaned = cls
@@ -95,8 +96,11 @@ const FOCUS_CSS = '\n.focus-group .focus-item{transition:all .6s ease;position:r
 // 同时清掉 zt-selected / zt-bound-highlight 等编辑器状态类（红线框 outline 的来源）
 // 与 dim-others（会让同组元素 opacity .35 + blur(1px)，是「画面暗/发糊」的来源之一）。
 function stripEditorFromDoc(doc) {
-  // 1) 编辑器注入的节点：样式表、运行时脚本、字体注入
-  ;['zt-editor-style', 'zt-editor-runtime', 'zt-editor-fonts'].forEach(function (id) {
+  // 1) 编辑器注入的节点：样式表、运行时脚本、字体注入、动画预览样式
+  //    zt-anim-sweep 是编辑器运行时注入的「划线强调+焦点高亮」预览样式（editorRuntime.js），
+  //    里面 .zt-focus-active 带 outline:2px 红框（编辑态可视反馈）。若不剥离会被烤进产物，
+  //    导致导出/录制的 HTML 在焦点激活时多一圈红色边框（应为纯淡红光晕，见下方 FOCUS_CSS）。
+  ;['zt-editor-style', 'zt-editor-runtime', 'zt-editor-fonts', 'zt-anim-sweep'].forEach(function (id) {
     var el = doc.getElementById(id)
     if (el && el.parentNode) el.parentNode.removeChild(el)
   })
