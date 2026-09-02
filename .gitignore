@@ -56,3 +56,10 @@ vo-pipeline/test_tts.py
 
 # WorkBuddy 项目数据/本地备份不入库
 .workbuddy/
+
+# 本地 ffmpeg 工具（手动下载解压，不入库）
+ffmpeg-master-latest-win64-gpl/
+ffmpeg.zip
+
+# 帧/截图临时对比产物
+frames/

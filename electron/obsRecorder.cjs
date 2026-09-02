@@ -78,11 +78,16 @@ function obsConfigRoot() {
   return path.join(os.homedir(), 'AppData/Roaming/obs-studio')
 }
 
-// 色阶范围：浏览器源是 Full(0-255)，OBS 默认 Partial(16-235) 会把高光压灰、暗部抬灰 → 画面发暗发灰。
-// 这是录出来的视频「比双击打开暗」的根本原因。
+// 色阶范围：浏览器源是 Full(0-255)，但消费级播放器（PotPlayer/Windows 自带等）默认都假定视频是
+// Partial/tv(16-235) 范围——它们会忽略 color_range=pc 元数据，把 Full 视频按 tv 解码 → 白点被拉到 255 → 过曝发白。
+// 所以录制端必须标 Partial/tv：OBS 把源全范围 0-255 压到 16-235 存储，播放器按 tv 解码即可正确还原（245→存226→显现245）。
+// 这是让成片在主流播放器里不过曝的可靠路径（理论上 Full 更“标准”，但实际播放器生态普遍不尊重 pc 标记，
+// 改 Full 反而让 PotPlayer/Windows 播放器过曝——已实测确认）。
 // 关键：OBS 只在「启动时」把 ColorRange 读进内存的 obs_video_info，运行时改 profile 不生效（无 ResetVideo 可用），
-// 所以必须在 OBS 启动之前把 INI 写好，OBS 一启动即读到 Full。这里遍历所有 profile 的 basic.ini 改写。
-function ensureColorRangeFullInIni() {
+// 所以必须在 OBS 启动之前把 INI 写好，OBS 一启动即读到 Partial。这里遍历所有 profile 的 basic.ini 改写。
+// 注：Partial 只用 16-235 共 219 级（8-bit），比 Full 少 37 级，但 8-bit 下视觉不可见，不影响清晰度；
+//    清晰度上限由源分辨率 + 码率(HD_CRF=18/20Mbps) 决定，与色域范围无关。
+function ensureColorRangePartialInIni() {
   try {
     const root = obsConfigRoot()
     const profiles = path.join(root, 'basic', 'profiles')
@@ -92,7 +97,7 @@ function ensureColorRangeFullInIni() {
       const ini = path.join(profiles, dir, 'basic.ini')
       if (!fs.existsSync(ini)) continue
       let t = fs.readFileSync(ini, 'utf8')
-      // 只改 [Video] 段里的 ColorRange=Partial → Full（用行级匹配，避免误伤注释/其它段）
+      // 只改 [Video] 段里的 ColorRange=Full → Partial（用行级匹配，避免误伤注释/其它段）
       let modified = false
       const lines = t.split(/\r?\n/)
       let inVideo = false
@@ -101,14 +106,57 @@ function ensureColorRangeFullInIni() {
         if (/^\s*\[/.test(line)) inVideo = /^\s*\[Video\]/.test(line)
         if (inVideo && /^\s*ColorRange\s*=/.test(line)) {
           const v = line.split('=')[1].trim()
-          if (v.toLowerCase() !== 'full') { lines[i] = line.replace(/=.*/, '=Full'); modified = true }
+          if (v.toLowerCase() !== 'partial') { lines[i] = line.replace(/=.*/, '=Partial'); modified = true }
         }
       }
       if (modified) { fs.writeFileSync(ini, lines.join('\n'), 'utf8'); changed++ }
     }
-    return changed ? { ok: true, note: 'wrote ColorRange=Full to ' + changed + ' profile(s)' } : { ok: true, note: 'already Full' }
+    return changed ? { ok: true, note: 'wrote ColorRange=Partial to ' + changed + ' profile(s)' } : { ok: true, note: 'already Partial' }
   } catch (e) {
     return { ok: false, error: '改 OBS 色阶 INI 失败：' + ((e && e.message) || e) }
+  }
+}
+
+// 录制编码器质量兜底：OBS 把「录制编码器」的真实参数（rate_control/crf/cqp/bitrate）存在
+// profile 目录的 recordEncoder.json（注意：basic.ini 的 [AdvOut] 只有 RecEncoder=obs_x264 这种「用哪个编码器」，
+// 真正的质控参数不在那里）。之前 ensureRecordQuality 用 SetProfileParameter 改 basic.ini 的
+// Recbitrate/RecCRF/RecCQP —— 那些键在 OBS 里根本不存在（真参在 recordEncoder.json），所以一直没生效。
+// 这里改为直接读写 recordEncoder.json，只升不降：CRF/CQP 过大（会糊）抬回高清档；CBR/VBR 码率过低抬到高清档。
+// 和 ColorRange 一样必须在 OBS 启动前写好（OBS 启动时才把编码器设置读进内存），运行时改无效。
+function ensureRecordEncoderJson() {
+  try {
+    const root = obsConfigRoot()
+    const profiles = path.join(root, 'basic', 'profiles')
+    if (!fs.existsSync(profiles)) return { ok: true, note: 'no profiles dir' }
+    const changed = []
+    for (const dir of fs.readdirSync(profiles)) {
+      const p = path.join(profiles, dir, 'recordEncoder.json')
+      if (!fs.existsSync(p)) continue
+      let cfg
+      try { cfg = JSON.parse(fs.readFileSync(p, 'utf8')) } catch (e) { continue }
+      if (!cfg || typeof cfg !== 'object') continue
+      const rc = String(cfg.rate_control || '').toUpperCase()
+      let note = ''
+      if (rc === 'CRF') {
+        const v = Number(cfg.crf)
+        if (Number.isFinite(v) && v > HD_CRF) { cfg.crf = HD_CRF; note = 'CRF ' + v + '→' + HD_CRF }
+      } else if (rc === 'CQP') {
+        const v = Number(cfg.cqp)
+        if (Number.isFinite(v) && v > HD_CRF) { cfg.cqp = HD_CRF; note = 'CQP ' + v + '→' + HD_CRF }
+      } else if (rc === 'CBR' || rc === 'VBR') {
+        const v = Number(cfg.bitrate)
+        if (Number.isFinite(v) && v > 0 && v < 12000) { cfg.bitrate = HD_BITRATE_KBPS; note = 'bitrate ' + v + '→' + HD_BITRATE_KBPS + 'kbps' }
+      }
+      if (note) {
+        fs.writeFileSync(p, JSON.stringify(cfg), 'utf8')
+        changed.push(dir + ': ' + note)
+      }
+    }
+    return changed.length
+      ? { ok: true, note: '录制编码器兜底：' + changed.join('；') }
+      : { ok: true, note: '录制编码器已高清（未改动）' }
+  } catch (e) {
+    return { ok: false, error: '改 OBS 录制编码器 JSON 失败：' + ((e && e.message) || e) }
   }
 }
 
@@ -217,9 +265,11 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000 } = {}) {
   if (!ex.ok) return ex
 
   if (!isObsRunning()) {
-    // OBS 未运行才改 INI：此时 OBS 尚没读配置，改完它启动即读到 Full（运行时改无效）。
+    // OBS 未运行才改 INI：此时 OBS 尚没读配置，改完它启动即读到 Partial（运行时改无效）。
     // 若 OBS 已在跑，INI 改了对本次无效，但至少下次启动生效；此处不强制重启，保证录屏流程不被打断。
-    try { const r = ensureColorRangeFullInIni(); if (r && r.note) console.log('[obsRecorder] 色阶：', r.note) } catch (e) {}
+    try { const r = ensureColorRangePartialInIni(); if (r && r.note) console.log('[obsRecorder] 色阶：', r.note) } catch (e) {}
+    // 同样在启动前写好录制编码器高清参数（真参在 recordEncoder.json，不在 basic.ini 的 [AdvOut]）
+    try { const r = ensureRecordEncoderJson(); if (r && r.note) console.log('[obsRecorder] 编码器：', r.note) } catch (e) {}
     try {
       const child = spawn(ex.exe, [], {
         cwd: path.dirname(ex.exe),
@@ -474,51 +524,17 @@ async function fitVideo(width, height) {
 // 仅当当前设置明显低于高清档时才抬上去；用户已经是高清/无损则一个字节都不动。
 // 改的是 OBS 配置，在 StartRecord 之前调用即可生效（录制进行中改会失败）。
 const HD_BITRATE_KBPS = 20000   // 1080p 高清档（清晰度优先，固定码率上限）
-const HD_CRF = 12               // CRF/CQP 数值越小越清晰（极致档）
+const HD_CRF = 18               // 可接受的最高 CRF/CQP：数值越大越糊，超过 18（如 23 默认值）会肉眼可见发糊，此时抬回 18。
+                                // 注意不是越改越小越好：CRF=12 虽更清晰但文件更大/更耗 CPU，16 已足够清晰，无需强制压低到 12。
 
+// 录制画质兜底：真正生效的录制编码器参数在 profile 目录的 recordEncoder.json
+//（rate_control/crf/cqp/bitrate），不在 basic.ini 的 [AdvOut]（哪里的 Recbitrate/RecCRF 键不存在，
+// 之前用 SetProfileParameter 改那里是无效的）。这里直接委托给 ensureRecordEncoderJson()（
+// 已在 OBS 启动前调用过，这里再确认一次并收集说明）。
 async function ensureRecordQuality() {
-  const o = getObs()
-  const notes = []
-  const readP = async (cat, name) => {
-    try {
-      const r = await o.call('GetProfileParameter', { parameterCategory: cat, parameterName: name })
-      const v = r && r.parameterValue
-      return (v === undefined || v === null || v === '') ? undefined : v
-    } catch (e) { return undefined }
-  }
-  const setP = async (cat, name, val) => {
-    try {
-      await o.call('SetProfileParameter', { parameterCategory: cat, parameterName: name, parameterValue: val })
-      return true
-    } catch (e) { return false }
-  }
-
-  // 色阶：OBS 运行时改 profile 不生效（启动时才读入内存 obs_video_info，无 ResetVideo），
-  // 已由 ensureOBSRunning() 在 OBS 启动前写 INI 保证 Full。这里无需再走运行时 setP。
-
-  // 简单输出：录制画质保存在 SimpleOutput，通常是「与推流相同(Stream)」→ 看推流码率
-  for (const [cat, name, min, target, label] of [
-    ['SimpleOutput', 'VBitrate', 12000, HD_BITRATE_KBPS, '推流/录制码率'],
-    ['AdvOut', 'Recbitrate', 12000, HD_BITRATE_KBPS, '录制码率'],
-  ]) {
-    const v = parseInt(await readP(cat, name), 10)
-    if (Number.isFinite(v) && v > 0 && v < min) {
-      if (await setP(cat, name, target)) notes.push(`${label} ${v}→${target}kbps`)
-    }
-  }
-  // CRF / CQP：数值越大越糊
-  for (const [cat, name] of [['AdvOut', 'RecCRF'], ['AdvOut', 'RecCQP']]) {
-    const v = parseInt(await readP(cat, name), 10)
-    if (Number.isFinite(v) && v > HD_CRF) {
-      if (await setP(cat, name, HD_CRF)) notes.push(`${name} ${v}→${HD_CRF}`)
-    }
-  }
-  // 简单输出的录制质量档：Small（省空间，最糊）抬到 HQ，其余（Stream/HQ/Lossless）不动
-  const q = String(await readP('SimpleOutput', 'RecQuality') || '').toLowerCase()
-  if (q === 'small') {
-    if (await setP('SimpleOutput', 'RecQuality', 'HQ')) notes.push('录制质量档 Small→HQ')
-  }
-  return notes
+  // 编码器质控：CRF/CQP 过大(糊)或 CBR/VBR 码率过低时升到高清档（只升不降）
+  const r = ensureRecordEncoderJson()
+  return r && r.note ? [r.note] : []
 }
 
 // ---------------------------------------------------------------------------
