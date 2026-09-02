@@ -1858,11 +1858,13 @@
   }
 
   // ---- 序列化（供草稿保存，保留编辑器样式/选择类，由父窗口剥离）----
-  function serialize() {
+  function serialize(keepSelection) {
     // 序列化前先清掉选中态：否则 zt-selected 类（编辑器选中红框）会被烤进导出的 HTML，
     // 录制/导出画面里一直留着选中框。放在读取 DOM 之前同步执行，杜绝「外部先发 deselect、
     // 但 serialize 先读到旧 DOM」的竞态（之前靠 App 先后发两条 postMessage 会偶发残留）。
-    deselectAll()
+    // keepSelection=true 时（草稿自动保存）不清：草稿的编辑器状态类由父窗口 stripEditorParts 剥离，
+    // 且清掉会打断正在进行的动画预览（点+改时长时 800ms 自动保存会把选中清掉）。
+    if (!keepSelection) deselectAll()
     post({ type: 'serialize', html: document.documentElement.outerHTML, current: current })
   }
 
@@ -2420,7 +2422,7 @@
         GRID_SIZE = m.size || 20
         setGrid(m.on)
       }       else if (m.type === 'requestExport') exportClean()
-      else if (m.type === 'requestSerialize') serialize()
+      else if (m.type === 'requestSerialize') serialize(m.keepSelection)
       else if (m.type === 'deselect') deselectAll()
       else if (m.type === 'resetElement') resetSelected()
       else if (m.type === 'align') align(m.mode)

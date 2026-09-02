@@ -258,7 +258,10 @@ export default function App() {
 
   function performSave() {
     pendingSaveRef.current = true
-    send({ type: 'requestSerialize' })
+    // 草稿保存不清选中：serialize() 里的 deselectAll 会打断正在进行的动画预览（点+改时长时
+    // 800ms 自动保存把选中清掉）。草稿的 zt-selected 等编辑器状态类由 stripEditorParts 剥离，
+    // 无需 iframe 先清。
+    send({ type: 'requestSerialize', keepSelection: true })
   }
 
   async function actuallySave(html, pageCurrent) {
