@@ -44,11 +44,33 @@ const AUDIO_KINDS = [
   'wasapi_output_capture', 'wasapi_input_capture', 'wasapi_process_output_capture', 'browser_source',
 ]
 
+// 各家显卡录制编码器 ID（按新旧/可用性排序）：OBS 版本与驱动不同，实际注册的 ID 不一样——
+// 例如 AMD 在 OBS 28+ 只注册新版 h264_texture_amf（老的 obs_amf_h264 随旧插件移除，写它起录必失败）；
+// NVIDIA 的 obs_nvenc_h264_tex 也是新实现，老版本只有 obs_nvenc_h264。
+// 具体以「当前 OBS 实例启动日志里的 Available Encoders 清单」为准，见 ensureRecEncoderWorks() 的自检修复。
+const ENCODER_IDS_BY_VENDOR = {
+  nvidia: ['obs_nvenc_h264_tex', 'obs_nvenc_h264', 'obs_nvenc_h264_soft'],
+  amd: ['h264_texture_amf', 'obs_amf_h264'],
+  intel: ['obs_qsv_h264'],
+  cpu: ['obs_x264'],
+}
+
+// 编码器 ID → 界面友好名（自检修复换编码器后回传/展示用）
+const ENCODER_LABELS = {
+  obs_nvenc_h264_tex: 'NVIDIA NVENC', obs_nvenc_h264: 'NVIDIA NVENC', obs_nvenc_h264_soft: 'NVIDIA NVENC',
+  h264_texture_amf: 'AMD AMF', obs_amf_h264: 'AMD AMF',
+  obs_qsv_h264: 'Intel QSV',
+  obs_x264: 'x264 (CPU)',
+}
+const encoderLabel = (id) => ENCODER_LABELS[id] || (id ? '编码器 ' + id : '')
+
 let obs = null            // OBSWebSocket 实例（单例）
 let connected = false
 let lastOutputPath = ''   // 起录时 OBS 回传的准确输出路径（stop 时优先用它，比扫目录可靠）
 let lastOutputDir = ''    // 起录时的输出目录（stop 时扫目录兜底用）
 let lastEncoder = ''       // 本次选定的录制硬件编码器（按显卡自动：NVIDIA NVENC / AMD AMF / Intel QSV / x264）
+let lastEncoderId = ''     // 本次写入 OBS 配置的编码器 ID（自检修复时对照当前实例真实清单用）
+let lastVendor = ''        // 本次编码器所属显卡厂商（自检修复优先挑同厂商的可用 ID）
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -123,10 +145,15 @@ function ensureColorRangePartialInIni() {
 // 真正的质控参数不在那里）。之前 ensureRecordQuality 用 SetProfileParameter 改 basic.ini 的
 // Recbitrate/RecCRF/RecCQP —— 那些键在 OBS 里根本不存在（真参在 recordEncoder.json），所以一直没生效。
 // 这里改为直接读写 recordEncoder.json，只升不降：CRF/CQP 过大（会糊）抬回高清档；CBR/VBR 码率过低抬到高清档。
+// 关键：参数形状随编码器走 —— x264/NVENC/QSV 用 rate_control=CRF + crf，AMD 硬件编码器（h264_texture_amf）
+// 只认 rate_control=CQP/CBR/VBR + cqp（不认 CRF/crf）。切换编码器时要把形状一起换掉，
+// 否则质控参数被 AMF 忽略 → 退回 CBR 默认码率，4K 录制会糊且文件巨大。
 // 和 ColorRange 一样必须在 OBS 启动前写好（OBS 启动时才把编码器设置读进内存），运行时改无效。
+// opts.encoderId 传入本次选定的编码器 ID（AMD → 按 AMF 形状写，其余 → 按 x264 形状写）。
 function ensureRecordEncoderJson(opts) {
   const o = opts || {}
   const tgt = targetBitrate(o.width, o.height)
+  const isAmf = o.encoderId === 'h264_texture_amf' || o.encoderId === 'obs_amf_h264'
   try {
     const root = obsConfigRoot()
     const profiles = path.join(root, 'basic', 'profiles')
@@ -140,7 +167,24 @@ function ensureRecordEncoderJson(opts) {
       if (!cfg || typeof cfg !== 'object') continue
       const rc = String(cfg.rate_control || '').toUpperCase()
       let note = ''
-      if (rc === 'CRF') {
+      if (isAmf) {
+        // AMF 形状：rate_control=CQP/CBR/VBR + cqp。把 x264 遗留的 CRF/crf 等量平移成 CQP/cqp。
+        const q = [Number(cfg.cqp), Number(cfg.crf)].find((v) => Number.isFinite(v))
+        if (rc === 'CQP') {
+          if (Number.isFinite(q) && q > HD_CRF) { cfg.cqp = HD_CRF; note = 'CQP ' + q + '→' + HD_CRF }
+        } else if (rc === 'CBR' || rc === 'VBR') {
+          const v = Number(cfg.bitrate)
+          if (!Number.isFinite(v) || v < tgt) {
+            note = (Number.isFinite(v) ? 'bitrate ' + v + '→' : 'bitrate 缺省→') + tgt + 'kbps'
+            cfg.bitrate = tgt
+          }
+        } else if (rc) {
+          // CRF 等其它取值（x264 时代留下的）→ 整体转成 AMF 的 CQP，数值等量平移、只升不降
+          cfg.rate_control = 'CQP'
+          cfg.cqp = Number.isFinite(q) && q <= HD_CRF ? q : HD_CRF
+          note = 'AMF 参数形状：' + (rc === 'CRF' ? 'CRF' : rc) + '→CQP(cqp=' + cfg.cqp + ')'
+        }
+      } else if (rc === 'CRF') {
         const v = Number(cfg.crf)
         if (Number.isFinite(v) && v > HD_CRF) { cfg.crf = HD_CRF; note = 'CRF ' + v + '→' + HD_CRF }
       } else if (rc === 'CQP') {
@@ -233,7 +277,10 @@ async function detectEncoderId() {
   } catch (e) { /* 读不到就当无独显，用 CPU */ }
   switch (vendor) {
     case 'nvidia': return { id: 'obs_nvenc_h264_tex', name: 'NVIDIA NVENC', vendor: 'nvidia' }
-    case 'amd': return { id: 'obs_amf_h264', name: 'AMD AMF', vendor: 'amd' }
+    // AMD：必须用新版 h264_texture_amf（OBS 28+ 随 obs-amf 插件重写，只注册 texture 变体；
+    // 老的 obs_amf_h264 已移除，写它起录直接弹「启动输出失败」。旧版 OBS 只有老 ID 的情况由
+    // 起录前的编码器自检（ensureRecEncoderWorks）从真实清单里换掉，这里只保证默认值正确）。
+    case 'amd': return { id: 'h264_texture_amf', name: 'AMD AMF', vendor: 'amd' }
     case 'intel': return { id: 'obs_qsv_h264', name: 'Intel QSV', vendor: 'intel' }
     default: return { id: 'obs_x264', name: 'x264 (CPU)', vendor: 'cpu' }
   }
@@ -379,7 +426,26 @@ function isObsRunning() {
 // 确保 OBS 已启动并建立 websocket 连接：
 //   已连 → 直接返回；未连 → 找到 exe 自动拉起 → 轮询连接直到握手成功（超时则报错）。
 // 这样点「● OBS 录制」时即便 OBS 没开，也会自动启动，真正一步到位。
-async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000 } = {}) {
+// OBS 32+ 用 .sentinel/run_<uuid> 标记一次运行：正常退出时删除，崩溃/被强杀会残留。
+// 下次启动发现残留就弹「上次异常退出 → 安全模式」对话框等人点，自动化起录会卡死在对话框（websocket 起不来）。
+// 我们自己拉起 OBS 前清掉残留（此刻确认没有 OBS 进程在跑，删的是死哨兵），保证冷启动不被弹窗挡住。
+function clearObsSentinel() {
+  try {
+    const dir = path.join(obsConfigRoot(), '.sentinel')
+    if (!fs.existsSync(dir)) return false
+    let n = 0
+    for (const f of fs.readdirSync(dir)) {
+      const fp = path.join(dir, f)
+      try { fs.unlinkSync(fp); n++ } catch (e) {}
+    }
+    if (n) console.log('[obsRecorder] 已清理 OBS 异常退出哨兵 ' + n + ' 个（防止安全模式弹窗卡住自动起录）')
+    return n > 0
+  } catch (e) {
+    return false
+  }
+}
+
+async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000, forceEncoder } = {}) {
   if (connected && obs) return { ok: true, reused: true }
 
   const first = await connect()
@@ -393,17 +459,25 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000 } = {}) {
     // OBS 未运行才改 INI：此时 OBS 尚没读配置，改完它启动即读到 Partial（运行时改无效）。
     // 若 OBS 已在跑，INI 改了对本次无效，但至少下次启动生效；此处不强制重启，保证录屏流程不被打断。
     try { const r = ensureColorRangePartialInIni(); if (r && r.note) console.log('[obsRecorder] 色阶：', r.note) } catch (e) {}
-    // 同样在启动前写好录制编码器高清参数（真参在 recordEncoder.json，不在 basic.ini 的 [AdvOut]）
-    try { const r = ensureRecordEncoderJson(); if (r && r.note) console.log('[obsRecorder] 编码器：', r.note) } catch (e) {}
     // 确保 obs-websocket 服务启用（默认关闭 → 连不上）：在 OBS 启动前写好，OBS 一起动即开启
     try { const r = ensureObsWebsocketEnabled(); if (r && r.note) console.log('[obsRecorder] WebSocket：', r.note) } catch (e) {}
-    // 按显卡自动选硬件编码器（NVENC/AMF/QSV，回退 x264）：同样在 OBS 启动前写入 [AdvOut].RecEncoder，OBS 一起动即用对应硬件编码
+    // 选定录制硬件编码器（NVENC/AMF/QSV，回退 x264）：自检修复重拉时用 forceEncoder 强制指定已确认可用的 ID。
+    // RecEncoder 与编码器质控参数（recordEncoder.json）都必须在 OBS 启动前写好，OBS 一起动即读到。
     try {
-      const enc = await detectEncoderId()
+      const enc = forceEncoder || await detectEncoderId()
+      lastEncoderId = enc.id
+      lastVendor = enc.vendor
       lastEncoder = enc.name
       const r = setRecEncoderIni(enc.id)
       if (r && r.note) console.log('[obsRecorder] 编码器：', enc.name + ' (' + enc.id + ') · ' + r.note)
+      // 录制编码器高清参数（真参在 recordEncoder.json）：按本次编码器的参数形状写（AMF→CQP/cqp，其余→CRF/crf）
+      try {
+        const q = ensureRecordEncoderJson({ encoderId: enc.id })
+        if (q && q.note) console.log('[obsRecorder] 编码器参数：', q.note)
+      } catch (e) {}
     } catch (e) { console.log('[obsRecorder] 编码器检测失败：', (e && e.message) || e) }
+    // 清异常退出哨兵：崩溃/被强杀后的残留会让 OBS 弹安全模式框卡住启动（见 clearObsSentinel）
+    try { clearObsSentinel() } catch (e) {}
     try {
       const child = spawn(ex.exe, [], {
         cwd: path.dirname(ex.exe),
@@ -680,6 +754,146 @@ async function ensureRecordQuality(opts) {
 }
 
 // ---------------------------------------------------------------------------
+// 编码器可用性自检（防止「启动输出失败」弹窗）
+// ---------------------------------------------------------------------------
+//
+// 背景：OBS 的录制编码器 ID 随版本/驱动变化 —— 例如 AMD 在 OBS 28+ 只注册新 ID h264_texture_amf，
+// 老的 obs_amf_h264 已随旧插件移除；NVENC/QSV 也有同样迁移。若 profile 的 [AdvOut].RecEncoder 写的 ID
+// 不存在于当前 OBS，起录时 OBS 弹「启动录像失败/启动输出失败」且不落任何 start-record 日志，
+// 用户根本无从排查（提示里只会怪 NVENC/AMD 驱动，而实际是配置写错）。
+//
+// 自检原理：OBS 启动加载 profile 时若发现 RecEncoder 不存在，会在会话日志里写一行
+//   Encoder ID 'xxx' not found
+// 并在同一段日志给出当前真实可用的编码器清单（Available Encoders）。这两段在 websocket 起来前就写完，
+// 连上后读必然完整。检测到不匹配 → 从真实清单里选一个可用 ID（同显卡厂商优先、x264 兑底）→
+// 重写所有 profile 的 RecEncoder → 优雅重启 OBS（配置只在启动时读进内存，运行中改无效）。
+
+// OBS 会话日志目录（obs-studio/logs），文件名形如 "2026-09-03 17-59-30.txt"
+function obsLogsDir() {
+  return path.join(obsConfigRoot(), 'logs')
+}
+
+// 当前运行实例的会话日志 = logs 目录里最新写入的 .txt（OBS 每个实例一个文件，日志持续追加）
+function newestObsLog() {
+  try {
+    const dir = obsLogsDir()
+    let best = ''
+    let bestT = 0
+    for (const f of fs.readdirSync(dir)) {
+      if (!/\.txt$/i.test(f)) continue
+      const fp = path.join(dir, f)
+      let s
+      try { s = fs.statSync(fp) } catch (e) { continue }
+      if (s.mtimeMs > bestT) { bestT = s.mtimeMs; best = fp }
+    }
+    return best
+  } catch (e) {
+    return ''
+  }
+}
+
+// 解析会话日志：①真实注册的视频编码器 ID 清单（Available Encoders → Video Encoders 段）
+// ②启动时加载 profile 失败的编码器 ID（"Encoder ID 'xxx' not found"）。
+// 返回 { ids: [...], missing: [...] }，解析不出就返回空数组（调用方按"不干预"处理）。
+function parseEncoderLog(text) {
+  const ids = []
+  const missing = []
+  const lines = String(text || '').split(/\r?\n/)
+  let inVideo = false
+  for (const line of lines) {
+    const miss = line.match(/Encoder ID '([^']+)' not found/)
+    if (miss && missing.indexOf(miss[1]) < 0) missing.push(miss[1])
+    if (/Video Encoders:/.test(line)) { inVideo = true; continue }
+    if (/Audio Encoders:/.test(line)) { inVideo = false; continue }
+    if (!inVideo) continue
+    // OBS 日志每行带 "HH:MM:SS.mmm: " 时间戳前缀，编码器行形如 "\t- h264_texture_amf (...)"，须先剥前缀
+    const bare = line.replace(/^\d{2}:\d{2}:\d{2}\.\d{3}:\s*/, '')
+    const m = bare.match(/^\s*-\s+(\S+)/)
+    if (m && ids.indexOf(m[1]) < 0) ids.push(m[1])
+  }
+  return { ids, missing }
+}
+
+// 读所有 profile 的 [AdvOut].RecEncoder 现值（我们启动前会给每个 profile 写同值，因此任一值与实例清单不符
+// 都说明起录会失败；只用于判断「not found 的是不是录制编码器」，避免把流编码器的 not found 误判成我们的问题）
+function recEncoderValuesInProfiles() {
+  const vals = []
+  try {
+    const profiles = path.join(obsConfigRoot(), 'basic', 'profiles')
+    for (const dir of fs.readdirSync(profiles)) {
+      const ini = path.join(profiles, dir, 'basic.ini')
+      if (!fs.existsSync(ini)) continue
+      const lines = fs.readFileSync(ini, 'utf8').split(/\r?\n/)
+      let inAdvOut = false
+      for (const line of lines) {
+        if (/^\s*\[/.test(line)) inAdvOut = /^\s*\[AdvOut\]/.test(line)
+        if (inAdvOut && /^\s*RecEncoder\s*=/.test(line)) {
+          const v = line.split('=')[1].trim()
+          if (v && vals.indexOf(v) < 0) vals.push(v)
+        }
+      }
+    }
+  } catch (e) { /* 读不到就按无 RecEncoder 处理（不触发自检） */ }
+  return vals
+}
+
+// 起录前编码器自检：发现当前 OBS 不认 profile 里写的 RecEncoder → 改成真实可用的编码器并重启 OBS。
+// 健康时零开销（读一次日志文件）；修不动时返回 ok:false 把根因亮给用户。
+async function ensureRecEncoderWorks() {
+  try {
+    const log = newestObsLog()
+    if (!log) return { ok: true, note: '无 OBS 会话日志，跳过编码器自检' }
+    // 日志落盘有个极短窗口，轮询到出现 Available Encoders 段为止
+    let text = ''
+    for (let i = 0; i < 25 && text.indexOf('Available Encoders') < 0; i++) {
+      try { text = fs.readFileSync(log, 'utf8') } catch (e) { text = '' }
+      if (text.indexOf('Available Encoders') < 0) await wait(200)
+    }
+    const parsed = parseEncoderLog(text)
+    // 只有「not found 的编码器 == 我们写的 RecEncoder」才需要修（避免误伤用户流编码器配置）
+    const profileVals = recEncoderValuesInProfiles()
+    const badOnes = parsed.missing.filter((id) => profileVals.indexOf(id) >= 0)
+    if (!badOnes.length) return { ok: true, note: '录制编码器在当前 OBS 可用' }
+    if (!parsed.ids.length) return { ok: true, note: '日志里没有编码器清单，交给 StartRecord 原样报错' }
+    // 从真实清单里挑：本机显卡厂商的硬件编码器优先（按新旧 ID 序），其它厂商次之，x264 兑底
+    let vendor = lastVendor
+    if (!vendor || vendor === 'cpu') {
+      try { vendor = (await detectEncoderId()).vendor } catch (e) {}
+    }
+    const order = []
+    for (const v of [vendor, 'nvidia', 'amd', 'intel', 'cpu']) {
+      for (const id of ENCODER_IDS_BY_VENDOR[v] || []) {
+        if (order.indexOf(id) < 0) order.push(id)
+      }
+    }
+    const pick = order.find((id) => parsed.ids.indexOf(id) >= 0)
+    if (!pick) {
+      return {
+        ok: false,
+        error: 'OBS 可用编码器清单里找不到可用的 H.264 录制编码器（清单：' + parsed.ids.join('、') + '）。\n' +
+          '请把显卡驱动更新到最新后重试（若仍不行可在 OBS 里把录制编码器手动改成任意一个可用的，工具会沿用）。',
+      }
+    }
+    console.log('[obsRecorder] 编码器自检：', badOnes.join('/'), '在当前 OBS 不可用 → 改用', pick, '并重启 OBS 生效')
+    const r = setRecEncoderIni(pick)
+    if (r && !r.ok) return r
+    lastEncoderId = pick
+    lastVendor = vendor
+    lastEncoder = encoderLabel(pick)
+    await killOBS() // 优雅退出（带 /F 兜底），确保旧实例释放配置后再拉新的
+    await wait(300)
+    const rr = await ensureOBSRunning({ forceEncoder: { id: pick, name: encoderLabel(pick), vendor } })
+    if (!rr.ok) {
+      return { ok: false, error: '已把录制编码器修正为 ' + encoderLabel(pick) + '，但重启 OBS 失败：' + (rr.error || '') }
+    }
+    return { ok: true, repaired: pick }
+  } catch (e) {
+    // 自检/修复本身出意外时不挡录屏主流程，让 StartRecord 原样报错（与修复前行为一致）
+    return { ok: true, note: '编码器自检异常跳过：' + ((e && e.message) || e) }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // 起停
 // ---------------------------------------------------------------------------
 
@@ -692,6 +906,10 @@ async function start(opts) {
   // 连接不上就自动拉起 OBS（首次会搜路径并固化到 OBS_EXE 环境变量，下次免搜）
   const r0 = await ensureOBSRunning()
   if (!r0.ok) return r0
+  // 编码器自检：RecEncoder 不存在于当前 OBS 时（版本/驱动换代导致 ID 变更）起录必弹「启动输出失败」。
+  // 检测到就把配置改成当前实例真实可用的编码器并重启 OBS，一切自动，不让用户在 OBS 里手工配。
+  const chk = await ensureRecEncoderWorks()
+  if (!chk.ok) return chk
   const o = getObs()
 
   const outdir = a.outdir ? path.resolve(a.outdir) : ''
@@ -724,8 +942,9 @@ async function start(opts) {
       if (w > maxW) { h = even(Math.round((h * maxW) / w)); w = even(maxW) }
       if (w && h) fit = await fitVideo(w, h)
       await ensureBrowserSource(SCENE_NAME, a.browserUrl, w, h)
-      // 录制画质兜底（只升不降）：1080p 下码率过低/CRF 过高会明显发糊
-      const qnotes = await ensureRecordQuality({ width: w, height: h })
+      // 录制画质兜底（只升不降）：1080p 下码率过低/CRF 过高会明显发糊。
+      // 参数形状随编码器走：AMF 只认 CQP/cqp（见 ensureRecordEncoderJson）
+      const qnotes = await ensureRecordQuality({ width: w, height: h, encoderId: lastEncoderId })
       if (qnotes.length) qualityNotes = qnotes
       audio = 'browser-source'
       a.windowTitle = '' // 浏览器源模式不需要匹配窗口标题
@@ -847,15 +1066,22 @@ async function stop() {
     if (!r.ok) return r
   }
   const o = getObs()
+  // 是否真的下发过 StopRecord。用于区分两种 skipped：
+  //   没下发（outputActive 为假）→ 本来就没在录，良性；
+  //   下发过但文件没拿到/没稳定 → OBS 可能仍在写盘，此时绝不能强杀进程
+  //   （taskkill /F 会让 MP4 缺 moov 头，成片彻底不可播放）。
+  let didStop = false
   try {
     const st = await o.call('GetRecordStatus')
-    if (!st.outputActive) return { ok: true, filePath: '', skipped: true }
+    if (!st.outputActive) return { ok: true, filePath: '', skipped: true, stopped: false }
 
     await o.call('StopRecord')
+    didStop = true
 
     // 等 OBS 真正收尾：固定 sleep 不够（大文件收尾/remux 更久）。
     // 提前读会拿到残缺文件 → 播放器只能解出第一帧：画面静止、没声音、进度条却在走。
-    for (let i = 0; i < 20; i++) {
+    // 4K/60Mbps 长片的 remux 远超 10s，这里放宽到 60s，避免收不完就被判定失败。
+    for (let i = 0; i < 120; i++) {
       await wait(500)
       const s = await o.call('GetRecordStatus')
       if (!s.outputActive) break
@@ -863,7 +1089,8 @@ async function stop() {
     await wait(800)
 
     // 等文件大小不再增长，确认 OBS 已写完（含 mp4 remux）
-    const waitStable = async (fp, maxMs = 10000) => {
+    // 默认上限 10s 对 4K 远远不够（60Mbps 一分钟就有 450MB，remux 要重写整个文件），放宽到 60s。
+    const waitStable = async (fp, maxMs = 60000) => {
       let last = -1
       for (let i = 0; i < maxMs / 500; i++) {
         let s = -1
@@ -888,7 +1115,7 @@ async function stop() {
     if (lastOutputPath) {
       const r = await pick(lastOutputPath)
       lastOutputPath = ''
-      if (r) return r
+      if (r) return Object.assign(r, { stopped: true })
     }
 
     let dir = lastOutputDir
@@ -908,12 +1135,24 @@ async function stop() {
     } catch (e) {}
     if (latest) {
       const r = await pick(latest)
-      if (r) return r
+      if (r) return Object.assign(r, { stopped: true })
     }
-    return { ok: true, filePath: '', dir: dir || '', skipped: true }
+    // 走到这里说明 StopRecord 已下发，但文件迟迟没稳定（或根本没找到）。
+    // 关键：返回 ok:false 而不是 ok:true+skipped。之前返回 ok:true 会让上层误判为
+    // 「正常停止」并直接 killOBS 强杀 OBS，导致 MP4 缺 moov 头、成片全损。
+    // 现在明确告诉上层「文件还没收尾」，由上层跳过强杀并提示用户去 OBS 手动停止。
+    return {
+      ok: false,
+      stopped: true,
+      filePath: '',
+      dir: dir || '',
+      error: '录制已停止，但输出文件在 60s 内未写完/未找到。为防损坏成片，未关闭 OBS，请在 OBS 中确认文件已生成后再手动关闭。',
+    }
   } catch (e) {
     const msg = (e && e.message) ? e.message : String(e)
-    return { ok: false, error: 'OBS 停止录制失败：' + msg }
+    // 异常同样可能发生在 StopRecord 之后（如收尾轮询中连接断开），
+    // 此时 OBS 仍在写盘，绝不能强杀，故一并带上 didStop 供上层判断。
+    return { ok: false, stopped: didStop, error: 'OBS 停止录制失败：' + msg }
   }
 }
 
