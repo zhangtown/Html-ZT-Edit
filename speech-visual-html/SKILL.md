@@ -14,14 +14,14 @@ triggers:
   - "国风"
   - "视频脚本"
   - "MG动画"
-version: 5.6
-defaultTemplate: 模板-唐朝不存在风格-v5.6.html
+version: 5.7
+defaultTemplate: 模板-唐朝不存在风格-v5.7.html
 ---
 
-# Speech Visual HTML Generator v5.6
+# Speech Visual HTML Generator v5.7
 
 > **默认风格**：基于"唐朝不存在"项目（2026.07.31 最终版），包含分批飞入封面、内容优先聚焦系统、左文右图布局。
-> 旧版风格（毒教材项目、mg-hide 模式）已归档，新项目优先使用 v5.4（ztEdit 原生格式）。
+> 旧版风格（毒教材项目、mg-hide 模式）已归档，新项目优先使用 v5.7（ztEdit 原生格式，v5.4 起引入）。
 
 ## 技能概述
 
@@ -228,7 +228,7 @@ defaultTemplate: 模板-唐朝不存在风格-v5.6.html
 - `showSlide()` 翻页时清除 `animDone`/`focusDone` 标记 + 移除 `zt-focus-active`/`dim-others` 类
 - 保留 ← → 方向键/点击翻页/空格启动/自动播放
 
-> 完整播放脚本参见 `模板-唐朝不存在风格-v5.6.html` 的 `<script>` 块（已转为 ztEdit 原生格式，可直接复制结构）。
+> 完整播放脚本参见 `模板-唐朝不存在风格-v5.7.html` 的 `<script>` 块（已转为 ztEdit 原生格式，可直接复制结构）。
 
 ### 必须包含的 CSS（focus 联动）
 
@@ -537,7 +537,7 @@ cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
 
 #### 最小可复用播放脚本模板
 
-下面是一段可直接嵌入 HTML 的完整播放脚本（ztEdit 原生格式），行为与 `模板-唐朝不存在风格-v5.6.html` 一致。生成新页面时应以此为基础，避免自行简化导致切页/动画行为不一致。
+下面是一段可直接嵌入 HTML 的完整播放脚本（ztEdit 原生格式），行为与 `模板-唐朝不存在风格-v5.7.html` 一致。生成新页面时应以此为基础，避免自行简化导致切页/动画行为不一致。
 
 ```html
 <script>
@@ -1130,11 +1130,11 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
   - 新增强调效果：`highlight-sweep` 划线强调（底部渐变划线扫出，类驱动持续态，不 dim 同组）
   - 关键帧模型扩展：from/to 支持 `clipPath`/`filter` 扩展属性，延迟/回位帧自动补 `none` 复位
   - 播放脚本模板 kfMap 与帧构建同步更新；编辑器下拉/预览/导出三端同发
+- v5.7: 图片白边修复——img 类样式改保比写法（width:auto;max-width:100%;max-height:XXvh），至少一侧 auto 即保比，杜绝 width:min(100%,XXvw)+max-height 钉死扁框导致的 contain 左右/上下露底白边；模板改名 v5.6→v5.7，数据契约 v5.5 不变
 - v5.6: 模板自适应改造 + 图片随视口缩放（排版/布局改进，数据契约 v5.5 不变）
   - 根字号随视口缩放（html{font-size:calc(100vw/120)}），全部 px→rem：1080p/4K 内容占比恒定，4K 下更锐
   - 主内容容器 max-width 提到 78vw（hero-card 70vw），内容占画面约 78%，不再“4K 下内容变小/四边留白过多”
   - 图片尺寸由 max-height+width:auto 改为 width:min(100%,XXvw)+object-fit:contain，小图也会随视口放大到位
-  - ⚠ 修复：上述 width:min(100%,XXvw)+max-height 会把 img 框钉成宽扁框，正方形/竖图在 object-fit:contain 下左右露底出大白边（双击/OBS 录制均有）。图片规则一律改回保比：width:auto+max-width:100%+max-height:XXvh（至少一侧 auto 即保比；列内多图由 flex 排布）。详见模板 v5.6 的 .mat-img/.img-stack/.img-row
   - 配套说明：与 ztEdit 编辑器 OBS 4K 录屏（分辨率/NVENC 码率）配合，自适应页 4K 下最锐
 - v1.0: 初始版本，字幕同步、影视级字幕、自动播放
 - v2.0: 基于"历史不会忘记"迭代
