@@ -425,12 +425,13 @@ export default function App() {
     })
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
-      const fit = r.fit ? `画布已对齐 ${r.fit}` : ''
-      const qual = Array.isArray(r.quality) && r.quality.length ? `画质已提升 ${r.quality.join('、')}` : ''
+      // 画布对齐是内部必做动作（档位用户自选，改画布即按档位建），不回显；
+      // 编码器兜底只出现在真被抬档时（主进程 changed 才回传），未改动不提示。
+      const qual = Array.isArray(r.quality) && r.quality.length ? ` · 编码器已抬至高清档（${r.quality.join('；')}）` : ''
       const modeLabel = 'OBS 浏览器源 · ' + recLabelOf(recRes)
       setObsRec({
         recording: true,
-        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + (fit ? ' · ' + fit : '') + (qual ? ' · ' + qual : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
+        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + qual + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
         filePath: r.tempFile || '',
       })
     } else setObsRec({ recording: false, msg: String((r && r.error) || '启动失败').slice(0, 140), filePath: '' })

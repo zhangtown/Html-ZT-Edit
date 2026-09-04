@@ -195,12 +195,12 @@ function ensureRecordEncoderJson(opts) {
       }
       if (note) {
         fs.writeFileSync(p, JSON.stringify(cfg), 'utf8')
-        changed.push(dir + ': ' + note)
+        changed.push(note)
       }
     }
     return changed.length
-      ? { ok: true, note: '录制编码器兜底：' + changed.join('；') }
-      : { ok: true, note: '录制编码器已高清（未改动）' }
+      ? { ok: true, changed: true, note: changed.join('；') }
+      : { ok: true, changed: false, note: '' }
   } catch (e) {
     return { ok: false, error: '改 OBS 录制编码器 JSON 失败：' + ((e && e.message) || e) }
   }
@@ -467,7 +467,7 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000, forceEncoder
       // 录制编码器高清参数（真参在 recordEncoder.json）：按本次编码器的参数形状写（AMF→CQP/cqp，其余→CRF/crf）
       try {
         const q = ensureRecordEncoderJson({ encoderId: enc.id })
-        if (q && q.note) console.log('[obsRecorder] 编码器参数：', q.note)
+        if (q && q.changed && q.note) console.log('[obsRecorder] 编码器参数已抬高清：', q.note)
       } catch (e) {}
     } catch (e) { console.log('[obsRecorder] 编码器检测失败：', (e && e.message) || e) }
     // 清异常退出哨兵：崩溃/被强杀后的残留会让 OBS 弹安全模式框卡住启动（见 clearObsSentinel）
@@ -743,8 +743,9 @@ function targetBitrate(width, height) {
 // 已在 OBS 启动前调用过，这里再确认一次并收集说明）。
 async function ensureRecordQuality(opts) {
   // 编码器质控：CRF/CQP 过大(糊)或 CBR/VBR 码率过低时升到高清档（只升不降），按录制分辨率缩放目标码率
+  // 只在真的改了配置时才回传 note（changed）——没改（用户已是高清档）就不打扰 UI。
   const r = ensureRecordEncoderJson(opts)
-  return r && r.note ? [r.note] : []
+  return r && r.ok && r.changed && r.note ? [r.note] : []
 }
 
 // ---------------------------------------------------------------------------
