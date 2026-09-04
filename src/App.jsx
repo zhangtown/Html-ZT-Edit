@@ -95,6 +95,14 @@ const RESOLUTIONS = [
   ['3840x2160', '4K (3840×2160)'],
 ]
 
+// OBS 录制输出清晰度档位：独立于上面的「模拟分辨率」（simRes 只管编辑预览，录制按这个档位输出）
+const REC_RES_OPTS = [
+  ['1920x1080', '1080P'],
+  ['2560x1440', '2K'],
+  ['3840x2160', '4K'],
+]
+const recLabelOf = (res) => ((REC_RES_OPTS.find(([v]) => v === res) || [])[1]) || res
+
 function download(filename, text) {
   const blob = text instanceof Blob ? text : new Blob([text], { type: 'text/html' })
   const a = document.createElement('a')
@@ -138,6 +146,7 @@ export default function App() {
   const [subBindingMode, setSubBindingMode] = useState(false) // 绑定模式激活
   const [bindingTarget, setBindingTarget] = useState(null) // { selector, tag, text } | null
   const [simRes, setSimRes] = useState('') // 模拟分辨率，如 '1920x1080'；''=编辑器窗口大小
+  const [recRes, setRecRes] = useState('3840x2160') // OBS 录制输出分辨率（1080P/2K/4K 档），与 simRes 无关，默认 4K
   const [zoom, setZoom] = useState(1) // 画布缩放 0.2 ~ 1.5（下限 20%，2K 屏看 4K 页也能看全）
   const dragDataRef = useRef(null) // 拖拽中的素材信息
   const [ctxMenu, setCtxMenu] = useState(null) // 右键菜单 { x, y, editable, count, locked, group, anyLocked } | null
@@ -405,17 +414,20 @@ export default function App() {
       setObsRec({ recording: false, msg: '导出 HTML 失败，未开始录制' })
       return
     }
+    const [rw, rh] = recRes.split('x').map(Number)
     const r = await window.ztRecSession.startOBS({
       outdir,
       html: finalHtml,
       captureMode: OBS_CAPTURE_MODE,
       interactDelaySec: obsInteractDelay,
+      width: rw, // 录制输出分辨率：OBS 画布与浏览器源按此建（main.cjs 已支持 a.width/height 透传）
+      height: rh,
     })
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
       const fit = r.fit ? `画布已对齐 ${r.fit}` : ''
       const qual = Array.isArray(r.quality) && r.quality.length ? `画质已提升 ${r.quality.join('、')}` : ''
-      const modeLabel = 'OBS 浏览器源'
+      const modeLabel = 'OBS 浏览器源 · ' + recLabelOf(recRes)
       setObsRec({
         recording: true,
         msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + (fit ? ' · ' + fit : '') + (qual ? ' · ' + qual : '') + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
@@ -916,11 +928,49 @@ export default function App() {
                 <option value={3}>3.0s</option>
               </select>
             </label>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 2,
+                background: '#0b1220',
+                border: '1px solid #374151',
+                borderRadius: 6,
+                padding: 2,
+              }}
+              title="录制清晰度：OBS 按所选档位输出成片（自适应页面内容占比不变；固定 px 宽度的旧页面在低档位可能裁边）"
+            >
+              {REC_RES_OPTS.map(([v, label]) => {
+                const active = v === recRes
+                return (
+                  <button
+                    key={v}
+                    onClick={() => setRecRes(v)}
+                    disabled={obsRec.recording}
+                    title={`按 ${label}（${v}）录制`}
+                    style={{
+                      background: active ? '#1d4ed8' : 'transparent',
+                      color: active ? '#fff' : '#9ca3af',
+                      border: 'none',
+                      borderRadius: 4,
+                      padding: '3px 7px',
+                      fontSize: 11,
+                      fontWeight: active ? 600 : 400,
+                      cursor: obsRec.recording ? 'not-allowed' : 'pointer',
+                      opacity: obsRec.recording ? 0.55 : 1,
+                      lineHeight: 1.4,
+                    }}
+                  >
+                    {label}
+                  </button>
+                )
+              })}
+            </span>
             <button
               onClick={obsRec.recording ? stopObsRec : startObsRec}
               disabled={!recRoot && !obsRec.recording}
               style={btn(obsRec.recording ? '#7f1d1d' : '#1d4ed8')}
-              title="OBS 系统级录制：自动建场景 + 画面源（窗口捕获 / 浏览器源）+ 音频兜底，成片直接落在当前 HTML 所在目录"
+              title={`OBS 系统级录制：按 ${recLabelOf(recRes)}（${recRes}）输出，自动建场景 + 浏览器源 + 音频兜底，成片直接落在当前 HTML 所在目录`}
             >
               {obsRec.recording ? '■ 停止 OBS' : '● OBS 录制'}
             </button>
