@@ -16,14 +16,20 @@ function openDB() {
   })
 }
 
-// data: { html, assets:[{val, blob}], scripts:[...], current, savedAt }
+// data: { html, assets:[{val, blob}], scripts:[...], current, savedAt, v }
 export async function saveDraft(data) {
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
+    let settled = false
+    const done = (fn, v) => () => { if (!settled) { settled = true; fn(v) } }
     tx.objectStore(STORE).put(data, KEY)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
+    tx.oncomplete = done(resolve)
+    // 配额超限（QuotaExceededError）会让事务 abort。只监听 onerror 会漏掉它：
+    // 事务中止而 promise 永不 settle，actuallySave 会一直 await 住，
+    // 之后每一次自动保存都被这条死链卡住，用户却看到「一切正常」。
+    tx.onabort = done(reject, tx.error || new Error('草稿写入事务被中止（可能超出浏览器存储配额）'))
+    tx.onerror = done(reject, tx.error || new Error('草稿写入失败'))
   })
 }
 
@@ -31,9 +37,12 @@ export async function loadDraft() {
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly')
+    let settled = false
+    const done = (fn, v) => () => { if (!settled) { settled = true; fn(v) } }
     const r = tx.objectStore(STORE).get(KEY)
-    r.onsuccess = () => resolve(r.result || null)
-    r.onerror = () => reject(r.error)
+    tx.oncomplete = done(resolve, r.result || null)
+    tx.onabort = done(reject, tx.error || new Error('草稿读取事务被中止'))
+    tx.onerror = done(reject, tx.error || new Error('草稿读取失败'))
   })
 }
 
@@ -41,8 +50,11 @@ export async function clearDraft() {
   const db = await openDB()
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite')
+    let settled = false
+    const done = (fn, v) => () => { if (!settled) { settled = true; fn(v) } }
     tx.objectStore(STORE).delete(KEY)
-    tx.oncomplete = () => resolve()
-    tx.onerror = () => reject(tx.error)
+    tx.oncomplete = done(resolve)
+    tx.onabort = done(reject, tx.error || new Error('草稿删除事务被中止'))
+    tx.onerror = done(reject, tx.error || new Error('草稿删除失败'))
   })
 }

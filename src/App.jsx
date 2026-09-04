@@ -115,6 +115,10 @@ export default function App() {
   const saveTimerRef = useRef(null)
   const restoredRef = useRef(false)
   const pendingCurrentRef = useRef(0)
+  // 自动保存串行队列：actuallySave 含 await fetch(blob)，并发会让旧快照后落盘覆盖新快照
+  const saveChainRef = useRef(Promise.resolve())
+  const saveSeqRef = useRef(0)
+  const [saveErr, setSaveErr] = useState('') // 草稿保存失败提示（不打断用户，显示在底部状态栏）
 
   const [activeHtml, setActiveHtml] = useState('')
   const [srcdoc, setSrcdoc] = useState('')
@@ -264,7 +268,18 @@ export default function App() {
     send({ type: 'requestSerialize', keepSelection: true })
   }
 
-  async function actuallySave(html, pageCurrent) {
+  function actuallySave(html, pageCurrent) {
+    // 入队：链上每次只跑一个 doSave；前一个出错也不影响后续入队
+    const seq = ++saveSeqRef.current
+    const task = () => doSave(html, pageCurrent, seq)
+    saveChainRef.current = saveChainRef.current.then(task, task)
+    return saveChainRef.current
+  }
+
+  async function doSave(html, pageCurrent, seq) {
+    // 排队期间又有更新的编辑请求 → 本次快照已过时，直接丢弃，
+    // 避免旧内容晚落盘覆盖掉新内容
+    if (seq !== saveSeqRef.current) return
     try {
       let clean = stripEditorParts(html)
       // 资源：blob URL -> 原始相对引用，并收集 blob 存储
@@ -274,7 +289,11 @@ export default function App() {
         try {
           const blob = await (await fetch(blobUrl)).blob()
           assets.push({ val, blob })
-        } catch (e) {}
+        } catch (e) {
+          // relMap 的 blob 从不被 revoke（素材面板 revoke 的是另一组），此处只是兜底，
+          // 但仍记录而不是静默吞掉，便于排查图片丢失
+          console.warn('草稿资源拉取失败：' + val, e)
+        }
       }
       await saveDraft({
         html: clean,
@@ -283,9 +302,15 @@ export default function App() {
         current: pageCurrent,
         root: recRootRef.current, // 一并存下，刷新恢复后离屏录制仍可用
         savedAt: Date.now(),
+        v: 1, // 草稿格式版本号，供将来结构迁移时识别
       })
+      setSaveErr('')
     } catch (e) {
-      console.warn('草稿保存失败', e)
+      // 明确把失败暴露给用户：此前 QuotaExceededError 只 console.warn，
+      // 用户以为有自动保存，重启后才发现回到旧版本
+      const msg = (e && e.message) ? e.message : String(e)
+      console.error('草稿保存失败', e)
+      setSaveErr('自动保存失败：' + msg)
     }
   }
 
@@ -566,18 +591,6 @@ export default function App() {
       window.removeEventListener('keydown', onKey)
     }
   }, [selCount, selected])
-
-  // 捕获用的浏览器窗口被用户关掉 → 主进程已自动停 OBS + 删临时文件，这里同步退出「录制中」UI 态
-  useEffect(() => {
-    if (!window.ztRecSession || !window.ztRecSession.onBrowserClosed) return
-    window.ztRecSession.onBrowserClosed((r) => {
-      setObsRec((prev) =>
-        prev && prev.recording
-          ? { recording: false, msg: (r && r.skipped) ? '已停止' : '浏览器已关闭 · 已停止', filePath: (r && r.filePath) || '' }
-          : prev
-      )
-    })
-  }, [])
 
   // 打开 HTML 文件时，同步提取图片/视频素材
   const assetUrlsRef = useRef([])
@@ -932,6 +945,11 @@ export default function App() {
         <button onClick={handleClearDraft} disabled={!restored} title="清除本地草稿" style={btn('#4b5563')}>
           清除草稿
         </button>
+        {saveErr && (
+          <span style={{ fontSize: 11, color: '#fca5a5' }} title={saveErr}>
+            ⚠ {saveErr}
+          </span>
+        )}
 
         <span style={{ fontSize: 12, color: '#9ca3af', marginLeft: 'auto' }}>
           📁 本地读取，文件不会上传到任何服务器

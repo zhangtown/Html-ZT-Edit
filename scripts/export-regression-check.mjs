@@ -72,6 +72,9 @@ function dirtyFixture() {
   <div class="lr-row"><div class="lr-left"><div class="focus-item dim-others zt-grid" data-zt-id="el-1-0" data-zt-anim-effect="focus-zoom">印章</div></div></div>
   <div class="slide-subtitles"><div class="subtitle zt-hl-sweep zt-hl-active zt-bound-mark zt-binding-target" data-zt-role="subtitle" data-zt-subtitle-start="1.2" data-zt-subtitle-end="4.5" data-zt-id="sub-1" data-zt-bound-to="[data-zt-id='el-1-1']">第一条字幕</div></div>
 </div>
+<div id="zt-resize-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;"><div data-dir="nw" style="width:12px;height:12px;background:#C41E24;"></div></div>
+<div id="zt-guide-overlay" style="position:fixed;"></div>
+<div id="zt-box-select" style="border:1px solid #2563eb;"></div>
 <script id="zt-editor-runtime">window.__ztEditorRuntime = { version: 1 }</script>
 </body></html>`
 }
@@ -114,6 +117,9 @@ section('1. stripEditorParts 注入物剥离（字符串路径）')
   check('契约属性保留：data-zt-bound-to', out.indexOf('data-zt-bound-to') >= 0)
   check('契约属性保留：data-zt-role/subtitle-start/end', out.indexOf('data-zt-role="subtitle"') >= 0 && out.indexOf('data-zt-subtitle-start') >= 0 && out.indexOf('data-zt-subtitle-end') >= 0)
   check('focus-group 组信息保留', out.indexOf('focus-group') >= 0)
+  // 编辑器覆盖层（缩放手柄/参考线/框选矩形）必须被剥掉——否则红方块会被烤进草稿与录制产物
+  check('覆盖层已剥离 zt-resize-overlay/zt-guide-overlay/zt-box-select', !/zt-resize-overlay|zt-guide-overlay|zt-box-select/.test(out))
+  check('覆盖层内部红方块 data-dir 已剥离', out.indexOf('data-dir') < 0)
 }
 
 // ---- 组2：stripEditorFromDoc DOM 路径（编辑保存走这条）----
@@ -129,6 +135,8 @@ section('2. stripEditorFromDoc 注入物剥离（DOM 路径）')
   check('class 已剥离编辑态类', !/zt-selected|zt-focus-active|zt-bound-highlight|dim-others|zt-grid|zt-hl-sweep|zt-hl-active|zt-bound-mark|zt-binding-target/.test(out))
   check('契约属性保留', out.indexOf('data-zt-id="el-1-1"') >= 0 && out.indexOf('data-zt-anim-effect="focus-zoom"') >= 0 && out.indexOf('data-zt-bound-to') >= 0)
   check('focus-group 组信息保留', out.indexOf('focus-group') >= 0)
+  // DOM 路径同样必须把覆盖层剥掉（getElementById 只删第一个，需按选择器全删）
+  check('覆盖层已剥离（DOM 路径）', !/zt-resize-overlay|zt-guide-overlay|zt-box-select|data-dir/.test(out))
   // 回开场页：.slide 只有首屏 active
   const slides = doc.querySelectorAll('.slide')
   let activeCount = 0

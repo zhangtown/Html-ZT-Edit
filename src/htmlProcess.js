@@ -64,14 +64,56 @@ export function rewriteAssets(html, baseDir, fileMap, relMap) {
   return doc.documentElement.outerHTML
 }
 
+// 编辑器覆盖层的 id（缩放手柄 / 智能参考线 / 框选矩形）。
+// 它们挂在 body 上常驻不移除、只靠 display 显隐，会被 outerHTML 烤进草稿与产物。
+const ZT_OVERLAY_IDS = ['zt-resize-overlay', 'zt-guide-overlay', 'zt-box-select']
+
+// 从 html 字符串里删除指定 id 的 div 块（含其内部全部内容）。
+// 用 div 嵌套计数而不是正则：这些覆盖层内部本身就含子 div，非贪婪正则会提前截断。
+// 会重复删除直到清干净——历史草稿里可能已经累积了多个同 id 的残留块。
+function removeDivBlocksById(html, ids) {
+  let out = html
+  ids.forEach((id) => {
+    const startRe = new RegExp('<div\\s[^>]*\\bid="' + id + '"[^>]*>', 'g')
+    for (let guard = 0; guard < 20; guard++) {
+      const m = startRe.exec(out)
+      if (!m) break
+      let i = m.index + m[0].length
+      let depth = 1
+      const openRe = /<div\b/gi
+      const closeRe = /<\/div\s*>/gi
+      while (i < out.length && depth > 0) {
+        openRe.lastIndex = i
+        closeRe.lastIndex = i
+        const o = openRe.exec(out)
+        const c = closeRe.exec(out)
+        if (!c) break // 标签不配对，放弃这一块，避免吞掉后续正文
+        if (o && o.index < c.index) {
+          depth++
+          i = o.index + o[0].length
+        } else {
+          depth--
+          i = c.index + c[0].length
+        }
+      }
+      out = out.slice(0, m.index) + out.slice(i)
+      startRe.lastIndex = m.index
+    }
+  })
+  return out
+}
+
 // 清理编辑器注入物：删除编辑器样式与运行时脚本标签，并剥离 zt-grid / zt-selected 类，
 // 用于草稿保存（保留用户编辑痕迹，去除编辑器自身状态）
 export function stripEditorParts(html) {
-  return html
-    .replace(/<style id="zt-editor-style">[\s\S]*?<\/style>/g, '')
-    .replace(/<style id="zt-editor-fonts">[\s\S]*?<\/style>/g, '')   // 编辑器字体注入样式（data-zt-ff/fs/fw 变量），同其他编辑器样式一起不进草稿/产物
-    .replace(/<style id="zt-anim-sweep">[\s\S]*?<\/style>/g, '')   // 编辑器动画预览样式（含 .zt-focus-active 红框 outline），不进草稿/产物
-    .replace(/<script id="zt-editor-runtime">[\s\S]*?<\/script>/g, '')
+  return removeDivBlocksById(
+    html
+      .replace(/<style id="zt-editor-style">[\s\S]*?<\/style>/g, '')
+      .replace(/<style id="zt-editor-fonts">[\s\S]*?<\/style>/g, '')   // 编辑器字体注入样式（data-zt-ff/fs/fw 变量），同其他编辑器样式一起不进草稿/产物
+      .replace(/<style id="zt-anim-sweep">[\s\S]*?<\/style>/g, '')   // 编辑器动画预览样式（含 .zt-focus-active 红框 outline），不进草稿/产物
+      .replace(/<script id="zt-editor-runtime">[\s\S]*?<\/script>/g, ''),
+    ZT_OVERLAY_IDS
+  )
     .replace(/\s+class="([^"]*)"/g, (m, cls) => {
       const cleaned = cls
         .replace(/\s*\b(zt-grid|zt-selected|zt-focus-active|zt-hl-sweep|zt-hl-active|zt-bound-mark|zt-bound-highlight|zt-binding-target|dim-others)\b\s*/g, ' ')
@@ -101,10 +143,21 @@ function stripEditorFromDoc(doc) {
   //    zt-anim-sweep 是编辑器运行时注入的「划线强调+焦点高亮」预览样式（editorRuntime.js），
   //    里面 .zt-focus-active 带 outline:2px 红框（编辑态可视反馈）。若不剥离会被烤进产物，
   //    导致导出/录制的 HTML 在焦点激活时多一圈红色边框（应为纯淡红光晕，见下方 FOCUS_CSS）。
-  ;['zt-editor-style', 'zt-editor-runtime', 'zt-editor-fonts', 'zt-anim-sweep'].forEach(function (id) {
-    var el = doc.getElementById(id)
-    if (el && el.parentNode) el.parentNode.removeChild(el)
-  })
+  // 覆盖层一并清理：从含残留的旧草稿恢复时，DOM 里可能存在多个同 id 块，
+  // getElementById 只能删第一个，这里按选择器全删。
+  //
+  // 注意：此处刻意内联 id 数组而不引用模块级常量 ZT_OVERLAY_IDS ——
+  // 本函数会被 export-regression-check.mjs 用 new Function(extractFn(...)) 抠出来单独 eval，
+  // 闭包外的模块常量在那条路径下取不到（曾因引用 ZT_OVERLAY_IDS 导致 ReferenceError）。
+  ;['zt-editor-style', 'zt-editor-runtime', 'zt-editor-fonts', 'zt-anim-sweep',
+    'zt-resize-overlay', 'zt-guide-overlay', 'zt-box-select']
+    .forEach(function (id) {
+      try {
+        doc.querySelectorAll('[id="' + id + '"]').forEach(function (el) {
+          if (el && el.parentNode) el.parentNode.removeChild(el)
+        })
+      } catch (e) {}
+    })
   // 2) 编辑器状态类（只剥类，不动元素本身）
   var ZT_STATE = [
     'zt-selected', 'zt-focus-active', 'zt-bound-highlight', 'zt-bound-mark',

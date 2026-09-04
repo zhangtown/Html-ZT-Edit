@@ -339,6 +339,7 @@
     function up(ev) {
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerup', up)
+      document.removeEventListener('pointercancel', up)
       var x = Math.min(sx, ev.clientX)
       var y = Math.min(sy, ev.clientY)
       var w = Math.abs(ev.clientX - sx)
@@ -368,6 +369,12 @@
 
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
+    document.addEventListener('pointercancel', up) // iframe 外松手 → pointercancel 兜底收尾
+    try {
+      if (e.target && e.target.setPointerCapture && e.pointerId != null) {
+        e.target.setPointerCapture(e.pointerId)
+      }
+    } catch (err) {}
     e.preventDefault()
   }
 
@@ -426,7 +433,8 @@
 
   // 拖拽缩放：所有选中元素同步改变相同的宽高增量
   function startResize(dir, primary, e) {
-    var els = selectedList.slice()
+    // 剔除锁定成员：多选缩放时锁定的也要保持不动（此前只判断了 primary）
+    var els = selectedList.filter(function (el) { return !isLocked(el) })
     if (els.length < 1) return
     if (isLocked(primary)) return
     var refs = getReferenceEls(slides[current])
@@ -508,10 +516,17 @@
       post({ type: 'changed' })
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerup', up)
+      document.removeEventListener('pointercancel', up)
     }
 
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
+    document.addEventListener('pointercancel', up) // iframe 外松手 → pointercancel 兜底收尾
+    try {
+      if (e.target && e.target.setPointerCapture && e.pointerId != null) {
+        e.target.setPointerCapture(e.pointerId)
+      }
+    } catch (err) {}
   }
 
 
@@ -794,6 +809,14 @@
     return !!(el && el.getAttribute && el.getAttribute('data-zt-lock'))
   }
 
+  // 选中集中可被修改的部分（剔除锁定元素）。
+  // 此前方向键移动/对齐分布/setStyles/setText 等批量操作直接遍历 selectedList，
+  // 锁定元素会被一起改动；多选时点未锁元素拖动也会带着锁定的一起走。
+  // 所有「批量修改」入口统一从这里取可编辑子集。
+  function editableSelected() {
+    return selectedList.filter(function (el) { return !isLocked(el) })
+  }
+
   function setLocked(locked) {
     if (!selectedList.length) return
     var before = selectedList.map(snapStyle)
@@ -903,11 +926,12 @@
   }
 
   function moveSelectedBy(dx, dy) {
-    if (!selectedList.length) return
-    var before = selectedList.map(snapStyle)
-    selectedList.forEach(function (el) { translateBy(el, dx, dy) })
-    var after = selectedList.map(snapStyle)
-    pushHistory(before, after, selectedList.slice())
+    var els = editableSelected()
+    if (!els.length) return
+    var before = els.map(snapStyle)
+    els.forEach(function (el) { translateBy(el, dx, dy) })
+    var after = els.map(snapStyle)
+    pushHistory(before, after, els.slice())
     postSelection()
     post({ type: 'changed' })
   }
@@ -919,6 +943,7 @@
       el: el,
       style: el.getAttribute('style') || '',
       text: null,
+      html: null, // 只有文字修改（setText）会填 innerHTML 快照，其余场景为 null
       parent: el.parentNode,
       next: el.nextSibling,
       present: true,
@@ -933,7 +958,14 @@
         if (s.el && !s.el.parentNode && s.parent) s.parent.insertBefore(s.el, s.next)
         if (s.el) {
           s.el.setAttribute('style', s.style)
-          if (s.text != null && s.el.textContent !== s.text) s.el.textContent = s.text
+          // 优先用 innerHTML 快照恢复：setText 修改过的元素可能原本带子元素
+          // （span / img / 带 data-zt-id 的绑定元素），只存 textContent 的话
+          // 撤销只能还原纯文本，子元素的动画属性与字幕绑定会永久丢失。
+          if (s.html != null) {
+            if (s.el.innerHTML !== s.html) s.el.innerHTML = s.html
+          } else if (s.text != null && s.el.textContent !== s.text) {
+            s.el.textContent = s.text
+          }
         }
       }
     })
@@ -993,6 +1025,9 @@
 
   // ---- 拖动（支持整体多选拖动，带智能参考线吸附）----
   function startDrag(els, e) {
+    // 剔除锁定成员：多选时点未锁元素拖动，此前会带着锁定的一起移动
+    els = els.filter(function (el) { return !isLocked(el) })
+    if (!els.length) return
     var dragging = false
     var before = null
     var bases = null
@@ -1056,17 +1091,27 @@
       postSelection()
       document.removeEventListener('pointermove', move)
       document.removeEventListener('pointerup', up)
+      document.removeEventListener('pointercancel', up)
     }
 
     document.addEventListener('pointermove', move)
     document.addEventListener('pointerup', up)
+    // 指针捕获：让 move/up 跟随被按下的元素，指针移出元素边界也不丢。
+    // 移出 iframe（进入父窗口工具栏/属性面板）时 Chromium 会给捕获元素发 pointercancel，
+    // 由 up 兜底收尾——否则在 iframe 外松手后元素继续跟随鼠标，且这次移动不进撤销栈、不触发保存。
+    document.addEventListener('pointercancel', up)
+    try {
+      if (e.target && e.target.setPointerCapture && e.pointerId != null) {
+        e.target.setPointerCapture(e.pointerId)
+      }
+    } catch (err) {}
     e.preventDefault()
   }
 
 
   // ---- 对齐与分布 ----
   function align(mode) {
-    var els = selectedList
+    var els = editableSelected()
     if (els.length < 2) return
     var before = els.map(snapStyle)
     var rects = els.map(function (el) {
@@ -1186,9 +1231,10 @@
   document.querySelectorAll('[data-zt-anim-effect="highlight-sweep"]').forEach(function (el) { el.classList.add('zt-hl-sweep') })
 
   function setStyles(styles) {
-    if (!selectedList.length) return
-    var before = selectedList.map(snapStyle)
-    selectedList.forEach(function (el) {
+    var els = editableSelected()
+    if (!els.length) return
+    var before = els.map(snapStyle)
+    els.forEach(function (el) {
       for (var k in styles) {
         if (!styles.hasOwnProperty(k)) continue
         var v = styles[k]
@@ -1219,33 +1265,59 @@
         }
       }
     })
-    var after = selectedList.map(snapStyle)
-    pushHistory(before, after, selectedList.slice())
+    var after = els.map(snapStyle)
+    pushHistory(before, after, els.slice())
     postSelection()
     post({ type: 'changed' })
   }
 
+  // 把文本写进元素，但保住它已有的子元素（span / img / 带 data-zt-id 的绑定元素）。
+  // 直接 el.textContent = val 会一次性抹掉全部子节点，历史快照又只存了纯文本，
+  // 撤销时子元素连同动画属性、字幕绑定一起永久丢失。
+  function setTextPreserveChildren(el, val) {
+    // 纯文本元素（内部没有任何标签）→ 直接替换，与原有行为一致
+    if (!el.querySelector('*')) {
+      el.textContent = val
+      return
+    }
+    // 含子元素 → 只改「直接子文本节点」，元素节点原样保留
+    var textNodes = []
+    Array.prototype.forEach.call(el.childNodes, function (n) {
+      if (n.nodeType === 3) textNodes.push(n)
+    })
+    if (!textNodes.length) {
+      // 内容全在子元素里、没有直接文本节点 → 插到最前面，不动已有子元素
+      el.insertBefore(document.createTextNode(val), el.firstChild)
+      return
+    }
+    textNodes[0].nodeValue = val
+    for (var i = 1; i < textNodes.length; i++) textNodes[i].nodeValue = ''
+  }
+
   // ---- 文字内容修改 ----
   function setText(val) {
-    if (!selectedList.length) return
-    var before = selectedList.map(function (el) {
-      return { el: el, style: el.getAttribute('style') || '', text: el.textContent, parent: el.parentNode, next: el.nextSibling, present: true }
+    var els = editableSelected()
+    if (!els.length) return
+    // 快照存 innerHTML（完整结构）而非 textContent：撤销时能原样还原子元素
+    var before = els.map(function (el) {
+      return { el: el, style: el.getAttribute('style') || '', text: null, html: el.innerHTML, parent: el.parentNode, next: el.nextSibling, present: true }
     })
-    selectedList.forEach(function (el) { el.textContent = val })
-    var after = selectedList.map(function (el) {
-      return { el: el, style: el.getAttribute('style') || '', text: val, parent: el.parentNode, next: el.nextSibling, present: true }
+    els.forEach(function (el) { setTextPreserveChildren(el, val) })
+    var after = els.map(function (el) {
+      return { el: el, style: el.getAttribute('style') || '', text: null, html: el.innerHTML, parent: el.parentNode, next: el.nextSibling, present: true }
     })
-    pushHistory(before, after, selectedList.slice())
+    pushHistory(before, after, els.slice())
     postSelection()
     post({ type: 'changed' })
   }
 
   // ---- 动画设置 ----
   function setAnimation(props) {
-    if (!selectedList.length) return
-    var before = selectedList.map(snapStyle)
+    var els = editableSelected()
+    if (!els.length) return
+    var before = els.map(snapStyle)
     var attrs = { animEffect:'data-zt-anim-effect', animDuration:'data-zt-anim-duration', animDelay:'data-zt-anim-delay', animReturn:'data-zt-anim-return', animEasing:'data-zt-anim-easing' }
-    selectedList.forEach(function (el) {
+    els.forEach(function (el) {
       for (var k in props) {
         if (!props.hasOwnProperty(k)) continue
         var attr = attrs[k]
@@ -1255,8 +1327,8 @@
         else el.setAttribute(attr, v)
       }
     })
-    var after = selectedList.map(snapStyle)
-    pushHistory(before, after, selectedList.slice())
+    var after = els.map(snapStyle)
+    pushHistory(before, after, els.slice())
     postSelection()
     post({ type: 'changed' })
   }
@@ -1655,6 +1727,11 @@
 
   // ---- 元素删除 ----
   function deleteSelected() {
+    // 先把将被剔除的锁定元素身上的选中态清掉：它们马上就不在 selectedList 里了，
+    // 之后 deselectAll 清不到，红框会一直残留在画面上
+    selectedList.forEach(function (el) {
+      if (isLocked(el)) el.classList.remove('zt-selected')
+    })
     selectedList = selectedList.filter(function (el) { return !isLocked(el) })
     if (!selectedList.length) return
     var before = selectedList.map(function (el) {
@@ -1865,7 +1942,25 @@
     // keepSelection=true 时（草稿自动保存）不清：草稿的编辑器状态类由父窗口 stripEditorParts 剥离，
     // 且清掉会打断正在进行的动画预览（点+改时长时 800ms 自动保存会把选中清掉）。
     if (!keepSelection) deselectAll()
-    post({ type: 'serialize', html: document.documentElement.outerHTML, current: current })
+    // 编辑器覆盖层（缩放手柄/参考线/框选矩形）挂在 body 上且常驻不移除，只靠 display 显隐。
+    // 直接 outerHTML 会把 8 个红方块烤进草稿；加载草稿后 runtime 又会新建一个同 id 的，
+    // 导出时 getElementById 只删第一个，残留越积越多、最终出现在录制画面上。
+    // 这里在读取 DOM 前临时摘除、读完全原位还原，编辑器自身的可见状态不受影响。
+    var detached = []
+    ;[resizeOverlay, guideOverlay, boxSelectOverlay].forEach(function (ov) {
+      if (ov && ov.parentNode) {
+        detached.push({ el: ov, parent: ov.parentNode, next: ov.nextSibling })
+        ov.parentNode.removeChild(ov)
+      }
+    })
+    var html = document.documentElement.outerHTML
+    // 逆序还原，保证兄弟节点顺序与摘除前完全一致
+    for (var i = detached.length - 1; i >= 0; i--) {
+      var d = detached[i]
+      if (d.next && d.next.parentNode === d.parent) d.parent.insertBefore(d.el, d.next)
+      else d.parent.appendChild(d.el)
+    }
+    post({ type: 'serialize', html: html, current: current })
   }
 
   function setGrid(on) {

@@ -283,11 +283,25 @@ function registerIpc() {
       const r = await obsRecorder.stop()
       // 停止录制后顺手关闭 OBS 进程：浏览器源是 OBS 内置 CEF 持续渲染，
       // 只停录制不关 OBS，HTML 会在场景里继续播放（动画/音频仍在跑）。
+      //
+      // 但绝不能在文件还没收尾时强杀：taskkill /F 会让 MP4 缺 moov 头，成片彻底不可播放。
+      // stop() 用 stopped 标记区分「本来就没在录」和「已下发 StopRecord 但文件未稳定」，
+      // 只有前者、或已明确拿到输出文件时，关闭 OBS 才是安全的。
       let killed = null
-      try { killed = await obsRecorder.killOBS() } catch (e) { killed = { ok: false, error: String(e && e.message) } }
+      const hasFile = !!(r && r.ok && r.filePath)
+      const neverRecorded = !!(r && r.stopped === false)
+      const safeToKill = hasFile || neverRecorded
+      if (safeToKill) {
+        try { killed = await obsRecorder.killOBS() } catch (e) { killed = { ok: false, error: String(e && e.message) } }
+      } else {
+        killed = { ok: false, skipped: true, error: '文件未确认写完，已保留 OBS 进程' }
+      }
       if (r && typeof r === 'object') {
         r.obsKilled = killed
-        r.msg = (r.msg ? r.msg + ' · ' : '') + (killed && killed.ok ? '已关闭 OBS' : '关闭 OBS 失败')
+        const killMsg = killed && killed.ok
+          ? '已关闭 OBS'
+          : (safeToKill ? '关闭 OBS 失败' : '为防损坏成片，未关闭 OBS')
+        r.msg = (r.msg ? r.msg + ' · ' : '') + killMsg
       }
       return r
     } catch (e) { return { ok: false, error: String(e && e.message) } }
@@ -325,4 +339,29 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
+})
+
+// 退出前必须接管 OBS：它是 detached + unref spawn 的独立进程，
+// 没有这一步的话，用户录制中关掉编辑器窗口，OBS 会继续录到磁盘写满且无人知晓。
+let quitting = false
+app.on('before-quit', (e) => {
+  if (quitting) return // 停录完成后二次进入，直接放行
+  e.preventDefault()
+  quitting = true
+  Promise.resolve()
+    .then(async () => {
+      try {
+        const st = await obsRecorder.status().catch(() => null)
+        if (st && st.outputActive) {
+          // 录制中：先停录，再关闭 OBS。带超时保护，防止 OBS 无响应时窗口永远关不掉。
+          // 没在录制时不碰 OBS —— 用户可能正开着它干别的，关掉会打断别人
+          await Promise.race([
+            obsRecorder.stop(),
+            new Promise((res) => setTimeout(res, 15000)),
+          ])
+          try { await obsRecorder.killOBS() } catch (err) {}
+        }
+      } catch (err) {}
+    })
+    .finally(() => app.quit())
 })

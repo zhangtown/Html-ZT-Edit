@@ -6,6 +6,11 @@
 //   3. 新引擎对 wipe / blur-in / highlight-sweep 的行为正确
 //
 // 直接从 editorRuntime.js 里抠出真实函数体来跑，不复制一份假的 —— 避免测试通过但线上不通过。
+//
+// 旧引擎夹具：scripts/fixtures/模板-唐朝不存在风格-v5.1.html
+//   从 git 历史 431cd0a 提取入库。不能用 样例HTML工程/（.gitignore，换机即失，曾导致本脚本
+//   长期 ENOENT 崩溃、回归从未真正执行）；也不能用 speech-visual-html/ 下的最新模板
+//   （其引擎已更新，不再是旧版，无法复现 bug）。
 
 import fs from 'fs'
 import path from 'path'
@@ -65,8 +70,8 @@ const shim = new Function(
     'return { replaceFnSource: replaceFnSource, patchNativeEngine: patchNativeEngine };'
 )(ANIM_ENGINE_PARTS)
 
-// ---- 取出样例页自带的原生播放脚本（与 App.jsx getNativePlayerScript 同逻辑）----
-const samplePath = path.join(root, '样例HTML工程/模板-唐朝不存在风格-v5.1.html')
+// ---- 取出旧版样例页自带的原生播放脚本（与 App.jsx getNativePlayerScript 同逻辑）----
+const samplePath = path.join(root, 'scripts/fixtures/模板-唐朝不存在风格-v5.1.html')
 const sampleHtml = fs.readFileSync(samplePath, 'utf8')
 const scriptBlocks = sampleHtml.match(/<script[^>]*>[\s\S]*?<\/script>/gi) || []
 let nativeScript = null
