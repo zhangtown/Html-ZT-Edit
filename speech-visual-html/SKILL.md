@@ -1134,6 +1134,7 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
   - 根字号随视口缩放（html{font-size:calc(100vw/120)}），全部 px→rem：1080p/4K 内容占比恒定，4K 下更锐
   - 主内容容器 max-width 提到 78vw（hero-card 70vw），内容占画面约 78%，不再“4K 下内容变小/四边留白过多”
   - 图片尺寸由 max-height+width:auto 改为 width:min(100%,XXvw)+object-fit:contain，小图也会随视口放大到位
+  - ⚠ 修复：上述 width:min(100%,XXvw)+max-height 会把 img 框钉成宽扁框，正方形/竖图在 object-fit:contain 下左右露底出大白边（双击/OBS 录制均有）。图片规则一律改回保比：width:auto+max-width:100%+max-height:XXvh（至少一侧 auto 即保比；列内多图由 flex 排布）。详见模板 v5.6 的 .mat-img/.img-stack/.img-row
   - 配套说明：与 ztEdit 编辑器 OBS 4K 录屏（分辨率/NVENC 码率）配合，自适应页 4K 下最锐
 - v1.0: 初始版本，字幕同步、影视级字幕、自动播放
 - v2.0: 基于"历史不会忘记"迭代

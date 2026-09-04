@@ -85,11 +85,11 @@
         .lr-right{display:flex;flex-direction:column;align-items:center;gap:0.75rem}
 
         /* === MATERIAL IMAGES === */
-        .mat-img{width:min(100%,40vw);max-height:60vh;object-fit:contain;border-radius:0.75rem;box-shadow:0 0.625rem 2.5rem rgba(0,0,0,.35)}
+        .mat-img{width:auto;max-width:100%;max-height:60vh;object-fit:contain;border-radius:0.75rem;box-shadow:0 0.625rem 2.5rem rgba(0,0,0,.35)}
         .img-stack{display:flex;flex-direction:column;gap:0.625rem;align-items:center}
-        .img-stack img{width:min(100%,30vw);max-height:32vh;object-fit:contain;border-radius:0.625rem;box-shadow:0 0.375rem 1.5rem rgba(0,0,0,.15)}
+        .img-stack img{width:auto;max-width:100%;max-height:32vh;object-fit:contain;border-radius:0.625rem;box-shadow:0 0.375rem 1.5rem rgba(0,0,0,.15)}
         .img-row{display:flex;gap:0.75rem;justify-content:center}
-        .img-row img{width:min(100%,28vw);max-height:30vh;object-fit:contain;border-radius:0.625rem;box-shadow:0 0.375rem 1.5rem rgba(0,0,0,.15)}
+        .img-row img{width:auto;max-width:100%;max-height:30vh;object-fit:contain;border-radius:0.625rem;box-shadow:0 0.375rem 1.5rem rgba(0,0,0,.15)}
 
         /* === FOCUS / ZOOM SYSTEM (all visible → zoom highlight) === ztEdit 原生：zt-focus-active 类由播放脚本/编辑器触发 */
         .focus-group .focus-item{transition:all .6s ease;position:relative}
@@ -353,7 +353,7 @@
                 <div class="slide-subtitle focus-item" data-zt-id="el-4-3" style="color:rgba(255,255,255,.85);margin-top:10px;font-size:1.2rem" data-zt-anim-effect="focus-zoom">三步走完，一顶帽子扣得严严实实</div>
             </div>
             <div class="lr-right" style="flex:1">
-                <img src="素材3-权威的靶子，可惜是对面阵营的.jpg" class="focus-item" data-zt-id="el-4-4" style="max-height:72vh;width:100%;object-fit:contain;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.4)" data-zt-anim-effect="focus-zoom">
+                <img src="素材3-权威的靶子，可惜是对面阵营的.jpg" class="focus-item" data-zt-id="el-4-4" style="max-width:100%;max-height:72vh;object-fit:contain;border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.4)" data-zt-anim-effect="focus-zoom">
             </div>
         </div>
     </div>
