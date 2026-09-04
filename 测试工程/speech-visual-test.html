@@ -295,16 +295,16 @@
       'zoom-in': {from:{transform:'scale(0.6)',opacity:0}, to:{transform:'scale(1)',opacity:1}},
       'zoom-out': {from:{transform:'scale(1.4)',opacity:0}, to:{transform:'scale(1)',opacity:1}},
       'fade-in': {from:{opacity:0}, to:{opacity:1}},
-      'fly-left': {from:{transform:'translateX(-160px)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
-      'fly-right': {from:{transform:'translateX(160px)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
-      'fly-top': {from:{transform:'translateY(-160px)',opacity:0}, to:{transform:'translateY(0)',opacity:1}},
-      'fly-bottom': {from:{transform:'translateY(160px)',opacity:0}, to:{transform:'translateY(0)',opacity:1}},
+      'fly-left': {from:{transform:'translateX(-10rem)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
+      'fly-right': {from:{transform:'translateX(10rem)',opacity:0}, to:{transform:'translateX(0)',opacity:1}},
+      'fly-top': {from:{transform:'translateY(-10rem)',opacity:0}, to:{transform:'translateY(0)',opacity:1}},
+      'fly-bottom': {from:{transform:'translateY(10rem)',opacity:0}, to:{transform:'translateY(0)',opacity:1}},
       'bounce': {from:{transform:'translateY(0) scale(.6)',opacity:0}, to:{transform:'translateY(0) scale(1)',opacity:1}},
       'rotate': {from:{transform:'rotate(-180deg) scale(.5)',opacity:0}, to:{transform:'rotate(0) scale(1)',opacity:1}},
       'wipe': {from:{clipPath:'inset(0 100% 0 0)',opacity:1}, to:{clipPath:'inset(0 0 0 0)',opacity:1}},
-      'flip': {from:{transform:'perspective(800px) rotateY(88deg)',opacity:0}, to:{transform:'perspective(800px) rotateY(0deg)',opacity:1}},
-      'blur-in': {from:{filter:'blur(14px)',opacity:0}, to:{filter:'blur(0)',opacity:1}},
-      'slide-spin': {from:{transform:'translateX(-120px) rotate(-40deg) scale(.6)',opacity:0}, to:{transform:'translateX(0) rotate(0) scale(1)',opacity:1}}
+      'flip': {from:{transform:'perspective(50rem) rotateY(88deg)',opacity:0}, to:{transform:'perspective(50rem) rotateY(0deg)',opacity:1}},
+      'blur-in': {from:{filter:'blur(0.875rem)',opacity:0}, to:{filter:'blur(0)',opacity:1}},
+      'slide-spin': {from:{transform:'translateX(-7.5rem) rotate(-40deg) scale(.6)',opacity:0}, to:{transform:'translateX(0) rotate(0) scale(1)',opacity:1}}
     };
     var kf = kfMap[effect];
     if(!kf) return;

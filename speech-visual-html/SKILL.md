@@ -14,14 +14,14 @@ triggers:
   - "国风"
   - "视频脚本"
   - "MG动画"
-version: 5.7
-defaultTemplate: 模板-唐朝不存在风格-v5.7.html
+version: 5.8
+defaultTemplate: 模板-唐朝不存在风格-v5.8.html
 ---
 
-# Speech Visual HTML Generator v5.7
+# Speech Visual HTML Generator v5.8
 
 > **默认风格**：基于"唐朝不存在"项目（2026.07.31 最终版），包含分批飞入封面、内容优先聚焦系统、左文右图布局。
-> 旧版风格（毒教材项目、mg-hide 模式）已归档，新项目优先使用 v5.7（ztEdit 原生格式，v5.4 起引入）。
+> 旧版风格（毒教材项目、mg-hide 模式）已归档，新项目优先使用 v5.8（ztEdit 原生格式，v5.4 起引入）。
 
 ## 技能概述
 
@@ -228,18 +228,18 @@ defaultTemplate: 模板-唐朝不存在风格-v5.7.html
 - `showSlide()` 翻页时清除 `animDone`/`focusDone` 标记 + 移除 `zt-focus-active`/`dim-others` 类
 - 保留 ← → 方向键/点击翻页/空格启动/自动播放
 
-> 完整播放脚本参见 `模板-唐朝不存在风格-v5.7.html` 的 `<script>` 块（已转为 ztEdit 原生格式，可直接复制结构）。
+> 完整播放脚本参见 `模板-唐朝不存在风格-v5.8.html` 的 `<script>` 块（已转为 ztEdit 原生格式，可直接复制结构）。
 
 ### 必须包含的 CSS（focus 联动）
 
 ```css
 .focus-group .focus-item{transition:all .6s ease;position:relative}
-.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
-.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}
+.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(0.0625rem)}
+.focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);transform:scale(1.12);z-index:3;box-shadow:0 0 3.125rem rgba(196,30,36,.35)}
 /* 文字卡片强调变体 */
 .focus-group.dim-others .focus-item-text.zt-focus-active{opacity:1;transform:scale(1.06);color:var(--red);font-weight:700}
 .zt-hl-sweep{position:relative}
-.zt-hl-sweep::after{content:"";position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:2px;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}
+.zt-hl-sweep::after{content:"";position:absolute;left:0;bottom:-0.18em;height:0.12em;width:100%;background:linear-gradient(90deg,#C41E24,#B8860B);border-radius:0.125rem;transform:scaleX(0);transform-origin:left center;transition:transform .6s cubic-bezier(.25,.46,.45,.94);pointer-events:none}
 .zt-hl-sweep.zt-hl-active::after{transform:scaleX(1)}
 ```
 
@@ -537,7 +537,7 @@ cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
 
 #### 最小可复用播放脚本模板
 
-下面是一段可直接嵌入 HTML 的完整播放脚本（ztEdit 原生格式），行为与 `模板-唐朝不存在风格-v5.7.html` 一致。生成新页面时应以此为基础，避免自行简化导致切页/动画行为不一致。
+下面是一段可直接嵌入 HTML 的完整播放脚本（ztEdit 原生格式），行为与 `模板-唐朝不存在风格-v5.8.html` 一致。生成新页面时应以此为基础，避免自行简化导致切页/动画行为不一致。
 
 ```html
 <script>
@@ -604,16 +604,16 @@ cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
       case 'zoom-in': return { from: { transform: 'scale(0.6)', opacity: 0 }, to: { transform: 'scale(1.3)', opacity: 1 } }
       case 'zoom-out': return { from: { transform: 'scale(1)', opacity: 1 }, to: { transform: 'scale(0.6)', opacity: 0 } }
       case 'fade-in': return { from: { opacity: 0 }, to: { opacity: 1 } }
-      case 'fly-left': return { from: { transform: 'translateX(-120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
-      case 'fly-right': return { from: { transform: 'translateX(120px)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
-      case 'fly-top': return { from: { transform: 'translateY(-120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
-      case 'fly-bottom': return { from: { transform: 'translateY(120px)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
+      case 'fly-left': return { from: { transform: 'translateX(-7.5rem)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
+      case 'fly-right': return { from: { transform: 'translateX(7.5rem)', opacity: 0 }, to: { transform: 'translateX(0)', opacity: 1 } }
+      case 'fly-top': return { from: { transform: 'translateY(-7.5rem)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
+      case 'fly-bottom': return { from: { transform: 'translateY(7.5rem)', opacity: 0 }, to: { transform: 'translateY(0)', opacity: 1 } }
       case 'bounce': return { from: { transform: 'scale(0.8)', opacity: 0 }, to: { transform: 'scale(1.15)', opacity: 1 } }
       case 'rotate': return { from: { transform: 'rotate(-15deg) scale(0.9)', opacity: 0 }, to: { transform: 'rotate(0deg) scale(1)', opacity: 1 } }
-      case 'wipe': return { from: { transform: 'translateX(-24px)', clipPath: 'inset(0 100% 0 0)', opacity: 1 }, to: { transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)', opacity: 1 } }
-      case 'flip': return { from: { transform: 'perspective(900px) rotateY(88deg) scale(0.94)', opacity: 0 }, to: { transform: 'perspective(900px) rotateY(0deg) scale(1)', opacity: 1 } }
-      case 'blur-in': return { from: { transform: 'scale(1.08)', filter: 'blur(14px)', opacity: 0 }, to: { transform: 'scale(1)', filter: 'blur(0px)', opacity: 1 } }
-      case 'slide-spin': return { from: { transform: 'translateX(-140px) rotate(-14deg) scale(0.85)', opacity: 0 }, to: { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 1 } }
+      case 'wipe': return { from: { transform: 'translateX(-1.5rem)', clipPath: 'inset(0 100% 0 0)', opacity: 1 }, to: { transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)', opacity: 1 } }
+      case 'flip': return { from: { transform: 'perspective(56.25rem) rotateY(88deg) scale(0.94)', opacity: 0 }, to: { transform: 'perspective(56.25rem) rotateY(0deg) scale(1)', opacity: 1 } }
+      case 'blur-in': return { from: { transform: 'scale(1.08)', filter: 'blur(0.875rem)', opacity: 0 }, to: { transform: 'scale(1)', filter: 'blur(0rem)', opacity: 1 } }
+      case 'slide-spin': return { from: { transform: 'translateX(-8.75rem) rotate(-14deg) scale(0.85)', opacity: 0 }, to: { transform: 'translateX(0) rotate(0deg) scale(1)', opacity: 1 } }
       default: return null
     }
   }
@@ -752,9 +752,9 @@ cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
 
 ```css
 .focus-group .focus-item{transition:all .6s ease;position:relative}
-.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(1px)}
+.focus-group.dim-others .focus-item{opacity:.35;filter:brightness(.7) blur(0.0625rem)}
 .focus-group.dim-others .focus-item.zt-focus-active{opacity:1;filter:brightness(1) blur(0);
-  transform:scale(1.12);z-index:3;box-shadow:0 0 50px rgba(196,30,36,.35)}
+  transform:scale(1.12);z-index:3;box-shadow:0 0 3.125rem rgba(196,30,36,.35)}
 ```
 
 ```html
@@ -772,7 +772,7 @@ cur.querySelectorAll('[data-zt-role="subtitle"]').forEach(function(subEl){
 #### 圆形印章
 
 ```html
-<div style="width:64px;height:64px;border-radius:50%;background:#C23B22;
+<div style="width:4rem;height:4rem;border-radius:50%;background:#C23B22;
     display:flex;align-items:center;justify-content:center;
     transform:rotate(-12deg);">
     <span style="color:#fff;font-weight:700;font-size:0.85rem;">印章文字</span>
@@ -792,8 +792,8 @@ clip-path: polygon(0% 8%, 8% 0%, 92% 0%, 100% 8%, 100% 78%,
 
 ```html
 <div class="slide" style="background:#F5F0E8;">
-    <div style="background:#FAF6F0;border-radius:36px;padding:50px 60px;
-        display:flex;gap:30px;max-width:1300px;box-shadow:0 4px 20px rgba(0,0,0,0.04);">
+    <div style="background:#FAF6F0;border-radius:2.25rem;padding:3.125rem 3.75rem;
+        display:flex;gap:1.875rem;max-width:81.25rem;box-shadow:0 0.25rem 1.25rem rgba(0,0,0,0.04);">
         <!-- 左侧：文案信息区（竖排题签+标题+说明+场景标签+CTA按钮） -->
         <!-- 右侧：产品界面演示区（深色卡片+视频播放+状态指示器） -->
     </div>
@@ -924,7 +924,7 @@ python -m edge_tts --file {字幕文件} --voice zh-CN-YunxiNeural --write-media
 ### 更换图片为圆形印章
 
 ```html
-<div style="width:64px;height:64px;border-radius:50%;background:#C23B22;
+<div style="width:4rem;height:4rem;border-radius:50%;background:#C23B22;
     transform:rotate(-12deg);display:flex;align-items:center;justify-content:center;">
     <span style="color:#fff;font-size:0.85rem;">印章文字</span>
 </div>
@@ -976,11 +976,11 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
 
 ```css
 .focus-group .focus-item { transition: all .6s ease; position:relative; }
-.focus-group.dim-others .focus-item { opacity: .35; filter: brightness(.7) blur(1px); }
+.focus-group.dim-others .focus-item { opacity: .35; filter: brightness(.7) blur(0.0625rem); }
 .focus-group.dim-others .focus-item.zt-focus-active {
     opacity: 1; filter: brightness(1) blur(0);
     transform: scale(1.12); z-index: 3;
-    box-shadow: 0 0 50px rgba(196,30,36,.35);
+    box-shadow: 0 0 3.125rem rgba(196,30,36,.35);
 }
 ```
 
@@ -1000,7 +1000,7 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
 内容页**首选左右布局**（`.lr-row`），居中大字仅用于暗黑情绪页。
 
 ```css
-.lr-row { display:flex; gap:30px; align-items:center; width:100%; max-width:1300px; }
+.lr-row { display:flex; gap:1.875rem; align-items:center; width:100%; max-width:81.25rem; }
 .lr-left, .lr-right { flex:1; min-width:0; }
 ```
 
@@ -1017,10 +1017,11 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
 3. **多图等高**：同一行多张图使用 `.img-row`（`display:flex; gap`），不设不同高度
 4. **幻灯片 padding 收紧**：`padding:40px` 而不是 `60px 70px`，给内容更多空间
 5. **⚠️ `.lr-right` 默认纵向**：CSS 中 `.lr-right` 默认为 `flex-direction:column`，需要横排图片时，要么用 `.img-row` 包裹，要么 inline 显式设置 `flex-direction:row`
+6. **尺寸一律 rem**：模板与生成页的 CSS、内联 style、播放脚本 kfMap 动画位移（translate/blur/perspective 等）全部用 rem（px÷16；根字号 calc(100vw/120)，@1080p=16px），禁止 px——固定 px 元素/位移在 4K 下不随视口放大，会显示过小
 
 ```css
-.mat-img { max-width:100%; max-height:45vh; object-fit:contain; border-radius:12px; }
-.img-row { display:flex; gap:12px; justify-content:center; }
+.mat-img { max-width:100%; max-height:45vh; object-fit:contain; border-radius:0.75rem; }
+.img-row { display:flex; gap:0.75rem; justify-content:center; }
 .img-row img { max-height:40vh; object-fit:contain; }
 ```
 
@@ -1030,8 +1031,8 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
 用 `flex-wrap:wrap; justify-content:center` 让节点自动换行。
 
 ```css
-.tl-row { display:flex; gap:8px; flex-wrap:wrap; justify-content:center; }
-.tl-node { min-width:100px; font-size:.78rem; }
+.tl-row { display:flex; gap:0.5rem; flex-wrap:wrap; justify-content:center; }
+.tl-node { min-width:6.25rem; font-size:.78rem; }
 ```
 
 ### 封面切页时机
@@ -1130,6 +1131,7 @@ v4.0 的 `mg-hide → mg-pop` 模式已废弃。现在统一用 **ztEdit 原生 
   - 新增强调效果：`highlight-sweep` 划线强调（底部渐变划线扫出，类驱动持续态，不 dim 同组）
   - 关键帧模型扩展：from/to 支持 `clipPath`/`filter` 扩展属性，延迟/回位帧自动补 `none` 复位
   - 播放脚本模板 kfMap 与帧构建同步更新；编辑器下拉/预览/导出三端同发
+- v5.8: 固定 px 元素缩放修复——v5.6 改造漏网的内联 style 与播放脚本 kfMap 动画位移仍用 px（印章 60px/分隔线/徽章/gap/padding/translateX±120px/blur/perspective），4K 放大后显示过小或位移幅度不足；全部 px→rem（px÷16，根字号 calc(100vw/120)），并同步把 SKILL 文档代码块示例 px→rem 防再生；新增「尺寸一律 rem」规则；模板改名 v5.7→v5.8，数据契约 v5.5 不变
 - v5.7: 图片白边修复——img 类样式改保比写法（width:auto;max-width:100%;max-height:XXvh），至少一侧 auto 即保比，杜绝 width:min(100%,XXvw)+max-height 钉死扁框导致的 contain 左右/上下露底白边；模板改名 v5.6→v5.7，数据契约 v5.5 不变
 - v5.6: 模板自适应改造 + 图片随视口缩放（排版/布局改进，数据契约 v5.5 不变）
   - 根字号随视口缩放（html{font-size:calc(100vw/120)}），全部 px→rem：1080p/4K 内容占比恒定，4K 下更锐
