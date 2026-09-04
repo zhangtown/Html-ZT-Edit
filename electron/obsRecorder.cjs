@@ -101,44 +101,11 @@ function obsConfigRoot() {
   return path.join(os.homedir(), 'AppData/Roaming/obs-studio')
 }
 
-// 色阶范围：浏览器源是 Full(0-255)，但消费级播放器（PotPlayer/Windows 自带等）默认都假定视频是
-// Partial/tv(16-235) 范围——它们会忽略 color_range=pc 元数据，把 Full 视频按 tv 解码 → 白点被拉到 255 → 过曝发白。
-// 所以录制端必须标 Partial/tv：OBS 把源全范围 0-255 压到 16-235 存储，播放器按 tv 解码即可正确还原（245→存226→显现245）。
-// 这是让成片在主流播放器里不过曝的可靠路径（理论上 Full 更“标准”，但实际播放器生态普遍不尊重 pc 标记，
-// 改 Full 反而让 PotPlayer/Windows 播放器过曝——已实测确认）。
-// 关键：OBS 只在「启动时」把 ColorRange 读进内存的 obs_video_info，运行时改 profile 不生效（无 ResetVideo 可用），
-// 所以必须在 OBS 启动之前把 INI 写好，OBS 一启动即读到 Partial。这里遍历所有 profile 的 basic.ini 改写。
-// 注：Partial 只用 16-235 共 219 级（8-bit），比 Full 少 37 级，但 8-bit 下视觉不可见，不影响清晰度；
-//    清晰度上限由源分辨率 + 码率(HD_CRF=18/20Mbps) 决定，与色域范围无关。
-function ensureColorRangePartialInIni() {
-  try {
-    const root = obsConfigRoot()
-    const profiles = path.join(root, 'basic', 'profiles')
-    if (!fs.existsSync(profiles)) return { ok: true, note: 'no profiles dir' }
-    let changed = 0
-    for (const dir of fs.readdirSync(profiles)) {
-      const ini = path.join(profiles, dir, 'basic.ini')
-      if (!fs.existsSync(ini)) continue
-      let t = fs.readFileSync(ini, 'utf8')
-      // 只改 [Video] 段里的 ColorRange=Full → Partial（用行级匹配，避免误伤注释/其它段）
-      let modified = false
-      const lines = t.split(/\r?\n/)
-      let inVideo = false
-      for (let i = 0; i < lines.length; i++) {
-        const line = lines[i]
-        if (/^\s*\[/.test(line)) inVideo = /^\s*\[Video\]/.test(line)
-        if (inVideo && /^\s*ColorRange\s*=/.test(line)) {
-          const v = line.split('=')[1].trim()
-          if (v.toLowerCase() !== 'partial') { lines[i] = line.replace(/=.*/, '=Partial'); modified = true }
-        }
-      }
-      if (modified) { fs.writeFileSync(ini, lines.join('\n'), 'utf8'); changed++ }
-    }
-    return changed ? { ok: true, note: 'wrote ColorRange=Partial to ' + changed + ' profile(s)' } : { ok: true, note: 'already Partial' }
-  } catch (e) {
-    return { ok: false, error: '改 OBS 色阶 INI 失败：' + ((e && e.message) || e) }
-  }
-}
+// 色阶范围（ColorRange）：不强制，跟随 OBS profile 配置。
+// 历史：ae02cc3 曾强制 Partial/tv——当时 PotPlayer DXVA 硬解不尊重 color_range=pc，会把 Full 素材按 tv 解码 → 过曝发白。
+// 2026-09 链路变化：PotPlayer 关闭 DXVA（软件解码尊重 VUI）+ 剪映实测 Full 直通正常 → 强制 Partial 反而覆盖用户手动选的 Full。
+// 现在改由用户/OBS 决定（OBS 全新默认即 Partial，未改设置的用户开箱行为不变）；本函数已移除，勿加回。
+// 注意：ColorRange 只能在 OBS 启动前改 INI 才生效（运行时改无效，无 ResetVideo）。
 
 // 录制编码器质量兜底：OBS 把「录制编码器」的真实参数（rate_control/crf/cqp/bitrate）存在
 // profile 目录的 recordEncoder.json（注意：basic.ini 的 [AdvOut] 只有 RecEncoder=obs_x264 这种「用哪个编码器」，
@@ -456,9 +423,7 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000, forceEncoder
   if (!ex.ok) return ex
 
   if (!isObsRunning()) {
-    // OBS 未运行才改 INI：此时 OBS 尚没读配置，改完它启动即读到 Partial（运行时改无效）。
-    // 若 OBS 已在跑，INI 改了对本次无效，但至少下次启动生效；此处不强制重启，保证录屏流程不被打断。
-    try { const r = ensureColorRangePartialInIni(); if (r && r.note) console.log('[obsRecorder] 色阶：', r.note) } catch (e) {}
+    // OBS 未运行才改 INI（运行时改无效）。色阶 ColorRange 不在此处理——跟随用户 OBS 配置（见上方注释）。
     // 确保 obs-websocket 服务启用（默认关闭 → 连不上）：在 OBS 启动前写好，OBS 一起动即开启
     try { const r = ensureObsWebsocketEnabled(); if (r && r.note) console.log('[obsRecorder] WebSocket：', r.note) } catch (e) {}
     // 选定录制硬件编码器（NVENC/AMF/QSV，回退 x264）：自检修复重拉时用 forceEncoder 强制指定已确认可用的 ID。
