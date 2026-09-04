@@ -2479,7 +2479,7 @@
         }
       }
     })
-    // Ctrl+滚轮：画布缩放（50% ~ 150%，10% 步进），由父窗口处理
+    // Ctrl+滚轮：画布缩放（20% ~ 150%，50% 以上 10% 步进 / 以下 5% 步进），由父窗口处理
     document.addEventListener('wheel', function (e) {
       if (e.ctrlKey) {
         e.preventDefault()

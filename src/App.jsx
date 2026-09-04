@@ -138,7 +138,7 @@ export default function App() {
   const [subBindingMode, setSubBindingMode] = useState(false) // 绑定模式激活
   const [bindingTarget, setBindingTarget] = useState(null) // { selector, tag, text } | null
   const [simRes, setSimRes] = useState('') // 模拟分辨率，如 '1920x1080'；''=编辑器窗口大小
-  const [zoom, setZoom] = useState(1) // 画布缩放 0.5 ~ 1.5，0.1 步进
+  const [zoom, setZoom] = useState(1) // 画布缩放 0.2 ~ 1.5（下限 20%，2K 屏看 4K 页也能看全）
   const dragDataRef = useRef(null) // 拖拽中的素材信息
   const [ctxMenu, setCtxMenu] = useState(null) // 右键菜单 { x, y, editable, count, locked, group, anyLocked } | null
   const [clipCount, setClipCount] = useState(0) // 剪贴板元素数量（>0 复制/剪切后启用粘贴）
@@ -502,11 +502,15 @@ export default function App() {
           download('edited.html', finalHtml)
         }
       } else if (m.type === 'zoom') {
-        // Ctrl+滚轮缩放模拟画布：50% ~ 150%，10% 步进
+        // Ctrl+滚轮缩放模拟画布：20% ~ 150%；50% 以上 10% 步进，50% 以下 5% 步进
+        //（2K/1080p 屏看 4K 模拟分辨率页需要缩到 ~30% 才能看到完整画面，下限不能卡 50%）
         setZoom((z) => {
-          const step = m.deltaY < 0 ? 0.1 : -0.1
-          const next = Math.min(1.5, Math.max(0.5, Math.round((z + step) * 10) / 10))
-          return next
+          const dir = m.deltaY < 0 ? 1 : -1 // 滚轮向上放大、向下缩小
+          const pct = Math.round(z * 100)
+          // 与 50% 交界的那一步走 5%（50→45 / 45→50），避免大步跳变
+          const coarse = dir > 0 ? pct >= 50 : pct > 50
+          const step = dir * (coarse ? 10 : 5)
+          return Math.min(150, Math.max(20, pct + step)) / 100
         })
       } else if (m.type === 'contextmenu') {
         setCtxMenu(m)
