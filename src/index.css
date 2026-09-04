@@ -1,3 +1,115 @@
+/* ============================================================
+   ZtEdit 界面设计令牌
+   ------------------------------------------------------------
+   配色规则（全项目锁定，改色只改这里）
+     · 中性色：zinc 冷灰，一套到底，不混暖灰
+     · 主色：  朱红 #C41E24（品牌色，保留）。仅用于：主操作、选中态、激活态、录制中
+     · 语义色：只保留两个，且只编码"真实状态"，不做装饰
+               teal  字幕 / 绑定
+               amber 全局字幕 / 进行中的放置动作
+     · 其余颜色（蓝、绿、紫）全部移除：红已是品牌色，再拿红当危险色会互相打架，
+       危险操作改用「中性描边 + 悬停变红」表达，不占用第二个饱和度。
+
+   圆角标度（一个体系，不要混）
+     4px  小徽标 / 时间轴块
+     6px  按钮 / 输入框 / 分段项
+     8px  容器 / 画布外框 / 面板
+     12px 弹出层 / 空状态卡片
+     999px 胶囊 / 分段控件外壳
+
+   排版
+     界面一律 12-13px，数字用 tabular-nums 对齐；标题靠字重和颜色分层，不靠放大字号。
+   ============================================================ */
+
+:root {
+  /* ---- 中性色阶 zinc ---- */
+  --n-0: #ffffff;
+  --n-50: #fafafa;
+  --n-100: #f4f4f5;
+  --n-200: #e4e4e7;
+  --n-300: #d4d4d8;
+  --n-400: #a1a1aa;
+  --n-500: #71717a;
+  --n-600: #52525b;
+  --n-700: #3f3f46;
+  --n-800: #27272a;
+  --n-900: #18181b;
+
+  /* ---- 亮色表面（侧栏 / 面板 / 画布底色） ---- */
+  --surface: #ffffff;
+  --surface-sunken: #fafafa;
+  --surface-raised: #ffffff;
+  --bg-canvas: #f0f0f2;
+  --border: #e4e4e7;
+  --border-strong: #d4d4d8;
+
+  --text: #18181b;
+  --text-2: #52525b;
+  --text-3: #71717a; /* 4.6:1 on white，12px 文字的可用下限 */
+  --text-disabled: #a1a1aa;
+
+  /* ---- 深色外壳（顶部工具栏 / 底部时间轴） ---- */
+  --chrome: #1c1c1f;
+  --chrome-2: #26262b;
+  --chrome-3: #2f2f36;
+  --chrome-border: #35353d;
+  --chrome-border-strong: #43434d;
+  --chrome-text: #f4f4f5;
+  --chrome-text-2: #a1a1aa;
+  --chrome-text-3: #8b8b94; /* 5.0:1 on --chrome */
+
+  /* ---- 主色 ---- */
+  --accent: #c41e24; /* 亮底上的品牌红 */
+  --accent-hover: #a81a1f;
+  --accent-press: #8e161a;
+  --accent-soft: #fdf1f1;
+  --accent-ring: rgba(196, 30, 36, 0.3);
+
+  --accent-dark: #d93a40; /* 深底上的品牌红（对比度 3.8:1，白字 4.6:1） */
+  --accent-dark-hover: #e2535a;
+
+  /* ---- 语义状态色（仅编码真实状态） ---- */
+  --state-subtitle: #0f766e;
+  --state-subtitle-soft: #e9f6f4;
+  --state-subtitle-line: #b8e0da;
+  --state-subtitle-dark: #2dd4bf;
+
+  --state-global: #b45309;
+  --state-global-soft: #fdf5e9;
+  --state-global-line: #f3ddb5;
+  --state-global-dark: #fbbf24;
+
+  /* ---- 圆角 ---- */
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-pill: 999px;
+
+  /* ---- 阴影：随底色着色，不用纯黑 ---- */
+  --sh-1: 0 1px 2px rgba(24, 24, 27, 0.06);
+  --sh-2: 0 1px 3px rgba(24, 24, 27, 0.07), 0 4px 12px -2px rgba(24, 24, 27, 0.06);
+  --sh-3: 0 2px 4px rgba(24, 24, 27, 0.05), 0 14px 34px -10px rgba(24, 24, 27, 0.2);
+  --sh-pop: 0 4px 8px rgba(9, 9, 11, 0.16), 0 16px 40px -12px rgba(9, 9, 11, 0.34);
+  --sh-inset-top: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+
+  /* ---- 动效：仅过渡，无循环动画 ---- */
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur: 120ms;
+  --dur-2: 180ms;
+
+  /* ---- 尺寸 ---- */
+  --bar-h: 46px;
+  --subbar-h: 40px;
+  --side-w: 288px;
+
+  color-scheme: light;
+}
+
+/* ============================================================
+   基础重置
+   ============================================================ */
+
 * {
   box-sizing: border-box;
 }
@@ -7,12 +119,1120 @@ body,
 #root {
   margin: 0;
   height: 100%;
-  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  background: #f4f4f5;
-  color: #1f2937;
 }
 
-button {
+body {
+  font-family: -apple-system, "Segoe UI", "PingFang SC", "HarmonyOS Sans SC",
+    "Microsoft YaHei UI", "Microsoft YaHei", "Noto Sans SC", Roboto, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+  background: var(--bg-canvas);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
   font-family: inherit;
+  font-size: inherit;
+  color: inherit;
 }
 
+/* 数字统一等宽对齐，面板里的坐标/尺寸不会跳动 */
+.zt-app {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 统一细滚动条 */
+.zt-app * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--n-300) transparent;
+}
+.zt-app *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+.zt-app *::-webkit-scrollbar-track {
+  background: transparent;
+}
+.zt-app *::-webkit-scrollbar-thumb {
+  background: var(--n-300);
+  border: 3px solid transparent;
+  border-radius: var(--r-pill);
+  background-clip: content-box;
+}
+.zt-app *::-webkit-scrollbar-thumb:hover {
+  background: var(--n-400);
+  background-clip: content-box;
+}
+/* 深色条内的滚动条 */
+.zt-chrome *::-webkit-scrollbar-thumb {
+  background: var(--chrome-border-strong);
+  background-clip: content-box;
+}
+
+/* 键盘可达性：统一焦点环 */
+.zt-app :focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--n-0), 0 0 0 4px var(--accent-ring);
+  border-radius: var(--r-sm);
+}
+.zt-chrome :focus-visible {
+  box-shadow: 0 0 0 2px var(--chrome), 0 0 0 4px var(--accent-ring);
+}
+
+/* ============================================================
+   顶部外壳
+   ============================================================ */
+
+.zt-chrome {
+  background: var(--chrome);
+  color: var(--chrome-text);
+  flex-shrink: 0;
+}
+
+/* 第一行：品牌 + 文件 + 编辑 + 视图
+   窄窗口横向滚动，不换行（换行会让工具栏变成三行、吃掉画布高度） */
+.zt-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: var(--bar-h);
+  padding: 0 12px;
+  border-bottom: 1px solid var(--chrome-border);
+  background: linear-gradient(180deg, #232327, var(--chrome));
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.zt-bar::-webkit-scrollbar {
+  height: 0;
+}
+.zt-bar > * {
+  flex-shrink: 0;
+}
+
+/* 第二行：页面导航 + 播放录制输出 */
+.zt-subbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--subbar-h);
+  padding: 5px 12px;
+  background: var(--chrome-2);
+  border-bottom: 1px solid var(--chrome-border);
+}
+.zt-subbar > * {
+  flex-shrink: 0;
+}
+
+/* 状态文本区：吃掉中间剩余空间，多条状态并排、各自截断 */
+.zt-subbar-notes {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+}
+.zt-subbar-notes > * {
+  flex-shrink: 0;
+}
+
+.zt-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding-right: 4px;
+  user-select: none;
+}
+.zt-brand-mark {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), var(--sh-inset-top);
+}
+.zt-brand-name {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--chrome-text);
+  letter-spacing: 0.01em;
+  line-height: 1.15;
+}
+.zt-brand-sub {
+  font-size: 10.5px;
+  color: var(--chrome-text-3);
+  letter-spacing: 0.04em;
+  line-height: 1.15;
+}
+
+/* 分组容器：把相关操作收成一坨，而不是散成一排 */
+.zt-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-md);
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid var(--chrome-border);
+}
+
+/* 发丝分隔线取代原来的实心竖杠 */
+.zt-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--chrome-border);
+  flex-shrink: 0;
+}
+
+/* 清晰度的分段控件 */
+.zt-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--chrome-border);
+}
+.zt-seg-item {
+  border: none;
+  background: transparent;
+  color: var(--chrome-text-2);
+  border-radius: var(--r-xs);
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.zt-seg-item:hover:not(:disabled) {
+  color: var(--chrome-text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.zt-seg-item:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.zt-seg-item[aria-pressed="true"] {
+  background: var(--chrome-3);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--sh-inset-top);
+}
+.zt-seg-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 顶栏内联字段（分辨率下拉、缩放读数等） */
+.zt-bar-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--chrome-text-2);
+  white-space: nowrap;
+}
+.zt-bar-select {
+  background: var(--chrome-3);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--r-sm);
+  padding: 4px 6px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color var(--dur) var(--ease);
+}
+.zt-bar-select:hover {
+  border-color: var(--chrome-border-strong);
+}
+.zt-bar-select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 状态文本 */
+.zt-bar-note {
+  font-size: 11.5px;
+  color: var(--chrome-text-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
+}
+.zt-bar-note-ok {
+  color: #86efac;
+}
+.zt-bar-note-err {
+  color: #fca5a5;
+}
+
+/* 隐私徽标：安静地待在右上角，不抢主色 */
+.zt-privacy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--chrome-text-3);
+  padding: 3px 9px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--r-pill);
+  white-space: nowrap;
+}
+.zt-privacy::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--n-500);
+}
+
+/* ============================================================
+   页面 tab 条
+   ============================================================ */
+
+.zt-pages {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+.zt-pages-label {
+  font-size: 11px;
+  color: var(--chrome-text-3);
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.zt-page-btn {
+  min-width: 30px;
+  height: 24px;
+  padding: 0 7px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--chrome-text-2);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.zt-page-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--chrome-text);
+}
+.zt-page-btn[aria-current="true"] {
+  background: var(--accent-dark);
+  color: #fff;
+  font-weight: 650;
+  box-shadow: var(--sh-inset-top);
+}
+.zt-page-btn:disabled {
+  cursor: not-allowed;
+}
+
+.zt-nav-btn {
+  width: 26px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--chrome-text-2);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.zt-nav-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--chrome-text);
+}
+.zt-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ============================================================
+   按钮
+   ============================================================ */
+
+.zt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  padding: 0 12px;
+  height: 28px;
+  font-size: 12.5px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.zt-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.zt-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+/* 深底：默认 */
+.zt-btn--chrome {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--chrome-border);
+  color: var(--chrome-text);
+}
+.zt-btn--chrome:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: var(--chrome-border-strong);
+}
+/* 开关类按钮（网格）按下态：用亮底而非主色，避免被误读成危险操作 */
+.zt-btn--chrome[aria-pressed="true"] {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: var(--chrome-border-strong);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 深底：主操作 */
+.zt-btn--primary {
+  background: var(--accent-dark);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: var(--sh-inset-top);
+}
+.zt-btn--primary:hover:not(:disabled) {
+  background: var(--accent-dark-hover);
+}
+
+/* 深底：强调但非品牌（录制） */
+.zt-btn--strong {
+  background: var(--chrome-text);
+  color: var(--chrome);
+  font-weight: 600;
+}
+.zt-btn--strong:hover:not(:disabled) {
+  background: #fff;
+}
+
+/* 深底：危险（录制中 / 停止）。刻意做成"亮底深字"，避免和品牌红撞色 */
+.zt-btn--danger {
+  background: rgba(248, 113, 113, 0.14);
+  border-color: rgba(248, 113, 113, 0.32);
+  color: #fca5a5;
+  font-weight: 600;
+}
+.zt-btn--danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.22);
+  color: #fecaca;
+  border-color: rgba(248, 113, 113, 0.5);
+}
+
+/* 亮底：默认 */
+.zt-btn--light {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--sh-1);
+}
+.zt-btn--light:hover:not(:disabled) {
+  background: var(--n-50);
+  border-color: var(--border-strong);
+}
+
+/* 亮底：主操作 */
+.zt-btn--accent {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+.zt-btn--accent:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.zt-btn--sm {
+  height: 24px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+/* ============================================================
+   画布区
+   ============================================================ */
+
+.zt-stage {
+  flex: 1;
+  position: relative;
+  overflow: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 16px;
+  background-color: var(--bg-canvas);
+  /* 极淡点阵，给出"工作台"的坐标感，不干扰页面本身 */
+  background-image: radial-gradient(
+    circle at 1px 1px,
+    rgba(24, 24, 27, 0.07) 1px,
+    transparent 0
+  );
+  background-size: 20px 20px;
+}
+
+.zt-canvas-box {
+  position: relative;
+  overflow: hidden;
+  flex: 0 0 auto;
+  margin: auto;
+  background: #fff;
+  border-radius: var(--r-md);
+  /* 外圈描边 + 着色投影，不用纯黑 */
+  box-shadow: 0 0 0 1px rgba(24, 24, 27, 0.08), var(--sh-3);
+}
+
+.zt-canvas-free {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  overflow: visible;
+}
+
+/* 空状态 */
+.zt-empty {
+  margin: auto;
+  max-width: 420px;
+  padding: 36px 32px;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-2);
+}
+.zt-empty-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 16px;
+  border-radius: var(--r-md);
+  background: var(--accent-soft);
+  border: 1px solid rgba(196, 30, 36, 0.14);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.zt-empty-title {
+  margin: 0 0 8px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--text);
+}
+.zt-empty-body {
+  margin: 0 0 20px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--text-2);
+}
+.zt-empty-foot {
+  margin: 16px 0 0;
+  font-size: 11.5px;
+  color: var(--text-3);
+}
+
+/* ============================================================
+   右侧面板
+   ============================================================ */
+
+.zt-side {
+  width: var(--side-w);
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.zt-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-sunken);
+}
+.zt-tab {
+  flex: 1;
+  height: 28px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease),
+    box-shadow var(--dur) var(--ease);
+}
+.zt-tab:hover {
+  color: var(--text);
+}
+.zt-tab[aria-selected="true"] {
+  background: var(--surface);
+  color: var(--accent);
+  font-weight: 650;
+  box-shadow: var(--sh-1), 0 0 0 1px var(--border);
+}
+
+.zt-panel {
+  padding: 14px 16px 20px;
+  overflow: auto;
+  flex: 1;
+  font-size: 13px;
+}
+
+/* 面板内小节标题 */
+.zt-section-title {
+  margin: 2px 0 10px;
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.zt-section-hr {
+  height: 1px;
+  background: var(--border);
+  margin: 16px 0 14px;
+}
+
+/* 字段：标签在上、控件在下 */
+.zt-field {
+  margin-bottom: 10px;
+  min-width: 0;
+}
+.zt-field-label {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+.zt-row2 {
+  display: flex;
+  gap: 8px;
+}
+
+/* 输入控件 */
+.zt-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+}
+.zt-input:hover {
+  border-color: var(--n-400);
+}
+.zt-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.zt-input::placeholder {
+  color: var(--text-disabled);
+}
+.zt-input:disabled {
+  background: var(--n-100);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+.zt-input--color {
+  padding: 2px;
+  height: 30px;
+  cursor: pointer;
+}
+.zt-textarea {
+  height: 64px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+/* 信息面板的键值行 */
+.zt-kv {
+  display: flex;
+  gap: 10px;
+  padding: 4px 0;
+  font-size: 12.5px;
+}
+.zt-kv-k {
+  color: var(--text-3);
+  min-width: 60px;
+  flex-shrink: 0;
+}
+.zt-kv-v {
+  word-break: break-all;
+  color: var(--text);
+}
+
+/* 徽标 */
+.zt-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 6px;
+  border-radius: var(--r-xs);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.zt-chip--subtitle {
+  background: var(--state-subtitle-soft);
+  color: var(--state-subtitle);
+}
+.zt-chip--global {
+  background: var(--state-global-soft);
+  color: var(--state-global);
+}
+
+/* 提示条 */
+.zt-hint {
+  padding: 9px 11px;
+  border-radius: var(--r-sm);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text-2);
+}
+.zt-hint--warn {
+  background: var(--state-global-soft);
+  border-color: var(--state-global-line);
+  color: #7c4a12;
+}
+
+/* 素材网格 */
+.zt-assets {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.zt-asset {
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  cursor: grab;
+  background: var(--surface-sunken);
+  display: flex;
+  flex-direction: column;
+  user-select: none;
+  transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease),
+    transform var(--dur) var(--ease);
+}
+.zt-asset:hover {
+  border-color: var(--n-400);
+  box-shadow: var(--sh-2);
+}
+.zt-asset[data-placing="true"] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  cursor: default;
+}
+.zt-asset-media {
+  width: 100%;
+  height: 76px;
+  object-fit: cover;
+  display: block;
+  background: var(--n-100);
+}
+.zt-asset-name {
+  padding: 5px 6px;
+  font-size: 11px;
+  color: var(--text-2);
+  word-break: break-all;
+  line-height: 1.4;
+  border-top: 1px solid var(--border);
+}
+
+/* 图层行 */
+.zt-layer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 7px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-sunken);
+  transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+}
+.zt-layer:hover {
+  background: var(--n-100);
+  border-color: var(--border-strong);
+}
+.zt-layer[data-kind="subtitle"] {
+  background: var(--state-subtitle-soft);
+  border-color: var(--state-subtitle-line);
+}
+.zt-layer[data-selected="true"] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.zt-layer[data-over="true"] {
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+}
+.zt-layer-idx {
+  color: var(--text-disabled);
+  font-size: 11px;
+  min-width: 18px;
+}
+.zt-layer-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+.zt-layer-act {
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-disabled);
+  opacity: 0.55;
+  transition: opacity var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.zt-layer-act:hover {
+  opacity: 1;
+  color: var(--text);
+}
+.zt-layer-act[data-on="true"] {
+  opacity: 1;
+  color: var(--accent);
+}
+.zt-layer-grip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-disabled);
+  cursor: grab;
+}
+.zt-layer-divider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 4px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid var(--state-subtitle-line);
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--state-subtitle);
+}
+.zt-layer-divider span {
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+/* ============================================================
+   底部时间轴
+   ============================================================ */
+
+.zt-timeline {
+  background: var(--chrome);
+  border-top: 1px solid var(--chrome-border);
+  padding: 8px 12px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.zt-tl-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.zt-tl-track-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.zt-tl-time {
+  font-size: 11px;
+  color: var(--chrome-text-3);
+  min-width: 30px;
+  flex-shrink: 0;
+}
+.zt-tl-time:last-child {
+  text-align: right;
+}
+.zt-tl-track {
+  flex: 1;
+  height: 30px;
+  position: relative;
+  overflow: hidden;
+  background: var(--chrome-2);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--r-sm);
+  display: flex;
+  align-items: center;
+}
+.zt-tl-empty {
+  padding-left: 10px;
+  font-size: 11px;
+  color: var(--n-600);
+}
+.zt-tl-block {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 20px;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  color: #fff;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  padding: 0 5px;
+  box-sizing: border-box;
+  background: var(--chrome-3);
+  border: 1px solid transparent;
+  transition: height var(--dur) var(--ease), background var(--dur) var(--ease),
+    border-color var(--dur) var(--ease);
+}
+.zt-tl-block:hover {
+  border-color: var(--chrome-border-strong);
+}
+.zt-tl-block[data-tone="bound"] {
+  background: var(--state-subtitle);
+}
+.zt-tl-block[data-tone="global"] {
+  background: var(--state-global);
+}
+.zt-tl-block[data-selected="true"] {
+  height: 26px;
+  background: var(--accent-dark);
+  border-color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+  z-index: 2;
+}
+
+/* 动画条（底栏 inline） */
+.zt-anim {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  padding: 5px 8px;
+  background: var(--chrome-2);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--r-md);
+}
+.zt-anim-label {
+  color: var(--state-global-dark);
+  font-weight: 650;
+}
+.zt-anim-key {
+  color: var(--chrome-text-2);
+}
+.zt-anim-select {
+  background: var(--chrome-3);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--r-sm);
+  padding: 4px 8px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+.zt-anim-select:hover {
+  border-color: var(--chrome-border-strong);
+}
+
+/* 步进输入框 */
+.zt-stepper {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.zt-stepper[data-dark="true"] {
+  background: var(--chrome-3);
+  border-color: var(--chrome-border);
+}
+.zt-stepper-input {
+  border: none;
+  outline: none;
+  padding: 0 4px 0 9px;
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+.zt-stepper[data-dark="true"] .zt-stepper-input {
+  color: var(--chrome-text);
+}
+.zt-stepper-btns {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 22px;
+  align-self: stretch;
+  border-left: 1px solid var(--border);
+}
+.zt-stepper[data-dark="true"] .zt-stepper-btns {
+  border-left-color: var(--chrome-border);
+}
+.zt-stepper-btn {
+  border: none;
+  background: transparent;
+  flex: 1;
+  min-height: 0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.zt-stepper-btn:hover:not(:disabled) {
+  background: var(--n-100);
+  color: var(--text);
+}
+.zt-stepper-btn:disabled {
+  cursor: not-allowed;
+}
+.zt-stepper-btn + .zt-stepper-btn {
+  border-top: 1px solid var(--border);
+}
+.zt-stepper[data-dark="true"] .zt-stepper-btn {
+  color: var(--chrome-text-2);
+}
+.zt-stepper[data-dark="true"] .zt-stepper-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--chrome-text);
+}
+.zt-stepper[data-dark="true"] .zt-stepper-btn + .zt-stepper-btn {
+  border-top-color: var(--chrome-border);
+}
+
+/* ============================================================
+   右键菜单
+   ============================================================ */
+
+.zt-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 178px;
+  padding: 5px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--sh-pop);
+  font-size: 12.5px;
+  overflow: hidden;
+}
+.zt-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: none;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.zt-menu-item:hover:not(:disabled) {
+  background: var(--n-100);
+}
+.zt-menu-item:disabled {
+  color: var(--text-disabled);
+  cursor: not-allowed;
+}
+.zt-menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 4px;
+}
+.zt-menu-label {
+  padding: 5px 10px 3px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.zt-menu-kbd {
+  margin-left: auto;
+  font-size: 10.5px;
+  color: var(--text-disabled);
+}
+
+/* ============================================================
+   动效降级
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .zt-btn:active:not(:disabled),
+  .zt-seg-item:active:not(:disabled) {
+    transform: none;
+  }
+}

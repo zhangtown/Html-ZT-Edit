@@ -1,4 +1,43 @@
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import {
+  IconContext,
+  ArrowClockwise,
+  ArrowCounterClockwise,
+  ArrowDown,
+  ArrowUp,
+  ArrowUUpLeft,
+  CaretLeft,
+  CaretRight,
+  Check,
+  ClipboardText,
+  Copy,
+  DotsSixVertical,
+  DownloadSimple,
+  Eye,
+  EyeSlash,
+  FolderOpen,
+  GridFour,
+  Image as ImageIcon,
+  Images,
+  Info,
+  LinkSimple,
+  LinkSimpleBreak,
+  LockSimple,
+  LockSimpleOpen,
+  MonitorPlay,
+  Play,
+  PushPin,
+  Record,
+  Scissors,
+  SlidersHorizontal,
+  Stack,
+  Stop,
+  TextT,
+  Trash,
+  UploadSimple,
+  Warning,
+  X,
+} from '@phosphor-icons/react'
 import editorRuntimeSrc from './editorRuntime.js?raw'
 import {
   pickHtmlFile,
@@ -812,309 +851,304 @@ export default function App() {
   const simH = simDim ? simDim[1] : null
 
   return (
-    <div
-      style={{ display: 'flex', flexDirection: 'column', height: '100%' }}
-    >
-      <div
-        className="zt-chrome"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 10,
-          padding: '8px 12px',
-          background: '#1f2937',
-          color: '#fff',
-          flexWrap: 'wrap',
-        }}
-      >
-        <strong style={{ fontSize: 15 }}>HTML 可视化编辑器 · ZtEdit</strong>
-        <button onClick={handlePick} style={btn('#C41E24')}>
-          选择 HTML 文件
-        </button>
+    <IconContext.Provider value={{ size: 14, weight: 'regular' }}>
+    <div className="zt-app" style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* ───────── 第一行：品牌 · 文件 · 编辑 · 视图 ───────── */}
+      <div className="zt-chrome zt-bar">
+        <div className="zt-brand">
+          <span className="zt-brand-mark">ZT</span>
+          <span style={{ display: 'flex', flexDirection: 'column' }}>
+            <span className="zt-brand-name">ZtEdit</span>
+            <span className="zt-brand-sub">HTML 可视化编辑器</span>
+          </span>
+        </div>
 
-        <span style={{ width: 1, height: 22, background: '#374151' }} />
-
-        <button onClick={() => send({ type: 'undo' })} disabled={!ready || playMode} title="撤销（Ctrl+Z）" style={btn('#374151')}>
-          撤销
-        </button>
-        <button onClick={() => send({ type: 'redo' })} disabled={!ready || playMode} title="重做（Ctrl+Shift+Z）" style={btn('#374151')}>
-          重做
-        </button>
-        <button onClick={() => send({ type: 'delete' })} disabled={!selected || playMode} title="删除选中（Delete）" style={btn('#7f1d1d')}>
-          删除
-        </button>
-
-        <span style={{ width: 1, height: 22, background: '#374151' }} />
-
-        <button onClick={toggleGrid} disabled={playMode} style={btn(gridOn ? '#0F6E56' : '#374151')}>
-          {gridOn ? '网格：开' : '网格：关'}
-        </button>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#d1d5db' }}>
-          分辨率:
-          <select
-            value={simRes}
-            onChange={(e) => {
-              setSimRes(e.target.value)
-              setZoom(1)
-            }}
-            style={{ ...btn('#374151'), minWidth: 42 }}
-            title="模拟浏览器分辨率，查看元素与屏幕的占比"
+        <div className="zt-group">
+          <button
+            className="zt-btn zt-btn--primary"
+            onClick={handlePick}
+            title="选择 HTML 文件（或其所在文件夹）开始编辑"
           >
-            {RESOLUTIONS.map(([v, l]) => (
-              <option key={v} value={v}>
-                {v === 'current' ? `当前屏幕 (CSS ${cssResW}×${cssResH} / 物理 ${physicalResW}×${physicalResH})` : l}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span style={{ fontSize: 12, color: '#d1d5db', minWidth: 60, textAlign: 'center' }}>
-          缩放 {Math.round(zoom * 100)}%
-        </span>
+            <FolderOpen size={15} />
+            选择文件
+          </button>
+          <button
+            className="zt-btn zt-btn--chrome"
+            onClick={handleExport}
+            disabled={!ready || playMode}
+            title="导出编辑后的 HTML（相对路径原样保留，可直接分发）"
+          >
+            <DownloadSimple size={15} />
+            导出
+          </button>
+          <button
+            className="zt-btn zt-btn--chrome"
+            onClick={handleClearDraft}
+            disabled={!restored}
+            title="清除本地草稿"
+          >
+            <Trash size={15} />
+            草稿
+          </button>
+        </div>
 
-        <button
-          onClick={() => send({ type: 'resetElement' })}
-          disabled={!selected || playMode}
-          style={btn('#374151')}
-        >
-          重置选中
-        </button>
+        <div className="zt-group">
+          <button
+            className="zt-btn zt-btn--chrome"
+            onClick={() => send({ type: 'undo' })}
+            disabled={!ready || playMode}
+            title="撤销（Ctrl+Z）"
+          >
+            <ArrowCounterClockwise size={15} />
+            撤销
+          </button>
+          <button
+            className="zt-btn zt-btn--chrome"
+            onClick={() => send({ type: 'redo' })}
+            disabled={!ready || playMode}
+            title="重做（Ctrl+Shift+Z）"
+          >
+            <ArrowClockwise size={15} />
+            重做
+          </button>
+          <button
+            className="zt-btn zt-btn--chrome"
+            onClick={() => send({ type: 'delete' })}
+            disabled={!selected || playMode}
+            title="删除选中（Delete）"
+          >
+            <Trash size={15} />
+            删除
+          </button>
+          <button
+            className="zt-btn zt-btn--chrome"
+            onClick={() => send({ type: 'resetElement' })}
+            disabled={!selected || playMode}
+            title="把选中元素还原成打开时的样式"
+          >
+            <ArrowUUpLeft size={15} />
+            还原
+          </button>
+        </div>
 
-        <span style={{ width: 1, height: 22, background: '#374151' }} />
-
-        {playMode ? (
-          <>
-            <span style={{ fontSize: 12, color: '#fbbf24', fontWeight: 600 }}>
-              ▶ 播放中 · 第 {playCurrent + 1}/{total} 页（Esc 停止）
-            </span>
-            {obsRec.recording && (
-              <span style={{ fontSize: 12, color: '#f87171', fontWeight: 700 }}>● 录制中</span>
-            )}
-            <button
-              onClick={() => send({ type: 'stopPlay' })}
-              title="停止播放，返回编辑模式"
-              style={btn('#C41E24')}
-            >
-              ⏹ 停止播放
-            </button>
-          </>
-        ) : (
-          <>
-            <button
-              onClick={() => handleStartPlay(current)}
-              disabled={!ready || !total}
-              title="从当前页开始播放预览（含音频）"
-              style={btn('#0F6E56')}
-            >
-              ▶ 本页预览
-            </button>
-            <label
-              style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: '#d1d5db' }}
-              title="进画面后延迟多久才出音频：先放首屏 / 标题动画，避免一进画面就爆音、观众没准备。应用于 OBS 录制（落盘临时 HTML）与导出 HTML。"
-            >
-              音频延迟
-              <select
-                value={obsInteractDelay}
-                onChange={(e) => setObsInteractDelay(parseFloat(e.target.value))}
-                disabled={obsRec.recording}
-                style={{ ...btn('#374151'), minWidth: 70 }}
-              >
-                <option value={0}>不延迟</option>
-                <option value={0.3}>300ms</option>
-                <option value={0.5}>500ms</option>
-                <option value={0.8}>800ms</option>
-                <option value={1}>1.0s</option>
-                <option value={1.5}>1.5s</option>
-                <option value={2}>2.0s</option>
-                <option value={3}>3.0s</option>
-              </select>
-            </label>
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 2,
-                background: '#0b1220',
-                border: '1px solid #374151',
-                borderRadius: 6,
-                padding: 2,
+        <div className="zt-group">
+          <button
+            className="zt-btn zt-btn--chrome"
+            onClick={toggleGrid}
+            disabled={playMode}
+            aria-pressed={gridOn}
+            title={gridOn ? '参考网格：开（点击关闭）' : '参考网格：关（点击开启）'}
+          >
+            <GridFour size={15} />
+            网格
+          </button>
+          <span className="zt-bar-field" style={{ padding: '0 4px' }}>
+            分辨率
+            <select
+              className="zt-bar-select"
+              value={simRes}
+              onChange={(e) => {
+                setSimRes(e.target.value)
+                setZoom(1)
               }}
-              title="录制清晰度：OBS 按所选档位输出成片（自适应页面内容占比不变；固定 px 宽度的旧页面在低档位可能裁边）"
+              style={{ maxWidth: 132 }}
+              title="模拟浏览器分辨率，查看元素与屏幕的占比"
             >
-              {REC_RES_OPTS.map(([v, label]) => {
-                const active = v === recRes
-                return (
-                  <button
-                    key={v}
-                    onClick={() => setRecRes(v)}
-                    disabled={obsRec.recording}
-                    title={`按 ${label}（${v}）录制`}
-                    style={{
-                      background: active ? '#1d4ed8' : 'transparent',
-                      color: active ? '#fff' : '#9ca3af',
-                      border: 'none',
-                      borderRadius: 4,
-                      padding: '3px 7px',
-                      fontSize: 11,
-                      fontWeight: active ? 600 : 400,
-                      cursor: obsRec.recording ? 'not-allowed' : 'pointer',
-                      opacity: obsRec.recording ? 0.55 : 1,
-                      lineHeight: 1.4,
-                    }}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
-            </span>
-            <button
-              onClick={obsRec.recording ? stopObsRec : startObsRec}
-              disabled={!recRoot && !obsRec.recording}
-              style={btn(obsRec.recording ? '#7f1d1d' : '#1d4ed8')}
-              title={`OBS 系统级录制：按 ${recLabelOf(recRes)}（${recRes}）输出，自动建场景 + 浏览器源 + 音频兜底，成片直接落在当前 HTML 所在目录`}
-            >
-              {obsRec.recording ? '■ 停止 OBS' : '● OBS 录制'}
-            </button>
-            {obsRec.msg && (
-              <span style={{ fontSize: 11, color: obsRec.recording ? '#fca5a5' : '#9ca3af' }} title={obsRec.msg}>
-                {obsRec.msg}
-              </span>
-            )}
-            {obsRec.filePath && (
-              <span style={{ fontSize: 11, color: '#a7f3d0' }} title={obsRec.filePath}>
-                {obsRec.filePath.split(/[\\/]/).pop()}
-              </span>
-            )}
-          </>
-        )}
-        <span style={{ width: 1, height: 22, background: '#374151' }} />
-
-        <button onClick={handleExport} disabled={!ready || playMode} style={btn('#2563eb')}>
-          导出 HTML
-        </button>
-        {exportMsg && (
-          <span style={{ fontSize: 11, color: exportMsg.indexOf('已导出') === 0 ? '#a7f3d0' : '#fca5a5' }} title={exportMsg}>
-            {exportMsg}
+              {RESOLUTIONS.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {v === 'current' ? `当前屏幕 (CSS ${cssResW}×${cssResH} / 物理 ${physicalResW}×${physicalResH})` : l}
+                </option>
+              ))}
+            </select>
           </span>
-        )}
-        <button onClick={handleClearDraft} disabled={!restored} title="清除本地草稿" style={btn('#4b5563')}>
-          清除草稿
-        </button>
-        {saveErr && (
-          <span style={{ fontSize: 11, color: '#fca5a5' }} title={saveErr}>
-            ⚠ {saveErr}
+          <span className="zt-bar-field" style={{ padding: '0 6px' }}>
+            缩放 {Math.round(zoom * 100)}%
           </span>
-        )}
+        </div>
 
-        <span style={{ fontSize: 12, color: '#9ca3af', marginLeft: 'auto' }}>
-          📁 本地读取，文件不会上传到任何服务器
+        <span className="zt-privacy" style={{ marginLeft: 'auto' }} title="全程本地读取，文件不会上传到任何服务器">
+          本地运行 · 不上传
         </span>
       </div>
 
-      {/* 页面预览 tab 条：点击快速跳转；播放模式下点击从该页续播 */}
-      {total > 0 && (
-        <div
-          className="zt-chrome"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 4,
-            padding: '4px 12px',
-            background: playMode ? '#111827' : '#f3f4f6',
-            borderBottom: '1px solid #d1d5db',
-            overflowX: 'auto',
-            flexShrink: 0,
-          }}
-        >
-          <button
-            onClick={() => send(playMode ? { type: 'playGoto', index: (playMode ? playCurrent : current) - 1 } : { type: 'prev' })}
-            disabled={playMode}
-            title={playMode ? '播放中不可切页，请先停止' : '上一页'}
-            style={{
-              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6,
-              fontSize: 13, fontWeight: 700, marginRight: 2,
-              background: '#e5e7eb', color: '#374151',
-              opacity: (playMode || (playMode ? playCurrent <= 0 : current <= 0)) ? 0.4 : 1,
-              cursor: playMode ? 'not-allowed' : 'pointer',
-            }}
-          >
-            ‹
-          </button>
-          <span style={{ fontSize: 12, color: playMode ? '#fbbf24' : '#6b7280', marginRight: 6, whiteSpace: 'nowrap' }}>
-            {playMode ? '预览' : '页面'}
-          </span>
-          {Array.from({ length: total }, (_, i) => {
-            const active = playMode ? i === playCurrent : i === current
-            return (
-              <button
-                key={i}
-                onClick={() => { if (!playMode) send({ type: 'goto', index: i }) }}
-                title={playMode ? `播放中不可切页，请先停止（当前第 ${playCurrent + 1} 页）` : `跳到第 ${i + 1} 页`}
-                disabled={playMode}
-                style={{
-                  minWidth: 34,
-                  padding: '3px 8px',
-                  border: 'none',
-                  borderRadius: 6,
-                  cursor: playMode ? 'not-allowed' : 'pointer',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  background: active ? '#C41E24' : '#e5e7eb',
-                  color: active ? '#fff' : '#374151',
-                  opacity: playMode ? 0.55 : 1,
-                }}
-              >
-                {i + 1}
-              </button>
-            )
-          })}
-          <button
-            onClick={() => send(playMode ? { type: 'playGoto', index: playCurrent + 1 } : { type: 'next' })}
-            disabled={playMode}
-            title={playMode ? '播放中不可切页，请先停止' : '下一页'}
-            style={{
-              minWidth: 34, padding: '3px 8px', border: 'none', borderRadius: 6,
-              fontSize: 13, fontWeight: 700, marginLeft: 2,
-              background: '#e5e7eb', color: '#374151',
-              opacity: (playMode || (playMode ? playCurrent >= total - 1 : current >= total - 1)) ? 0.4 : 1,
-              cursor: playMode ? 'not-allowed' : 'pointer',
-            }}
-          >
-            ›
-          </button>
+      {/* ───────── 第二行：页面导航 · 播放录制 · 状态 ───────── */}
+      <div className="zt-chrome zt-subbar">
+        {total > 0 && (
+          <div className="zt-pages" style={{ flex: '0 1 auto' }}>
+            <button
+              className="zt-nav-btn"
+              onClick={() => send(playMode ? { type: 'playGoto', index: playCurrent - 1 } : { type: 'prev' })}
+              disabled={playMode || (playMode ? playCurrent <= 0 : current <= 0)}
+              title={playMode ? '播放中不可切页，请先停止' : '上一页'}
+            >
+              <CaretLeft size={13} />
+            </button>
+            <span className="zt-pages-label">{playMode ? '预览' : '页面'}</span>
+            {Array.from({ length: total }, (_, i) => {
+              const active = playMode ? i === playCurrent : i === current
+              return (
+                <button
+                  key={i}
+                  className="zt-page-btn"
+                  aria-current={active ? 'true' : 'false'}
+                  onClick={() => { if (!playMode) send({ type: 'goto', index: i }) }}
+                  disabled={playMode}
+                  title={playMode ? `播放中不可切页，请先停止（当前第 ${playCurrent + 1} 页）` : `跳到第 ${i + 1} 页`}
+                >
+                  {i + 1}
+                </button>
+              )
+            })}
+            <button
+              className="zt-nav-btn"
+              onClick={() => send(playMode ? { type: 'playGoto', index: playCurrent + 1 } : { type: 'next' })}
+              disabled={playMode || (playMode ? playCurrent >= total - 1 : current >= total - 1)}
+              title={playMode ? '播放中不可切页，请先停止' : '下一页'}
+            >
+              <CaretRight size={13} />
+            </button>
+          </div>
+        )}
+
+        <div className="zt-subbar-notes">
+          {playMode && (
+            <span className="zt-bar-note" style={{ color: 'var(--state-global-dark)', fontWeight: 600 }}>
+              <MonitorPlay size={12} /> 播放中 · 第 {playCurrent + 1}/{total} 页（Esc 停止）
+            </span>
+          )}
+          {obsRec.recording && (
+            <span className="zt-bar-note zt-bar-note-err" style={{ fontWeight: 600 }}>
+              <Record size={11} /> 录制中
+            </span>
+          )}
+          {saveErr && (
+            <span className="zt-bar-note zt-bar-note-err" title={saveErr}>
+              <Warning size={12} /> 草稿保存失败
+            </span>
+          )}
+          {exportMsg && (
+            <span
+              className={'zt-bar-note ' + (exportMsg.indexOf('已导出') === 0 ? 'zt-bar-note-ok' : 'zt-bar-note-err')}
+              title={exportMsg}
+            >
+              {exportMsg}
+            </span>
+          )}
+          {obsRec.msg && (
+            <span className="zt-bar-note" title={obsRec.msg}>
+              {obsRec.msg}
+            </span>
+          )}
+          {obsRec.filePath && (
+            <span className="zt-bar-note zt-bar-note-ok" title={obsRec.filePath}>
+              {obsRec.filePath.split(/[\\/]/).pop()}
+            </span>
+          )}
         </div>
-      )}
+
+        {playMode ? (
+          <div className="zt-group">
+            <button
+              className="zt-btn zt-btn--danger"
+              onClick={() => send({ type: 'stopPlay' })}
+              title="停止播放，返回编辑模式"
+            >
+              <Stop size={13} />
+              停止播放
+            </button>
+          </div>
+        ) : (
+          <>
+            <div className="zt-group">
+              <button
+                className="zt-btn zt-btn--primary"
+                onClick={() => handleStartPlay(current)}
+                disabled={!ready || !total}
+                title="从当前页开始播放预览（含音频）"
+              >
+                <Play size={13} />
+                本页预览
+              </button>
+              <span
+                className="zt-bar-field"
+                style={{ padding: '0 6px' }}
+                title="进画面后延迟多久才出音频：先放首屏 / 标题动画，避免一进画面就爆音、观众没准备。应用于 OBS 录制（落盘临时 HTML）与导出 HTML。"
+              >
+                音频延迟
+                <select
+                  className="zt-bar-select"
+                  value={obsInteractDelay}
+                  onChange={(e) => setObsInteractDelay(parseFloat(e.target.value))}
+                  disabled={obsRec.recording}
+                  style={{ minWidth: 82 }}
+                >
+                  <option value={0}>不延迟</option>
+                  <option value={0.3}>300ms</option>
+                  <option value={0.5}>500ms</option>
+                  <option value={0.8}>800ms</option>
+                  <option value={1}>1.0s</option>
+                  <option value={1.5}>1.5s</option>
+                  <option value={2}>2.0s</option>
+                  <option value={3}>3.0s</option>
+                </select>
+              </span>
+            </div>
+            <div
+              className="zt-seg"
+              title="录制清晰度：OBS 按所选档位输出成片（自适应页面内容占比不变；固定 px 宽度的旧页面在低档位可能裁边）"
+            >
+              {REC_RES_OPTS.map(([v, label]) => (
+                <button
+                  key={v}
+                  className="zt-seg-item"
+                  aria-pressed={v === recRes}
+                  onClick={() => setRecRes(v)}
+                  disabled={obsRec.recording}
+                  title={`按 ${label}（${v}）录制`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <button
+              className={obsRec.recording ? 'zt-btn zt-btn--danger' : 'zt-btn zt-btn--strong'}
+              onClick={obsRec.recording ? stopObsRec : startObsRec}
+              disabled={!recRoot && !obsRec.recording}
+              title={`OBS 系统级录制：按 ${recLabelOf(recRes)}（${recRes}）输出，自动建场景 + 浏览器源 + 音频兜底，成片直接落在当前 HTML 所在目录`}
+            >
+              {obsRec.recording ? <><Stop size={13} /> 停止录制</> : <><Record size={13} /> OBS 录制</>}
+            </button>
+          </>
+        )}
+      </div>
+
 
       <div className="zt-main" style={{ display: 'flex', flex: 1, minHeight: 0 }}>
-        <div
-          style={{
-            flex: 1,
-            background: '#e5e7eb',
-            position: 'relative',
-            overflow: 'auto',
-            display: 'flex',
-            alignItems: 'flex-start',
-            justifyContent: 'flex-start',
-            padding: 12,
-          }}
-        >
-          {srcdoc ? (
+        <div className="zt-stage">
+          {!srcdoc ? (
+            <div className="zt-empty">
+              <span className="zt-empty-icon">
+                <FolderOpen size={22} />
+              </span>
+              <h2 className="zt-empty-title">打开一个 HTML 工程</h2>
+              <p className="zt-empty-body">
+                选中 HTML 文件或整个文件夹即可开始。素材就地读取，
+                编辑直接改真实 DOM，页面原有的定位与 CSS 动画都原样保留。
+              </p>
+              <button
+                className="zt-btn zt-btn--accent"
+                onClick={handlePick}
+                style={{ height: 34, padding: '0 18px', fontSize: 13 }}
+              >
+                <FolderOpen size={15} />
+                选择 HTML 文件
+              </button>
+              <p className="zt-empty-foot">之前编辑过且未清除草稿，刷新后会自动从本机恢复</p>
+            </div>
+          ) : simW ? (
             <div
               className="zt-canvas-box"
-              style={
-                simW
-                  ? {
-                      width: simW * zoom,
-                      height: simH * zoom,
-                      position: 'relative',
-                      overflow: 'hidden',
-                      boxShadow: '0 2px 16px rgba(0,0,0,.15)',
-                      flex: '0 0 auto',
-                      background: '#fff',
-                      margin: 'auto',
-                    }
-                  : { width: '100%', height: '100%', position: 'relative', overflow: 'visible' }
-              }
+              style={{ width: simW * zoom, height: simH * zoom }}
             >
               <iframe
                 ref={iframeRef}
@@ -1122,8 +1156,8 @@ export default function App() {
                 srcDoc={srcdoc}
                 sandbox="allow-scripts allow-same-origin allow-popups"
                 style={{
-                  width: simW ? simW : '100%',
-                  height: simH ? simH : '100%',
+                  width: simW,
+                  height: simH,
                   border: 'none',
                   background: '#fff',
                   transform: `scale(${zoom})`,
@@ -1132,109 +1166,99 @@ export default function App() {
               />
             </div>
           ) : (
-            <div
-              style={{
-                height: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                color: '#6b7280',
-                fontSize: 15,
-                padding: 24,
-                textAlign: 'center',
-              }}
-            >
-              点击左上角「选择文件夹」，选中包含 HTML 及其图片/视频的整个文件夹开始编辑。
-              <br />
-              <br />
-              若之前编辑过且未清除草稿，刷新后会自动从本机恢复。
+            <div className="zt-canvas-free">
+              <iframe
+                ref={iframeRef}
+                title="canvas"
+                srcDoc={srcdoc}
+                sandbox="allow-scripts allow-same-origin allow-popups"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  border: 'none',
+                  background: '#fff',
+                  transform: `scale(${zoom})`,
+                  transformOrigin: 'top left',
+                }}
+              />
             </div>
           )}
         </div>
 
         {!playMode && (
-        <div
-          className="zt-side"
-          style={{
-            width: 270,
-            background: '#fff',
-            borderLeft: '1px solid #e5e7eb',
-            display: 'flex',
-            flexDirection: 'column',
-            minHeight: 0,
-          }}
-        >
-          <div style={{ display: 'flex', borderBottom: '1px solid #e5e7eb' }}>
-            {[
-              ['prop', '属性'],
-              ['assets', '素材'],
-              ['layers', '图层'],
-              ['info', '信息'],
-            ].map(([k, label]) => (
-              <button
-                key={k}
-                onClick={() => setTab(k)}
-                style={{
-                  flex: 1,
-                  padding: '10px 0',
-                  border: 'none',
-                  background: tab === k ? '#C41E24' : '#f3f4f6',
-                  color: tab === k ? '#fff' : '#374151',
-                  cursor: 'pointer',
-                  fontSize: 13,
-                  fontWeight: 600,
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+          <aside className="zt-side">
+            <div className="zt-tabs" role="tablist">
+              {[
+                ['prop', '属性', SlidersHorizontal],
+                ['assets', '素材', Images],
+                ['layers', '图层', Stack],
+                ['info', '信息', Info],
+              ].map(([k, label, Ic]) => (
+                <button
+                  key={k}
+                  className="zt-tab"
+                  role="tab"
+                  aria-selected={tab === k}
+                  onClick={() => setTab(k)}
+                  style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 5 }}
+                >
+                  <Ic size={13} />
+                  {label}
+                </button>
+              ))}
+            </div>
 
-          <div style={{ padding: 14, overflow: 'auto', flex: 1 }}>
-            {tab === 'prop' && (
-              <PropPanel selected={selected} send={send} selCount={selCount} aspectLock={aspectLock} setAspectLock={setAspectLock} />
-            )}
+            <div className="zt-panel">
+              {tab === 'prop' && (
+                <PropPanel selected={selected} send={send} selCount={selCount} aspectLock={aspectLock} setAspectLock={setAspectLock} />
+              )}
 
-            {selected && tab === 'info' && (
-              <div style={{ fontSize: 13, lineHeight: 1.9 }}>
-                <p style={{ margin: '0 0 8px', color: '#C41E24', fontWeight: 600 }}>
-                  已选中 {selCount} 个元素
-                </p>
-                <Row k="标签" v={selected.tag} />
-                <Row k="class" v={selected.cls || '—'} />
-                <Row k="id" v={selected.id || '—'} />
-                <Row k="定位" v={selected.position || '—'} />
-                <Row k="transform" v={selected.transform || '—'} />
-                <Row k="宽" v={selected.width || '—'} />
-                <Row k="高" v={selected.height || '—'} />
-                <Row k="字号" v={selected.fontSize || '—'} />
-                <Row k="字重" v={selected.fontWeight || '—'} />
-                <Row k="文字色" v={selected.color || '—'} />
-                <Row k="背景色" v={selected.backgroundColor || '—'} />
-              </div>
-            )}
-            {tab === 'assets' && (
-              <AssetsPanel
-                assets={assets}
-                placingAsset={placingAsset}
-                onPlace={handlePlaceAsset}
-                onCancel={cancelPlacement}
-                onDragStart={handleDragStart}
-                onDragEnd={handleDragEnd}
-              />
-            )}
-            {tab === 'layers' && (
-              <LayersPanel
-                layers={layers}
-                current={current}
-                total={total}
-                send={send}
-                selectedSubIdx={selectedSubIdx}
-                onSelectSub={handleSelectSub}
-              />
-            )}
-          </div>
-        </div>
+              {tab === 'info' && (
+                <>
+                  {selected ? (
+                    <div>
+                      <div className="zt-section-title">
+                        <span>已选中 {selCount} 个元素</span>
+                      </div>
+                      <Row k="标签" v={selected.tag} />
+                      <Row k="class" v={selected.cls || '—'} />
+                      <Row k="id" v={selected.id || '—'} />
+                      <Row k="定位" v={selected.position || '—'} />
+                      <Row k="transform" v={selected.transform || '—'} />
+                      <Row k="宽" v={selected.width || '—'} />
+                      <Row k="高" v={selected.height || '—'} />
+                      <Row k="字号" v={selected.fontSize || '—'} />
+                      <Row k="字重" v={selected.fontWeight || '—'} />
+                      <Row k="文字色" v={selected.color || '—'} />
+                      <Row k="背景色" v={selected.backgroundColor || '—'} />
+                    </div>
+                  ) : (
+                    <div className="zt-hint">先在画布里选中一个元素，这里会显示它的实际计算样式。</div>
+                  )}
+                </>
+              )}
+              {tab === 'assets' && (
+                <AssetsPanel
+                  assets={assets}
+                  placingAsset={placingAsset}
+                  onPlace={handlePlaceAsset}
+                  onCancel={cancelPlacement}
+                  onDragStart={handleDragStart}
+                  onDragEnd={handleDragEnd}
+                />
+              )}
+              {tab === 'layers' && (
+                <LayersPanel
+                  layers={layers}
+                  current={current}
+                  total={total}
+                  send={send}
+                  selectedSubIdx={selectedSubIdx}
+                  onSelectSub={handleSelectSub}
+                />
+              )}
+            </div>
+          </aside>
         )}
       </div>
       {!playMode && (
@@ -1258,6 +1282,7 @@ export default function App() {
       )}
       <ContextMenu menu={ctxMenu} zoom={zoom} iframeRef={iframeRef} selCount={selCount} send={send} onClose={() => setCtxMenu(null)} clipCount={clipCount} />
     </div>
+    </IconContext.Provider>
   )
 }
 
@@ -1345,88 +1370,97 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
   const noSel = !selected
 
   return (
-    <div style={{ fontSize: 13 }}>
-      {noSel ? (
-        <p style={{ color: '#9ca3af', fontSize: 13, margin: '0 0 10px' }}>请先选中一个元素</p>
-      ) : (
-        <p style={{ color: '#C41E24', fontWeight: 600, margin: '0 0 10px' }}>
-          已选中 {selCount} 个元素
-        </p>
+    <div>
+      <div className="zt-section-title">
+        <span>{noSel ? '未选中元素' : `已选中 ${selCount} 个元素`}</span>
+      </div>
+
+      {noSel && (
+        <div className="zt-hint" style={{ marginBottom: 16 }}>
+          在画布里单击一个元素即可编辑它的尺寸、颜色和文字。
+        </div>
       )}
 
-      <div style={{ opacity: noSel ? 0.5 : 1, pointerEvents: noSel ? 'none' : 'auto' }}>
-      {/* 宽高一行 */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div style={{ opacity: noSel ? 0.45 : 1, pointerEvents: noSel ? 'none' : 'auto' }}>
+      {/* 尺寸 */}
+      <div className="zt-row2">
         <Field label="宽度" grow>
-          <input style={inp} value={width} onChange={(e) => { setWidth(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setHeight(String(Math.round(parseFloat(e.target.value) / r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="200" />
+          <input className="zt-input" value={width} onChange={(e) => { setWidth(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setHeight(String(Math.round(parseFloat(e.target.value) / r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="200" />
         </Field>
         <Field label="高度" grow>
-          <input style={inp} value={height} onChange={(e) => { setHeight(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setWidth(String(Math.round(parseFloat(e.target.value) * r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="100" />
+          <input className="zt-input" value={height} onChange={(e) => { setHeight(e.target.value); if (aspectLock && e.target.value) { const r = getAspectRatio(selected); if (r) setWidth(String(Math.round(parseFloat(e.target.value) * r))); } }} onBlur={apply} onKeyDown={enterApply} placeholder="100" />
         </Field>
       </div>
 
-      {/* 锁定纵横比 */}
-      <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#374151', marginBottom: 8 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 7, cursor: 'pointer', fontSize: 12.5, color: 'var(--text-2)', marginBottom: 14 }}>
         <input type="checkbox" checked={aspectLock} onChange={(e) => setAspectLock(e.target.checked)} />
         锁定纵横比
       </label>
 
-      {/* 三个颜色选框，各占一行 */}
-      <Field label="文字颜色">
-        <input type="color" style={{ ...inp, padding: 2 }} value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
-      </Field>
-      <Field label="背景颜色">
-        <input type="color" style={{ ...inp, padding: 2 }} value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
-      </Field>
+      <div className="zt-section-hr" />
+
+      {/* 颜色 */}
+      <div className="zt-row2">
+        <Field label="文字颜色" grow>
+          <input type="color" className="zt-input zt-input--color" value={color || '#000000'} onChange={(e) => { setColor(e.target.value); apply({ color: e.target.value }) }} />
+        </Field>
+        <Field label="背景颜色" grow>
+          <input type="color" className="zt-input zt-input--color" value={bg || '#000000'} onChange={(e) => { setBg(e.target.value); apply({ bg: e.target.value }) }} />
+        </Field>
+      </div>
       <Field label="边框颜色">
-        <input type="color" style={{ ...inp, padding: 2 }} value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
+        <input type="color" className="zt-input zt-input--color" value={borderColor || '#000000'} onChange={(e) => { setBorderColor(e.target.value); apply({ borderColor: e.target.value }) }} />
       </Field>
 
-      {/* 边框宽度/样式一行 */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="zt-section-hr" />
+
+      {/* 描边 */}
+      <div className="zt-row2">
         <Field label="边框宽度" grow>
-          <select style={inp} value={borderWidth} onChange={(e) => { const v = e.target.value; setBorderWidth(v); apply({ borderWidth: v }) }}>
+          <select className="zt-input" value={borderWidth} onChange={(e) => { const v = e.target.value; setBorderWidth(v); apply({ borderWidth: v }) }}>
             {BORDER_WIDTHS.map((v) => <option key={v} value={v}>{v}px</option>)}
           </select>
         </Field>
         <Field label="边框样式" grow>
-          <select style={inp} value={borderStyle} onChange={(e) => { const v = e.target.value; setBorderStyle(v); apply({ borderStyle: v }) }}>
+          <select className="zt-input" value={borderStyle} onChange={(e) => { const v = e.target.value; setBorderStyle(v); apply({ borderStyle: v }) }}>
             {BORDER_STYLES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </Field>
       </div>
 
-      {/* 圆角/阴影一行 */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      {/* 圆角 / 阴影 */}
+      <div className="zt-row2">
         <Field label="圆角" grow>
-          <select style={inp} value={borderRadius} onChange={(e) => { const v = e.target.value; setBorderRadius(v); apply({ borderRadius: v }) }}>
+          <select className="zt-input" value={borderRadius} onChange={(e) => { const v = e.target.value; setBorderRadius(v); apply({ borderRadius: v }) }}>
             {RADIUS_VALUES.map((v) => <option key={v} value={v}>{v}px</option>)}
           </select>
         </Field>
         <Field label="阴影" grow>
-          <select style={inp} value={boxShadow} onChange={(e) => { const v = e.target.value; setBoxShadow(v); apply({ boxShadow: v }) }}>
+          <select className="zt-input" value={boxShadow} onChange={(e) => { const v = e.target.value; setBoxShadow(v); apply({ boxShadow: v }) }}>
             {SHADOW_PRESETS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </Field>
       </div>
 
+      <div className="zt-section-hr" />
+
+      {/* 字体 */}
       <Field label="字体">
-        <select style={inp} value={font} onChange={(e) => { const v = e.target.value; setFont(v); apply({ font: v }) }}>
+        <select className="zt-input" value={font} onChange={(e) => { const v = e.target.value; setFont(v); apply({ font: v }) }}>
           {FONTS.map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
       </Field>
 
-      {/* 字号/字重一行 */}
-      <div style={{ display: 'flex', gap: 8 }}>
+      <div className="zt-row2">
         <Field label="字号" grow>
-          <select style={inp} value={size} onChange={(e) => { const v = e.target.value; setSize(v); apply({ size: v }) }}>
+          <select className="zt-input" value={size} onChange={(e) => { const v = e.target.value; setSize(v); apply({ size: v }) }}>
             {FONT_SIZES.map((v) => <option key={v} value={v}>{v ? v + 'px' : '（不修改）'}</option>)}
           </select>
         </Field>
         <Field label="字重" grow>
-          <select style={inp} value={weight} onChange={(e) => { const v = e.target.value; setWeight(v); apply({ weight: v }) }}>
+          <select className="zt-input" value={weight} onChange={(e) => { const v = e.target.value; setWeight(v); apply({ weight: v }) }}>
             {WEIGHTS.map(([v, l]) => (
               <option key={v} value={v}>{l}</option>
             ))}
@@ -1434,23 +1468,26 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
         </Field>
       </div>
 
-      <div style={{ marginTop: 8, marginBottom: 4, color: '#6b7280' }}>文本内容（双击画布也可直接改）</div>
-      <textarea
-        style={{ ...inp, height: 60, padding: '8px 10px', resize: 'vertical' }}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => send({ type: 'setText', text })}
-        onKeyDown={(e) => {
-          // 多行文本：Ctrl+Enter 提交，普通 Enter 换行
-          if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-            e.preventDefault()
-            send({ type: 'setText', text })
-          }
-        }}
-      />
+      <div className="zt-section-hr" />
+
+      <Field label="文本内容（双击画布也可直接改）">
+        <textarea
+          className="zt-input zt-textarea"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onBlur={() => send({ type: 'setText', text })}
+          onKeyDown={(e) => {
+            // 多行文本：Ctrl+Enter 提交，普通 Enter 换行
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault()
+              send({ type: 'setText', text })
+            }
+          }}
+        />
+      </Field>
 
         {selected && selected.tag === 'IMG' && (
-          <div style={{ marginTop: 10 }}>
+          <div style={{ marginTop: 4 }}>
             <input
               ref={replaceInputRef}
               type="file"
@@ -1467,34 +1504,41 @@ function PropPanel({ selected, send, selCount, aspectLock, setAspectLock }) {
               }}
             />
             <button
+              className="zt-btn zt-btn--light"
               onClick={() => replaceInputRef.current?.click()}
-              style={{ ...btn('#4b5563'), width: '100%', fontSize: 12 }}
+              style={{ width: '100%' }}
             >
+              <ImageIcon size={14} />
               替换图片
             </button>
           </div>
         )}
       <button
+        className="zt-btn zt-btn--light"
         onClick={() => send({ type: 'delete' })}
-        style={{ ...btn('#7f1d1d'), width: '100%', marginTop: 12 }}
+        style={{ width: '100%', marginTop: 10, color: 'var(--accent)' }}
+        title="删除选中（Delete）"
       >
-        删除选中元素（Delete）
+        <Trash size={14} />
+        删除选中元素
       </button>
+      </div>
 
-      <p style={{ color: '#9ca3af', fontSize: 12, marginTop: 12, lineHeight: 1.6 }}>
-        拖动即平移（保留旋转/缩放）；Ctrl+Z 撤销、Ctrl+Shift+Z 重做。
+      <div className="zt-section-hr" />
+
+      <p style={{ color: 'var(--text-3)', fontSize: 11.5, margin: 0, lineHeight: 1.75 }}>
+        拖动即平移（保留旋转 / 缩放）；Ctrl+Z 撤销、Ctrl+Shift+Z 重做。
         <br />
         复制 Ctrl+C / 粘贴 Ctrl+V（可跨页）。
       </p>
-      </div>
     </div>
   )
 }
 
 function Field({ label, children, grow }) {
   return (
-    <div style={{ marginBottom: 8, flex: grow ? 1 : undefined, minWidth: 0 }}>
-      <div style={{ color: '#6b7280', marginBottom: 3 }}>{label}</div>
+    <div className="zt-field" style={grow ? { flex: 1 } : undefined}>
+      <span className="zt-field-label">{label}</span>
       {children}
     </div>
   )
@@ -1502,9 +1546,9 @@ function Field({ label, children, grow }) {
 
 function Row({ k, v }) {
   return (
-    <div style={{ display: 'flex', gap: 8 }}>
-      <span style={{ color: '#9ca3af', minWidth: 52 }}>{k}</span>
-      <span style={{ wordBreak: 'break-all' }}>{v}</span>
+    <div className="zt-kv">
+      <span className="zt-kv-k">{k}</span>
+      <span className="zt-kv-v">{v}</span>
     </div>
   )
 }
@@ -1540,77 +1584,37 @@ function StepperInput({ value, onChange, step = 1, min, max, width = 90, placeho
   }
 
   return (
-    <div style={{
-      display: 'flex',
-      alignItems: 'stretch',
-      background: dark ? '#1f2937' : '#ffffff',
-      borderRadius: 6,
-      boxShadow: dark ? 'none' : '0 2px 6px rgba(0,0,0,0.10)',
-      border: dark ? '1px solid #4b5563' : 'none',
-      overflow: 'hidden',
-      width,
-      height: 26,
-      opacity: disabled ? 0.5 : 1,
-      ...style,
-    }}>
+    <div
+      className="zt-stepper"
+      data-dark={dark ? 'true' : 'false'}
+      style={{ width, height: 26, opacity: disabled ? 0.5 : 1, ...style }}
+    >
       <input
         type="text"
+        className="zt-stepper-input"
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
         disabled={disabled}
         placeholder={placeholder}
-        style={{
-          border: 'none',
-          outline: 'none',
-          padding: '1px 4px 1px 9px',
-          fontSize: 12,
-          fontWeight: 600,
-          flex: 1,
-          minWidth: 0,
-          color: dark ? '#e5e7eb' : '#1f2937',
-          background: 'transparent',
-          textAlign: 'left',
-        }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', flexShrink: 0, width: 26, alignSelf: 'stretch' }}>
+      <div className="zt-stepper-btns">
         <button
+          className="zt-stepper-btn"
           onClick={() => adjust(step)}
           disabled={disabled}
-          style={{
-            border: 'none',
-            background: '#C41E24',
-            flex: 1,
-            minHeight: 0,
-            cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 13,
-            fontWeight: 700,
-            lineHeight: 1,
-            color: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >+</button>
+          title="增加"
+        >
+          +
+        </button>
         <button
+          className="zt-stepper-btn"
           onClick={() => adjust(-step)}
           disabled={disabled}
-          style={{
-            border: 'none',
-            borderTop: '1px solid rgba(255,255,255,0.25)',
-            background: '#b01a20',
-            flex: 1,
-            minHeight: 0,
-            cursor: disabled ? 'not-allowed' : 'pointer',
-            fontSize: 13,
-            fontWeight: 700,
-            lineHeight: 1,
-            color: '#fff',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >−</button>
+          title="减少"
+        >
+          −
+        </button>
       </div>
     </div>
   )
@@ -1650,19 +1654,19 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
       }}
       style={{
         minHeight: 120,
-        background: dragOver ? '#fef3c7' : 'transparent',
-        border: dragOver ? '2px dashed #C41E24' : 'none',
-        borderRadius: 6,
+        borderRadius: 'var(--r-md)',
         padding: dragOver ? 12 : 0,
-        transition: 'all .15s',
+        background: dragOver ? 'var(--accent-soft)' : 'transparent',
+        outline: dragOver ? '2px dashed var(--accent)' : 'none',
+        transition: 'background var(--dur) var(--ease)',
       }}
     >
-      <p style={{ color: '#C41E24', fontWeight: 600, fontSize: 13, margin: '0 0 8px' }}>
-        素材库（{localAssets.length} 个）
-      </p>
+      <div className="zt-section-title">
+        <span>素材库</span>
+        <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>{localAssets.length} 个</span>
+      </div>
 
-      {/* 上传按钮 */}
-      <div style={{ marginBottom: 10 }}>
+      <div style={{ marginBottom: 14 }}>
         <input
           ref={fileInputRef}
           type="file"
@@ -1675,29 +1679,31 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
           }}
         />
         <button
+          className="zt-btn zt-btn--light"
           onClick={() => fileInputRef.current?.click()}
-          style={{ ...btn('#4b5563'), width: '100%', fontSize: 12 }}
+          style={{ width: '100%' }}
         >
-          + 上传图片/视频
+          <UploadSimple2 size={14} />
+          上传图片 / 视频
         </button>
-        <p style={{ fontSize: 11, color: '#9ca3af', margin: '4px 0 0' }}>
-          或拖拽文件到此处，也可直接拖入画布
+        <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '8px 0 0' }}>
+          或把文件拖到这里，也可以直接拖进画布
         </p>
       </div>
 
       {localAssets.length === 0 && (
-        <p style={{ color: '#9ca3af', fontSize: 13, lineHeight: 1.7 }}>
-          选择文件夹后，其中的图片/视频会自动显示。
-        </p>
+        <div className="zt-hint">选择文件夹后，其中的图片和视频会出现在这里。</div>
       )}
 
       {localAssets.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <div className="zt-assets">
           {localAssets.map((a, i) => {
             const isPlacing = placingAsset && placingAsset.url === a.url && placingAsset.name === a.name
             return (
             <div
               key={i}
+              className="zt-asset"
+              data-placing={isPlacing ? 'true' : 'false'}
               draggable={!placingAsset}
               onDragStart={(e) => {
                 e.dataTransfer.setData('text/plain', JSON.stringify({ url: a.url, type: a.type }))
@@ -1706,27 +1712,13 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
               onDragEnd={() => onDragEnd()}
               onClick={() => onPlace(a)}
               title={'拖入画布或点击放置: ' + a.name}
-              style={{
-                border: isPlacing ? '2px solid #C41E24' : '1px solid #d1d5db',
-                borderRadius: 6,
-                overflow: 'hidden',
-                cursor: placingAsset ? 'default' : 'grab',
-                background: isPlacing ? '#fff5f5' : '#f9fafb',
-                boxShadow: isPlacing ? '0 0 0 2px rgba(196,30,36,.12)' : 'none',
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                userSelect: 'none',
-              }}
             >
               {a.type === 'video' ? (
-                <video src={a.url} style={{ width: '100%', height: 80, objectFit: 'cover' }} />
+                <video src={a.url} className="zt-asset-media" />
               ) : (
-                <img src={a.url} style={{ width: '100%', height: 80, objectFit: 'cover' }} />
+                <img src={a.url} className="zt-asset-media" alt={a.name} />
               )}
-              <span style={{ fontSize: 11, color: '#6b7280', padding: '3px 4px', wordBreak: 'break-all', lineHeight: 1.3 }}>
-                {a.name}
-              </span>
+              <span className="zt-asset-name">{a.name}</span>
             </div>
             )
           })}
@@ -1734,18 +1726,25 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
       )}
 
       {placingAsset && (
-        <div style={{ marginTop: 12, padding: 10, background: '#fef3c7', borderRadius: 6, fontSize: 13, color: '#92400e' }}>
-          📌 正在放置：<b>{placingAsset.name}</b>
-          <br />
-          点击画布中要放置的位置，或按 <b>Esc</b> 取消。
-          <br />
-          <button onClick={onCancel} style={{ marginTop: 6, ...btn('#6b7280') }}>取消放置</button>
+        <div className="zt-hint zt-hint--warn" style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, marginBottom: 4 }}>
+            <PushPin size={13} />
+            正在放置：{placingAsset.name}
+          </div>
+          点击画布中要放置的位置，或按 Esc 取消。
+          <button
+            className="zt-btn zt-btn--light"
+            onClick={onCancel}
+            style={{ marginTop: 10 }}
+          >
+            取消放置
+          </button>
         </div>
       )}
 
       {dragOver && (
-        <div style={{ textAlign: 'center', color: '#C41E24', fontSize: 13, padding: 20 }}>
-          📁 释放文件以上传
+        <div style={{ textAlign: 'center', color: 'var(--accent)', fontSize: 13, padding: 20, fontWeight: 600 }}>
+          释放文件以上传
         </div>
       )}
     </div>
@@ -1793,13 +1792,14 @@ function LayersPanel({ layers, current, total, send, selectedSubIdx, onSelectSub
 
   return (
     <div>
-      <p style={{ fontSize: 12, color: '#6b7280', margin: '0 0 8px' }}>
-        当前页 {current + 1}/{total}  ·  {layers.length} 个元素
-      </p>
+      <div className="zt-section-title">
+        <span>第 {current + 1} / {total} 页</span>
+        <span style={{ color: 'var(--text-3)', fontWeight: 400 }}>{layers.length} 个元素</span>
+      </div>
       {layers.length === 0 && (
-        <p style={{ color: '#9ca3af', fontSize: 13 }}>当前页没有可编辑元素</p>
+        <div className="zt-hint">当前页没有可编辑元素。</div>
       )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
         {layers.map(function(layer, i) {
           const isOver = overIdx === i && dragIdx !== i
           const isSubtitle = layer.role === 'subtitle'
@@ -1810,12 +1810,17 @@ function LayersPanel({ layers, current, total, send, selectedSubIdx, onSelectSub
             <div key={i}>
               {/* 字幕分隔线：在第一个字幕上方 */}
               {i === firstSubIdx && firstSubIdx >= 0 && (
-                <div style={{ fontSize: 11, color: '#16a34a', fontWeight: 600, padding: '4px 6px', marginTop: 6, marginBottom: 2, borderBottom: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', gap: 6 }}>
-                  📝 字幕
-                  <span style={{ fontWeight: 400, color: '#9ca3af' }}>（单击选中底栏 · 双击编辑文字）</span>
+                <div className="zt-layer-divider">
+                  <TextT size={12} />
+                  字幕
+                  <span>（单击选中底栏 · 双击编辑文字）</span>
                 </div>
               )}
               <div
+                className="zt-layer"
+                data-kind={isSubtitle ? 'subtitle' : 'element'}
+                data-selected={isSubSelected ? 'true' : 'false'}
+                data-over={isOver ? 'true' : 'false'}
                 draggable
                 onDragStart={(e) => handleDragStart(e, i)}
                 onDragOver={(e) => handleDragOver(e, i)}
@@ -1836,41 +1841,32 @@ function LayersPanel({ layers, current, total, send, selectedSubIdx, onSelectSub
                     send({ type: 'startTextEdit', index: i })
                   }
                 }}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 6,
-                  padding: '5px 6px',
-                  borderRadius: 4,
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  background: isOver ? '#fef3c7' : (isSubSelected ? '#dcfce7' : (isSubtitle ? '#f0fdf4' : '#f9fafb')),
-                  border: isOver ? '2px dashed #C41E24' : (isSubSelected ? '1.5px solid #16a34a' : (isSubtitle ? '1px solid #bbf7d0' : '1px solid #e5e7eb')),
-                  opacity: dragIdx === i ? 0.5 : 1,
-                  transition: 'all .12s',
-                }}
-                title={layer.tag + (layer.text ? ' — ' + layer.text : '')}
+                style={{ opacity: dragIdx === i ? 0.5 : 1 }}
+                title={layer.tag + (layer.text ? ' - ' + layer.text : '')}
               >
-                <span style={{ color: '#9ca3af', fontSize: 11, minWidth: 20 }}>{i + 1}</span>
-                <span style={{ fontSize: 14, flexShrink: 0 }}>
-                  {isSubtitle ? '📝' : layer.tag === 'img' ? '🖼' : layer.tag === 'video' ? '🎬' : layer.tag === 'svg' ? '🔷' : '📄'}
-                </span>
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: '#374151' }}>
-                  {layer.text || '<' + layer.tag + '>'}
-                </span>
-                {isSubtitle && <span style={{ fontSize: 10, color: '#16a34a', background: '#dcfce7', padding: '0 4px', borderRadius: 3, flexShrink: 0 }}>字幕</span>}
-                {isGlobal && <span style={{ fontSize: 10, color: '#7c3aed', background: '#ede9fe', padding: '0 4px', borderRadius: 3, flexShrink: 0 }}>全局</span>}
+                <span className="zt-layer-idx">{i + 1}</span>
+                <span className="zt-layer-name">{layer.text || '<' + layer.tag + '>'}</span>
+                {isSubtitle && <span className="zt-chip zt-chip--subtitle">字幕</span>}
+                {isGlobal && <span className="zt-chip zt-chip--global">全局</span>}
                 <span
+                  className="zt-layer-act"
+                  data-on={layer.locked ? 'true' : 'false'}
                   onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerLock', index: i }) }}
-                  style={{ fontSize: 11, cursor: 'pointer', color: layer.locked ? '#ef4444' : '#d1d5db', opacity: layer.locked ? 1 : 0.4 }}
                   title={layer.locked ? '点击解锁' : '点击锁定'}
-                >🔒</span>
+                >
+                  {layer.locked ? <LockSimple size={13} /> : <LockSimpleOpen size={13} />}
+                </span>
                 <span
+                  className="zt-layer-act"
+                  data-on={layer.hidden ? 'true' : 'false'}
                   onClick={(e) => { e.stopPropagation(); send({ type: 'toggleLayerVisibility', index: i }) }}
-                  style={{ fontSize: 11, cursor: 'pointer', color: layer.hidden ? '#9ca3af' : '#d1d5db', opacity: layer.hidden ? 1 : 0.4 }}
                   title={layer.hidden ? '点击显示' : '点击隐藏'}
-                >{layer.hidden ? '👁️‍🗨️' : '👁️'}</span>
-                <span style={{ fontSize: 11, color: '#d1d5db', cursor: 'grab' }}>⠿</span>
+                >
+                  {layer.hidden ? <EyeSlash size={13} /> : <Eye size={13} />}
+                </span>
+                <span className="zt-layer-grip" title="拖动调整层级">
+                  <DotsSixVertical size={13} />
+                </span>
               </div>
             </div>
           )
@@ -1934,36 +1930,25 @@ function AnimPanel({ selected, send, inline }) {
   // 底栏 inline 样式：所有控件都在同一行，动画选择框用原生下拉菜单
   if (inline) {
     return (
-      <div style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        flexWrap: 'wrap',
-        fontSize: 12,
-        background: '#111827',
-        border: '1px solid #374151',
-        borderRadius: 6,
-        padding: '4px 10px',
-      }}>
-        <span style={{ color: '#fbbf24', fontWeight: 700 }}>动画</span>
+      <div className="zt-anim">
+        <span className="zt-anim-label">
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <MonitorPlay size={13} />
+            动画
+          </span>
+        </span>
         <select
+          className="zt-anim-select"
           value={effect}
           onChange={(e) => { setEffect(e.target.value); applyAnimAndPreview({ animEffect: e.target.value }) }}
-          style={{
-            background: '#1f2937',
-            color: '#fff',
-            border: '1px solid #4b5563',
-            borderRadius: 4,
-            padding: '4px 8px',
-            fontSize: 12,
-          }}
+          title="选中元素的入场效果"
         >
           {ANIM_EFFECTS.map(([v, l]) => (
             <option key={v} value={v}>{l}</option>
           ))}
         </select>
 
-        <span style={{ color: '#9ca3af' }}>时长</span>
+        <span className="zt-anim-key">时长</span>
         <StepperInput
           value={duration || '0'}
           onChange={(v) => nudge('duration', parseFloat(v) - (parseFloat(duration) || 0))}
@@ -1973,7 +1958,7 @@ function AnimPanel({ selected, send, inline }) {
           dark
         />
 
-        <span style={{ color: '#9ca3af' }}>延迟</span>
+        <span className="zt-anim-key">延迟</span>
         <StepperInput
           value={delay || '0'}
           onChange={(v) => nudge('delay', parseFloat(v) - (parseFloat(delay) || 0))}
@@ -1983,7 +1968,7 @@ function AnimPanel({ selected, send, inline }) {
           dark
         />
 
-        <span style={{ color: '#9ca3af' }}>恢复</span>
+        <span className="zt-anim-key">恢复</span>
         <StepperInput
           value={returnSec || '0'}
           onChange={(v) => nudge('return', parseFloat(v) - (parseFloat(returnSec) || 0))}
@@ -1993,40 +1978,16 @@ function AnimPanel({ selected, send, inline }) {
           dark
         />
 
-        <button onClick={clearAnim} style={timelineBtn('#7f1d1d')}>清除动画</button>
+        <button className="zt-btn zt-btn--chrome zt-btn--sm" onClick={clearAnim} title="清除该元素上的动画">
+          <X size={12} />
+          清除
+        </button>
       </div>
     )
   }
 
   return null
 }
-const inp = {
-  width: '100%',
-  boxSizing: 'border-box',
-  height: 30,
-  padding: '0 10px',
-  border: '1px solid #e5e7eb',
-  borderRadius: 10,
-  boxShadow: '0 2px 6px rgba(0,0,0,0.10)',
-  fontSize: 13,
-  fontFamily: 'inherit',
-  background: '#fff',
-  color: '#1f2937',
-  outline: 'none',
-}
-
-function btn(bg) {
-  return {
-    background: bg,
-    color: '#fff',
-    border: 'none',
-    padding: '7px 14px',
-    borderRadius: 6,
-    cursor: 'pointer',
-    fontSize: 13,
-  }
-}
-
 function stripPx(v) {
   if (!v) return ''
   return v.replace(/px$/i, '')
@@ -2125,64 +2086,67 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
   const canUnbind = (selectedSub && selectedSub.boundTo && selectedSub.source === 'dom') || !!selected
 
   return (
-    <div
-      style={{
-        background: '#1f2937',
-        borderTop: '1px solid #374151',
-        padding: '8px 14px',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 6,
-        userSelect: 'none',
-      }}
-    >
-      {/* 绑定操作按钮（页面导航已移至上方页面预览 tab 条） */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+    <div className="zt-timeline">
+      {/* 绑定操作（页面导航在顶部第二行） */}
+      <div className="zt-tl-actions">
         {!subBindingMode ? (
           <>
             <button
               onClick={function () { onPrevPage('prev') }}
               disabled={selectedSubIdx < 0}
-              style={timelineBtn(selectedSubIdx >= 0 ? '#4b5563' : '#374151')}
+              className="zt-btn zt-btn--chrome zt-btn--sm"
               title="字幕移动到上一页"
             >
-              ⬆ 字幕到上一页
+              <ArrowUp size={12} />
+              上移一页
             </button>
             <button
               onClick={function () { onNextPage('next') }}
               disabled={selectedSubIdx < 0}
-              style={timelineBtn(selectedSubIdx >= 0 ? '#4b5563' : '#374151')}
+              className="zt-btn zt-btn--chrome zt-btn--sm"
               title="字幕移动到下一页"
             >
-              字幕到下一页 ⬇
+              <ArrowDown size={12} />
+              下移一页
             </button>
             <button
               onClick={onBind}
               disabled={selectedSubIdx < 0 || isGlobal}
-              style={timelineBtn(selectedSubIdx >= 0 && !isGlobal ? '#C41E24' : '#374151')}
+              className={selectedSubIdx >= 0 && !isGlobal ? 'zt-btn zt-btn--primary zt-btn--sm' : 'zt-btn zt-btn--chrome zt-btn--sm'}
               title={isGlobal ? '全局字幕不支持绑定' : '字幕绑定到画面元素'}
             >
-              🔗 绑定
+              <LinkSimple size={12} />
+              绑定
             </button>
-              <button
-                onClick={onUnbind}
-                disabled={!canUnbind}
-                style={timelineBtn(canUnbind ? '#7f1d1d' : '#374151')}
-                title="解除当前字幕与元素的绑定关系"
-              >
-                ⛓ 解除绑定
-              </button>
+            <button
+              onClick={onUnbind}
+              disabled={!canUnbind}
+              className="zt-btn zt-btn--chrome zt-btn--sm"
+              title="解除当前字幕与元素的绑定关系"
+            >
+              <LinkSimpleBreak size={12} />
+              解除绑定
+            </button>
           </>
         ) : (
           <>
-            <span style={{ fontSize: 12, color: '#fbbf24' }}>
-              点击画布中的元素以绑定{bindingTarget ? '（已选: ' + (bindingTarget.tag || '') + ' - ' + (bindingTarget.text || '') + '）' : ''}
+            <span style={{ fontSize: 12, color: 'var(--state-global-dark)' }}>
+              点击画布中的元素以绑定{bindingTarget ? '（已选：' + (bindingTarget.tag || '') + ' - ' + (bindingTarget.text || '') + '）' : ''}
             </span>
-            <button onClick={onConfirm} disabled={!bindingTarget} style={timelineBtn(bindingTarget ? '#0F6E56' : '#374151')}>
-              ✅ 确认
+            <button
+              onClick={onConfirm}
+              disabled={!bindingTarget}
+              className={bindingTarget ? 'zt-btn zt-btn--strong zt-btn--sm' : 'zt-btn zt-btn--chrome zt-btn--sm'}
+            >
+              <Check size={12} />
+              确认
             </button>
-            <button onClick={onCancelBind} style={timelineBtn('#7f1d1d')}>
-              ✕ 取消
+            <button
+              onClick={onCancelBind}
+              className="zt-btn zt-btn--chrome zt-btn--sm"
+            >
+              <X size={12} />
+              取消
             </button>
           </>
         )}
@@ -2192,22 +2156,11 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
       </div>
 
       {/* 时间轴条 */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 24 }}>0s</span>
-        <div
-          style={{
-            flex: 1,
-            height: 32,
-            background: '#111827',
-            borderRadius: 4,
-            position: 'relative',
-            overflow: 'hidden',
-            display: 'flex',
-            alignItems: 'center',
-          }}
-        >
+      <div className="zt-tl-track-wrap">
+        <span className="zt-tl-time">0s</span>
+        <div className="zt-tl-track">
           {subtitles.length === 0 && (
-            <span style={{ fontSize: 11, color: '#4b5563', paddingLeft: 8 }}>
+            <span className="zt-tl-empty">
               当前页没有字幕（需 data-zt-role="subtitle" 元素，或页面脚本中的 subtitles/slideTimings 数组）
             </span>
           )}
@@ -2217,33 +2170,16 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
             if (width < 3) width = 3
             var isSelected = i === selectedSubIdx
             var isBound = sub.boundTo && sub.boundTo.length > 0
+            var tone = isBound ? 'bound' : (sub.source === 'global' ? 'global' : 'plain')
             return (
               <div
                 key={i}
+                className="zt-tl-block"
+                data-tone={tone}
+                data-selected={isSelected ? 'true' : 'false'}
+                style={{ left: left + '%', width: width + '%' }}
                 onClick={function () { onSelectSub(isSelected ? -1 : i) }}
                 onDoubleClick={function () { onSelectSub(i); send({ type: 'startTextEditOnSubtitle', subIdx: i }) }}
-                style={{
-                  position: 'absolute',
-                  left: left + '%',
-                  width: width + '%',
-                  height: isSelected ? 28 : 22,
-                  background: isSelected ? '#C41E24' : (isBound ? '#0F6E56' : (sub.source === 'global' ? '#b45309' : '#4b5563')),
-                  borderRadius: 3,
-                  cursor: 'pointer',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: 10,
-                  color: '#fff',
-                  overflow: 'hidden',
-                  whiteSpace: 'nowrap',
-                  textOverflow: 'ellipsis',
-                  padding: '0 4px',
-                  boxSizing: 'border-box',
-                  border: isSelected ? '1.5px solid #fff' : 'none',
-                  transition: 'height .1s',
-                  zIndex: isSelected ? 2 : 1,
-                }}
                 title={sub.text + (isBound ? ' (已绑定)' : '')}
               >
                 {sub.text}
@@ -2251,24 +2187,10 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
             )
           })}
         </div>
-        <span style={{ fontSize: 11, color: '#9ca3af', minWidth: 24 }}>{maxTime}s</span>
+        <span className="zt-tl-time">{maxTime}s</span>
       </div>
-
     </div>
   )
-}
-
-function timelineBtn(bg) {
-  return {
-    background: bg,
-    color: '#fff',
-    border: 'none',
-    padding: '5px 10px',
-    borderRadius: 4,
-    cursor: 'pointer',
-    fontSize: 12,
-    whiteSpace: 'nowrap',
-  }
 }
 
 // 画布右键上下文菜单
@@ -2347,8 +2269,11 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose, clipCount
     setSub('align')
   }
 
-  const item = (label, action, disabled, danger, idx) => (
-    <div
+  const item = (label, action, disabled, danger, idx, icon) => (
+    <button
+      type="button"
+      className="zt-menu-item"
+      disabled={disabled}
       onClick={() => {
         if (disabled) return
         action()
@@ -2356,45 +2281,24 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose, clipCount
         setSub(null)
       }}
       onMouseEnter={() => { setHoverIdx(idx); setSub(null) }}
-      style={{
-        padding: '7px 12px',
-        fontSize: 13,
-        color: disabled ? '#c0c4cc' : danger ? '#C41E24' : '#1f2937',
-        cursor: disabled ? 'default' : 'pointer',
-        whiteSpace: 'nowrap',
-        background: hoverIdx === idx && !disabled ? 'rgba(196,30,36,.10)' : 'transparent',
-        borderLeft: hoverIdx === idx && !disabled ? '3px solid #C41E24' : '3px solid transparent',
-      }}
+      style={danger && !disabled ? { color: 'var(--accent)' } : undefined}
     >
+      {icon ? <span style={{ color: 'var(--text-3)', display: 'inline-flex' }}>{icon}</span> : null}
       {label}
-    </div>
+      {danger ? <span className="zt-menu-kbd">Del</span> : null}
+    </button>
   )
 
-  const sep = () => <div style={{ height: 1, background: '#e5e7eb', margin: '4px 0' }} />
+  const sep = () => <div className="zt-menu-sep" />
 
   const run = (action) => { send({ type: action }) }
 
   return (
-    <div
-      ref={ref}
-      style={{
-        position: 'fixed',
-        left,
-        top,
-        width: menuW,
-        background: '#fff',
-        border: '1px solid #d1d5db',
-        borderRadius: 8,
-        boxShadow: '0 6px 20px rgba(0,0,0,.15)',
-        zIndex: 2147483600,
-        padding: '4px 0',
-        fontFamily: 'inherit',
-      }}
-    >
-      {item('复制', () => run('copy'), !editable, false, 0)}
-      {item('剪切', () => run('cut'), !editable, false, 1)}
-      {item('粘贴', () => send({ type: 'paste', x: menu.x, y: menu.y }), clipCount<=0, false, 2)}
-      {item('删除', () => run('delete'), !editable, true, 200)}
+    <div ref={ref} className="zt-menu" style={{ left, top, width: menuW }}>
+      {item('复制', () => run('copy'), !editable, false, 0, <Copy size={13} />)}
+      {item('剪切', () => run('cut'), !editable, false, 1, <Scissors size={13} />)}
+      {item('粘贴', () => send({ type: 'paste', x: menu.x, y: menu.y }), clipCount<=0, false, 2, <ClipboardText size={13} />)}
+      {item('删除', () => run('delete'), !editable, true, 200, <Trash size={13} />)}
       {sep()}
       {item('置顶', () => send({ type: 'layer', mode: 'top' }), !editable, false, 3)}
       {item('上移', () => send({ type: 'layer', mode: 'up' }), !editable, false, 4)}
@@ -2403,7 +2307,8 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose, clipCount
       {sep()}
       {item('组合', () => run('group'), !editable || selCount < 2, false, 7)}
       {item('取消组合', () => run('ungroup'), !editable, false, 8)}
-      {item(menu.anyLocked ? '解锁' : '锁定', () => run('toggleLock'), !editable, false, 9)}
+      {item(menu.anyLocked ? '解锁' : '锁定', () => run('toggleLock'), !editable, false, 9,
+        menu.anyLocked ? <LockSimpleOpen size={13} /> : <LockSimple size={13} />)}
       {sep()}
       <div
         ref={alignRef}
@@ -2411,40 +2316,30 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose, clipCount
         onMouseEnter={openAlignSub}
         onMouseLeave={() => { setSub(null); setSubStyle(null) }}
       >
-        <div
-          style={{
-            padding: '7px 12px',
-            fontSize: 13,
-            color: selCount >= 2 ? '#1f2937' : '#c0c4cc',
-            cursor: selCount >= 2 ? 'pointer' : 'default',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-          }}
+        <button
+          type="button"
+          className="zt-menu-item"
+          disabled={selCount < 2}
+          style={{ justifyContent: 'space-between' }}
         >
           对齐
-          <span style={{ color: '#9ca3af' }}>{subStyle && subStyle.dir === 'left' ? '‹' : '›'}</span>
-        </div>
+          <span style={{ color: 'var(--text-3)', display: 'inline-flex' }}>
+            {subStyle && subStyle.dir === 'left' ? <CaretLeft size={12} /> : <CaretRight size={12} />}
+          </span>
+        </button>
         {sub === 'align' && subStyle && (
           <div
             ref={subRef}
-            style={{
-              position: 'fixed',
-              left: subStyle.left,
-              top: subStyle.top,
-              width: menuW,
-              background: '#fff',
-              border: '1px solid #d1d5db',
-              borderRadius: 8,
-              boxShadow: '0 6px 20px rgba(0,0,0,.15)',
-              zIndex: 2147483601,
-              padding: '4px 0',
-            }}
+            className="zt-menu"
+            style={{ left: subStyle.left, top: subStyle.top, width: menuW, zIndex: 2147483601 }}
             onMouseLeave={() => { setSub(null); setSubStyle(null) }}
           >
+            <div className="zt-menu-label">对齐与分布</div>
             {ALIGNS.map(([mode, label], si) => (
-              <div
+              <button
+                type="button"
                 key={mode}
+                className="zt-menu-item"
                 onClick={() => {
                   send({ type: 'align', mode })
                   onClose()
@@ -2452,19 +2347,10 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose, clipCount
                   setSubStyle(null)
                 }}
                 onMouseEnter={() => setHoverIdx(100 + si)}
-                style={{
-                  padding: '7px 12px',
-                  fontSize: 13,
-                  color: '#1f2937',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  background: hoverIdx === 100 + si ? 'rgba(196,30,36,.10)' : 'transparent',
-                  borderLeft: hoverIdx === 100 + si ? '3px solid #C41E24' : '3px solid transparent',
-                  boxSizing: 'border-box',
-                }}
               >
                 {label}
-              </div>
+                <span className="zt-menu-kbd">{mode}</span>
+              </button>
             ))}
           </div>
         )}
