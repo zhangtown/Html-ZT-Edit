@@ -101,11 +101,39 @@ function obsConfigRoot() {
   return path.join(os.homedir(), 'AppData/Roaming/obs-studio')
 }
 
-// 色阶范围（ColorRange）：不强制，跟随 OBS profile 配置。
-// 历史：ae02cc3 曾强制 Partial/tv——当时 PotPlayer DXVA 硬解不尊重 color_range=pc，会把 Full 素材按 tv 解码 → 过曝发白。
-// 2026-09 链路变化：PotPlayer 关闭 DXVA（软件解码尊重 VUI）+ 剪映实测 Full 直通正常 → 强制 Partial 反而覆盖用户手动选的 Full。
-// 现在改由用户/OBS 决定（OBS 全新默认即 Partial，未改设置的用户开箱行为不变）；本函数已移除，勿加回。
-// 注意：ColorRange 只能在 OBS 启动前改 INI 才生效（运行时改无效，无 ResetVideo）。
+// 色阶范围（ColorRange）：录屏链路强制 Full(0-255)——浏览器源本身就是 Full，Full 直通保真度最高（多 37 级灰阶）。
+// 历史：ae02cc3 曾强制 Partial/tv（当时 PotPlayer DXVA 硬解不尊重 color_range=pc，会把 Full 素材按 tv 解码 → 过曝发白）。
+// 2026-09 定案 Full：PotPlayer 关闭 DXVA（软件解码尊重 VUI）后 Full 正常；剪映实测 Full 直通也正常。
+// 注意：ColorRange 只能在 OBS 启动前改 INI 才生效（运行时改无效，无 ResetVideo），故在 OBS 未运行时遍历所有 profile 改写。
+function ensureColorRangeFullInIni() {
+  try {
+    const root = obsConfigRoot()
+    const profiles = path.join(root, 'basic', 'profiles')
+    if (!fs.existsSync(profiles)) return { ok: true, note: 'no profiles dir' }
+    let changed = 0
+    for (const dir of fs.readdirSync(profiles)) {
+      const ini = path.join(profiles, dir, 'basic.ini')
+      if (!fs.existsSync(ini)) continue
+      let t = fs.readFileSync(ini, 'utf8')
+      // 只改 [Video] 段里的 ColorRange=Partial → Full（行级匹配，避免误伤注释/其它段）
+      let modified = false
+      const lines = t.split(/\r?\n/)
+      let inVideo = false
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]
+        if (/^\s*\[/.test(line)) inVideo = /^\s*\[Video\]/.test(line)
+        if (inVideo && /^\s*ColorRange\s*=/.test(line)) {
+          const v = line.split('=')[1].trim()
+          if (v.toLowerCase() !== 'full') { lines[i] = line.replace(/=.*/, '=Full'); modified = true }
+        }
+      }
+      if (modified) { fs.writeFileSync(ini, lines.join('\n'), 'utf8'); changed++ }
+    }
+    return changed ? { ok: true, note: 'wrote ColorRange=Full to ' + changed + ' profile(s)' } : { ok: true, note: 'already Full' }
+  } catch (e) {
+    return { ok: false, error: '改 OBS 色阶 INI 失败：' + ((e && e.message) || e) }
+  }
+}
 
 // 录制编码器质量兜底：OBS 把「录制编码器」的真实参数（rate_control/crf/cqp/bitrate）存在
 // profile 目录的 recordEncoder.json（注意：basic.ini 的 [AdvOut] 只有 RecEncoder=obs_x264 这种「用哪个编码器」，
@@ -423,7 +451,8 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000, forceEncoder
   if (!ex.ok) return ex
 
   if (!isObsRunning()) {
-    // OBS 未运行才改 INI（运行时改无效）。色阶 ColorRange 不在此处理——跟随用户 OBS 配置（见上方注释）。
+    // OBS 未运行才改 INI（运行时改无效）：先写色阶 Full，OBS 一起动即读到（见 ensureColorRangeFullInIni 注释）。
+    try { const r = ensureColorRangeFullInIni(); if (r && r.note) console.log('[obsRecorder] 色阶：', r.note) } catch (e) {}
     // 确保 obs-websocket 服务启用（默认关闭 → 连不上）：在 OBS 启动前写好，OBS 一起动即开启
     try { const r = ensureObsWebsocketEnabled(); if (r && r.note) console.log('[obsRecorder] WebSocket：', r.note) } catch (e) {}
     // 选定录制硬件编码器（NVENC/AMF/QSV，回退 x264）：自检修复重拉时用 forceEncoder 强制指定已确认可用的 ID。
