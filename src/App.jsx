@@ -4,6 +4,8 @@ import {
   ArrowClockwise,
   ArrowCounterClockwise,
   ArrowDown,
+  ArrowLineDown,
+  ArrowLineUp,
   ArrowUp,
   ArrowUUpLeft,
   CaretLeft,
@@ -20,16 +22,20 @@ import {
   Image as ImageIcon,
   Images,
   Info,
+  Intersect,
   LinkSimple,
   LinkSimpleBreak,
   LockSimple,
   LockSimpleOpen,
+  Minus,
   MonitorPlay,
   Play,
+  Plus,
   PushPin,
   Record,
   Scissors,
   SlidersHorizontal,
+  SquareSplitHorizontal,
   Stack,
   Stop,
   TextT,
@@ -390,6 +396,14 @@ export default function App() {
     setGridOn(next)
     send({ type: 'toggleGrid', on: next, size: 20 })
   }
+
+  // 顶栏缩放步进器：与 Ctrl+滚轮同一档位语义（≥50% 走 10%，以下走 5%，clamp 20%~150%）
+  const stepZoom = (dir) =>
+    setZoom((z) => {
+      const pct = Math.round(z * 100)
+      const coarse = dir > 0 ? pct >= 50 : pct > 50
+      return +(Math.min(150, Math.max(20, pct + dir * (coarse ? 10 : 5))) / 100).toFixed(2)
+    })
 
   // 从原始脚本中取出 HTML 自带的原生播放器（含 startPlayback / slideTimings）
   function getNativePlayerScript() {
@@ -951,18 +965,40 @@ export default function App() {
                 setSimRes(e.target.value)
                 setZoom(1)
               }}
-              style={{ maxWidth: 132 }}
-              title="模拟浏览器分辨率，查看元素与屏幕的占比"
+              style={{ maxWidth: 150 }}
+              title={
+                simRes === 'current'
+                  ? `当前屏幕：CSS ${cssResW}×${cssResH} · 物理 ${physicalResW}×${physicalResH}（模拟浏览器分辨率，查看元素与屏幕的占比）`
+                  : '模拟浏览器分辨率，查看元素与屏幕的占比'
+              }
             >
               {RESOLUTIONS.map(([v, l]) => (
                 <option key={v} value={v}>
-                  {v === 'current' ? `当前屏幕 (CSS ${cssResW}×${cssResH} / 物理 ${physicalResW}×${physicalResH})` : l}
+                  {v === 'current' ? `当前屏幕 (${cssResW}×${cssResH})` : l}
                 </option>
               ))}
             </select>
           </span>
-          <span className="zt-bar-field" style={{ padding: '0 6px' }}>
-            缩放 {Math.round(zoom * 100)}%
+          <span className="zt-zoom" title="画布缩放（Ctrl+滚轮也可缩放）">
+            <button
+              className="zt-zoom-btn"
+              onClick={() => stepZoom(-1)}
+              disabled={Math.round(zoom * 100) <= 20}
+              title="缩小"
+            >
+              <Minus size={12} />
+            </button>
+            <button className="zt-zoom-val" onClick={() => setZoom(1)} title="点击复位 100%">
+              {Math.round(zoom * 100)}%
+            </button>
+            <button
+              className="zt-zoom-btn"
+              onClick={() => stepZoom(1)}
+              disabled={Math.round(zoom * 100) >= 150}
+              title="放大"
+            >
+              <Plus size={12} />
+            </button>
           </span>
         </div>
 
@@ -1012,35 +1048,38 @@ export default function App() {
 
         <div className="zt-subbar-notes">
           {playMode && (
-            <span className="zt-bar-note" style={{ color: 'var(--state-global-dark)', fontWeight: 600 }}>
+            <span className="zt-note" data-tone="busy" style={{ fontWeight: 600 }}>
               <MonitorPlay size={12} /> 播放中 · 第 {playCurrent + 1}/{total} 页（Esc 停止）
             </span>
           )}
           {obsRec.recording && (
-            <span className="zt-bar-note zt-bar-note-err" style={{ fontWeight: 600 }}>
+            <span className="zt-note" data-tone="rec" style={{ fontWeight: 600 }}>
               <Record size={11} /> 录制中
             </span>
           )}
           {saveErr && (
-            <span className="zt-bar-note zt-bar-note-err" title={saveErr}>
+            <span className="zt-note" data-tone="err" title={saveErr}>
               <Warning size={12} /> 草稿保存失败
             </span>
           )}
           {exportMsg && (
             <span
-              className={'zt-bar-note ' + (exportMsg.indexOf('已导出') === 0 ? 'zt-bar-note-ok' : 'zt-bar-note-err')}
+              className="zt-note"
+              data-tone={exportMsg.indexOf('已导出') === 0 ? undefined : 'err'}
               title={exportMsg}
             >
+              {exportMsg.indexOf('已导出') === 0 ? <Check size={12} /> : <Warning size={12} />}
               {exportMsg}
             </span>
           )}
           {obsRec.msg && (
-            <span className="zt-bar-note" title={obsRec.msg}>
+            <span className="zt-note" title={obsRec.msg}>
               {obsRec.msg}
             </span>
           )}
           {obsRec.filePath && (
-            <span className="zt-bar-note zt-bar-note-ok" title={obsRec.filePath}>
+            <span className="zt-note" title={obsRec.filePath}>
+              <Check size={12} />
               {obsRec.filePath.split(/[\\/]/).pop()}
             </span>
           )}
@@ -2136,7 +2175,7 @@ function TimelinePanel({ subtitles, selectedSubIdx, onSelectSub, subBindingMode,
             <button
               onClick={onConfirm}
               disabled={!bindingTarget}
-              className={bindingTarget ? 'zt-btn zt-btn--strong zt-btn--sm' : 'zt-btn zt-btn--chrome zt-btn--sm'}
+              className={bindingTarget ? 'zt-btn zt-btn--primary zt-btn--sm' : 'zt-btn zt-btn--chrome zt-btn--sm'}
             >
               <Check size={12} />
               确认
@@ -2300,13 +2339,13 @@ function ContextMenu({ menu, zoom, iframeRef, selCount, send, onClose, clipCount
       {item('粘贴', () => send({ type: 'paste', x: menu.x, y: menu.y }), clipCount<=0, false, 2, <ClipboardText size={13} />)}
       {item('删除', () => run('delete'), !editable, true, 200, <Trash size={13} />)}
       {sep()}
-      {item('置顶', () => send({ type: 'layer', mode: 'top' }), !editable, false, 3)}
-      {item('上移', () => send({ type: 'layer', mode: 'up' }), !editable, false, 4)}
-      {item('下移', () => send({ type: 'layer', mode: 'down' }), !editable, false, 5)}
-      {item('置底', () => send({ type: 'layer', mode: 'bottom' }), !editable, false, 6)}
+      {item('置顶', () => send({ type: 'layer', mode: 'top' }), !editable, false, 3, <ArrowLineUp size={13} />)}
+      {item('上移', () => send({ type: 'layer', mode: 'up' }), !editable, false, 4, <ArrowUp size={13} />)}
+      {item('下移', () => send({ type: 'layer', mode: 'down' }), !editable, false, 5, <ArrowDown size={13} />)}
+      {item('置底', () => send({ type: 'layer', mode: 'bottom' }), !editable, false, 6, <ArrowLineDown size={13} />)}
       {sep()}
-      {item('组合', () => run('group'), !editable || selCount < 2, false, 7)}
-      {item('取消组合', () => run('ungroup'), !editable, false, 8)}
+      {item('组合', () => run('group'), !editable || selCount < 2, false, 7, <Intersect size={13} />)}
+      {item('取消组合', () => run('ungroup'), !editable, false, 8, <SquareSplitHorizontal size={13} />)}
       {item(menu.anyLocked ? '解锁' : '锁定', () => run('toggleLock'), !editable, false, 9,
         menu.anyLocked ? <LockSimpleOpen size={13} /> : <LockSimple size={13} />)}
       {sep()}

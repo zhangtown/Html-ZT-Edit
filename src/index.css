@@ -79,6 +79,9 @@
   --state-global-line: #f3ddb5;
   --state-global-dark: #fbbf24;
 
+  /* 状态文字约定（subbar 徽标 .zt-note）：成功=中性白+✓（Check），错误=accent-dark+⚠（Warning），
+     进行中=amber（--state-global-dark），录制中=品牌红 Record 图标。不使用绿/粉红。 */
+
   /* ---- 圆角 ---- */
   --r-xs: 4px;
   --r-sm: 6px;
@@ -203,7 +206,7 @@ textarea {
   height: var(--bar-h);
   padding: 0 12px;
   border-bottom: 1px solid var(--chrome-border);
-  background: linear-gradient(180deg, #232327, var(--chrome));
+  background: var(--chrome);
   overflow-x: auto;
   overflow-y: hidden;
   scrollbar-width: none;
@@ -277,6 +280,12 @@ textarea {
   letter-spacing: 0.04em;
   line-height: 1.15;
 }
+/* 窄窗口时副标题让位给工具组 */
+@media (max-width: 1180px) {
+  .zt-brand-sub {
+    display: none;
+  }
+}
 
 /* 分组容器：把相关操作收成一坨，而不是散成一排 */
 .zt-group {
@@ -285,7 +294,7 @@ textarea {
   gap: 2px;
   padding: 2px;
   border-radius: var(--r-md);
-  background: rgba(255, 255, 255, 0.045);
+  background: rgba(255, 255, 255, 0.035);
   border: 1px solid var(--chrome-border);
 }
 
@@ -365,20 +374,93 @@ textarea {
   cursor: not-allowed;
 }
 
-/* 状态文本 */
-.zt-bar-note {
+/* 缩放步进器：− / 百分比（点击复位）/ ＋，深色 chrome 语境 */
+.zt-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 2px;
+  border-radius: var(--r-sm);
+  background: rgba(0, 0, 0, 0.28);
+  border: 1px solid var(--chrome-border);
+}
+.zt-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--chrome-text-2);
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+}
+.zt-zoom-btn:hover:not(:disabled) {
+  color: var(--chrome-text);
+  background: rgba(255, 255, 255, 0.07);
+}
+.zt-zoom-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+.zt-zoom-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.zt-zoom-val {
+  min-width: 44px;
+  height: 20px;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--chrome-text);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  border-radius: var(--r-xs);
+  cursor: pointer;
+  transition: background var(--dur) var(--ease);
+}
+.zt-zoom-val:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* 状态徽标（subbar）：统一胶囊容器，data-tone 编码语气
+   （成功=默认+Check 图标，err=错误，busy=进行中 amber，rec=录制中品牌红） */
+.zt-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border: 1px solid var(--chrome-border);
+  border-radius: var(--r-pill);
+  background: rgba(255, 255, 255, 0.04);
   font-size: 11.5px;
-  color: var(--chrome-text-3);
+  color: var(--chrome-text-2);
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 320px;
+  max-width: 280px;
+  flex-shrink: 0;
 }
-.zt-bar-note-ok {
-  color: #86efac;
+.zt-note > svg {
+  flex-shrink: 0;
 }
-.zt-bar-note-err {
-  color: #fca5a5;
+.zt-note[data-tone="err"] {
+  color: var(--accent-dark);
+  border-color: rgba(217, 58, 64, 0.35);
+}
+.zt-note[data-tone="busy"] {
+  color: var(--state-global-dark);
+  border-color: rgba(251, 191, 36, 0.3);
+}
+.zt-note[data-tone="rec"] {
+  color: var(--accent-dark);
+  border-color: rgba(217, 58, 64, 0.35);
 }
 
 /* 隐私徽标：安静地待在右上角，不抢主色 */
@@ -540,17 +622,17 @@ textarea {
   background: #fff;
 }
 
-/* 深底：危险（录制中 / 停止）。刻意做成"亮底深字"，避免和品牌红撞色 */
+/* 深底：危险（录制中 / 停止）。红系全部取自品牌红令牌的透明度变体，不另立裸 hex */
 .zt-btn--danger {
-  background: rgba(248, 113, 113, 0.14);
-  border-color: rgba(248, 113, 113, 0.32);
-  color: #fca5a5;
+  background: rgba(217, 58, 64, 0.14);
+  border-color: rgba(217, 58, 64, 0.32);
+  color: var(--accent-dark);
   font-weight: 600;
 }
 .zt-btn--danger:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.22);
-  color: #fecaca;
-  border-color: rgba(248, 113, 113, 0.5);
+  background: rgba(217, 58, 64, 0.22);
+  color: var(--accent-dark-hover);
+  border-color: rgba(217, 58, 64, 0.5);
 }
 
 /* 亮底：默认 */
@@ -637,9 +719,9 @@ textarea {
   height: 44px;
   margin: 0 auto 16px;
   border-radius: var(--r-md);
-  background: var(--accent-soft);
-  border: 1px solid rgba(196, 30, 36, 0.14);
-  color: var(--accent);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  color: var(--text-3);
   display: flex;
   align-items: center;
   justify-content: center;
