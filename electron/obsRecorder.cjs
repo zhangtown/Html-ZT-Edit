@@ -576,17 +576,15 @@ async function ensureScene(name) {
 
 // 建/更新「OBS 原生浏览器源」：HTML 直接交给 OBS 内置 CEF 渲染，无需临时窗口/文件管理。
 // 浏览器源自带音轨（VIDEO_KINDS/AUDIO_KINDS 都已含 browser_source），所以不补桌面音频。
-// 视口尺寸由我们显式设（width/height）。默认源=画布 1:1 最锐利；px适配时源=设计档位、
-// scale=画布/源，页面按设计视口排版（与编辑预览完全一致），场景变换整幅等比放大铺满画布。
+// 分辨率由我们显式设（width/height），OBS 画布对齐到它即可 1:1 最锐利。
 //
 // 注意输入「全局存在、按场景引用」：cleanEnvironment 删场景后，输入 zt-html 仍全局存在，
 // 此时 GetSceneItemId 会找不到（已不在场景里）→ 用 CreateSceneItem 把它加回新场景，
 // 不能再用 CreateInput（同名输入已存在会报错）。只有输入从未建过才走 CreateInput。
-async function ensureBrowserSource(sceneName, url, width, height, scale) {
+async function ensureBrowserSource(sceneName, url, width, height) {
   const o = getObs()
   const w = width || 1920
   const h = height || 1080
-  const sc = Math.min(8, Math.max(0.05, +scale || 1))
   const settings = {
     url: url,
     width: w,
@@ -615,33 +613,33 @@ async function ensureBrowserSource(sceneName, url, width, height, scale) {
       inputSettings: settings,
       setVisible: true,
     })
-  } else {
-    // 输入已存在：确保它在本场景里（删场景后可能已不在）
-    let inScene = false
-    try {
-      const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
-      inScene = si && si.sceneItemId != null
-    } catch (e) { inScene = false }
-    if (!inScene) {
-      try {
-        await o.call('CreateSceneItem', { sceneName, sourceName: BROWSER_SOURCE, setVisible: true })
-      } catch (e) { /* 已存在则忽略 */ }
-    }
-    // 仅在设置真正变化时才回写 SetInputSettings——该调用会让 OBS 重载浏览器源，
-    // 重载会重新触发页面 load → 引擎 startPlayback 再播一次（配合「场景激活时刷新」就可能播两遍）。
-    // url 没变就跳过，避免一次录制里出现两次播放。
-    let changed = false
-    try {
-      const cur = await o.call('GetInputSettings', { inputName: BROWSER_SOURCE })
-      const cs = (cur && cur.inputSettings) || {}
-      if (cs.url !== settings.url || cs.width !== settings.width || cs.height !== settings.height || cs.control_audio_via_os !== true) changed = true
-    } catch (e) { changed = true }
-    if (changed) await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
+    return true
   }
-  // 场景项变换归位——两条路径都必须执行：px适配时 scale=画布/源视口（≠1）。
-  // 此前 CreateInput 分支提前 return 跳过了归位，而 stop 后 OBS 被强杀不落盘场景集合，
-  // 下次起录 zt-html 输入必然不存在 → 每次都走 CreateInput → 源以设计视口原尺寸
-  // 缩在画布一角（v2 首录 15-46-13.mp4 复现）。源视口=画布时 sc=1，等同原 1:1 复位语义。
+
+  // 输入已存在：确保它在本场景里（删场景后可能已不在）
+  let inScene = false
+  try {
+    const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
+    inScene = si && si.sceneItemId != null
+  } catch (e) { inScene = false }
+  if (!inScene) {
+    try {
+      await o.call('CreateSceneItem', { sceneName, sourceName: BROWSER_SOURCE, setVisible: true })
+    } catch (e) { /* 已存在则忽略 */ }
+  }
+  // 仅在设置真正变化时才回写 SetInputSettings——该调用会让 OBS 重载浏览器源，
+  // 重载会重新触发页面 load → 引擎 startPlayback 再播一次（配合「场景激活时刷新」就可能播两遍）。
+  // url 没变就跳过，避免一次录制里出现两次播放。
+  let changed = false
+  try {
+    const cur = await o.call('GetInputSettings', { inputName: BROWSER_SOURCE })
+    const cs = (cur && cur.inputSettings) || {}
+    if (cs.url !== settings.url || cs.width !== settings.width || cs.height !== settings.height || cs.control_audio_via_os !== true) changed = true
+  } catch (e) { changed = true }
+  if (changed) await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
+  // 强制 1:1 铺满画布：复用的旧源可能带着上次（或用户在 OBS 里手工拖动/缩放）留下的 transform。
+  // 只要 scale≠1 或没对齐左上角，画面就会被缩放或裁切 —— 表现为"发糊""内容少一截"。
+  // 源尺寸已等于画布，这里把变换复位即可保证像素级 1:1。
   try {
     const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
     if (si && si.sceneItemId != null) {
@@ -649,12 +647,12 @@ async function ensureBrowserSource(sceneName, url, width, height, scale) {
         sceneName,
         sceneItemId: si.sceneItemId,
         sceneItemTransform: {
-          positionX: 0, positionY: 0, scaleX: sc, scaleY: sc,
+          positionX: 0, positionY: 0, scaleX: 1, scaleY: 1,
           boundsType: 'OBS_BOUNDS_NONE', alignment: 5,
         },
       })
     }
-  } catch (e) { /* 读不到/设不动就算了，下次起录还会再归位 */ }
+  } catch (e) { /* 读不到/设不动就算了，源本身已是 1:1 */ }
   return true
 }
 
@@ -932,23 +930,13 @@ async function start(opts) {
       if (!a.browserUrl) return { ok: false, error: '浏览器源模式缺少 HTML 地址（browserUrl）。' }
       const bw = parseInt(a.width, 10) || 1920
       const bh = parseInt(a.height, 10) || 1080
-      // 先定画布、再建源：画布=录制档位（maxW 兜底缩小）。
+      // 先定画布、再建源：源尺寸必须等于画布才能 1:1 最锐利。
+      // 顺序反了的话，一旦画布被 maxW 缩小，源会比画布大 → 画面被裁掉一圈
+      //（表现为"内容少一截/边缘被切"），而且缩放下采样会让细文字发糊。
       let w = even(bw), h = even(bh)
       if (w > maxW) { h = even(Math.round((h * maxW) / w)); w = even(maxW) }
       if (w && h) fit = await fitVideo(w, h)
-      // px适配（a.sourceWidth/Height = 编辑画布尺寸，即页面设计档位）：
-      // 浏览器源视口按设计档位建 → 页面排版与编辑预览完全一致（vw/%/px 全部对齐），
-      // 场景变换按 min(画布宽/源宽, 画布高/源高) 等比放大铺满画布（contain，设计稿整幅入画）。
-      // 不传 sourceWidth/Height 时源=画布 1:1（自适应页面档位自身就会铺满，无需放大）。
-      let srcW = w, srcH = h, scale = 1
-      const dW = parseInt(a.sourceWidth, 10)
-      const dH = parseInt(a.sourceHeight, 10)
-      if (dW > 0 && dH > 0) {
-        srcW = even(dW)
-        srcH = even(dH)
-        scale = Math.min(w / srcW, h / srcH)
-      }
-      await ensureBrowserSource(SCENE_NAME, a.browserUrl, srcW, srcH, scale)
+      await ensureBrowserSource(SCENE_NAME, a.browserUrl, w, h)
       // 录制画质兜底（只升不降）：1080p 下码率过低/CRF 过高会明显发糊。
       // 参数形状随编码器走：AMF 只认 CQP/cqp（见 ensureRecordEncoderJson）
       const qnotes = await ensureRecordQuality({ width: w, height: h, encoderId: lastEncoderId })

@@ -8,7 +8,6 @@ import {
   ArrowLineUp,
   ArrowUp,
   ArrowUUpLeft,
-  ArrowsOutSimple,
   CaretLeft,
   CaretRight,
   Check,
@@ -193,7 +192,6 @@ export default function App() {
   const [bindingTarget, setBindingTarget] = useState(null) // { selector, tag, text } | null
   const [simRes, setSimRes] = useState('') // 模拟分辨率，如 '1920x1080'；''=编辑器窗口大小
   const [recRes, setRecRes] = useState('3840x2160') // OBS 录制输出分辨率（1080P/2K/4K 档），与 simRes 无关，默认 4K
-  const [recFitPx, setRecFitPx] = useState(false) // 固定 px 页面适配：录制按 编辑画布(设计视口)→录制档位 等比 zoom；自适应页面勿开
   const [zoom, setZoom] = useState(1) // 画布缩放 0.2 ~ 1.5（下限 20%，2K 屏看 4K 页也能看全）
   const dragDataRef = useRef(null) // 拖拽中的素材信息
   const [ctxMenu, setCtxMenu] = useState(null) // 右键菜单 { x, y, editable, count, locked, group, anyLocked } | null
@@ -470,29 +468,14 @@ export default function App() {
       return
     }
     const [rw, rh] = recRes.split('x').map(Number)
-    // px适配：OBS 浏览器源视口按编辑画布（页面设计档位）建，排版与预览完全一致，
-    // 由 OBS 场景变换等比放大到录制档位。clientWidth 不受 transform 缩放影响，量的是布局尺寸。
-    // （v1 曾往录屏源.html 注入 html{zoom}，vw/% 与 px 混排的页面会因两套单位错位而画面凌乱，已弃。）
-    const startArgs = {
+    const r = await window.ztRecSession.startOBS({
       outdir,
       html: finalHtml,
       captureMode: OBS_CAPTURE_MODE,
       interactDelaySec: obsInteractDelay,
-      width: rw, // 录制输出分辨率：OBS 画布按此建（main.cjs 已支持 a.width/height 透传）
+      width: rw, // 录制输出分辨率：OBS 画布与浏览器源按此建（main.cjs 已支持 a.width/height 透传）
       height: rh,
-    }
-    let fitNote = ''
-    if (recFitPx && iframeRef.current) {
-      const dw = iframeRef.current.clientWidth
-      const dh = iframeRef.current.clientHeight
-      const s = Math.min(rw / dw, rh / dh)
-      if (dw > 0 && dh > 0 && Math.abs(s - 1) >= 0.01) {
-        startArgs.sourceWidth = dw
-        startArgs.sourceHeight = dh
-        fitNote = ` · px适配 ×${+s.toFixed(2)}`
-      }
-    }
-    const r = await window.ztRecSession.startOBS(startArgs)
+    })
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
       // 画布对齐是内部必做动作（档位用户自选，改画布即按档位建），不回显；
@@ -1151,7 +1134,7 @@ export default function App() {
             </div>
             <div
               className="zt-seg"
-              title="录制清晰度：OBS 按所选档位输出成片（自适应页面内容占比不变；固定 px 宽度的旧页面在低档位可能裁边，可开「px适配」）"
+              title="录制清晰度：OBS 按所选档位输出成片（自适应页面内容占比不变；固定 px 宽度的旧页面在低档位可能裁边）"
             >
               {REC_RES_OPTS.map(([v, label]) => (
                 <button
@@ -1166,16 +1149,6 @@ export default function App() {
                 </button>
               ))}
             </div>
-            <button
-              className="zt-btn zt-btn--chrome"
-              aria-pressed={recFitPx}
-              onClick={() => setRecFitPx((v) => !v)}
-              disabled={obsRec.recording}
-              title="固定 px 页面适配：录制时 OBS 浏览器源视口按编辑画布（设计档位）建立，页面版式与你现在预览的完全一致，再由场景等比放大到录制档位——vw/%/px 混排也不会乱。放大倍数大时成片文字略软。自适应页面无需开启。"
-            >
-              <ArrowsOutSimple size={13} />
-              px适配
-            </button>
             <button
               className={obsRec.recording ? 'zt-btn zt-btn--danger' : 'zt-btn zt-btn--strong'}
               onClick={obsRec.recording ? stopObsRec : startObsRec}
