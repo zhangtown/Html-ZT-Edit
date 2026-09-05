@@ -1683,7 +1683,7 @@ function AssetsPanel({ assets, placingAsset, onPlace, onCancel, onDragStart, onD
           onClick={() => fileInputRef.current?.click()}
           style={{ width: '100%' }}
         >
-          <UploadSimple2 size={14} />
+          <UploadSimple size={14} />
           上传图片 / 视频
         </button>
         <p style={{ fontSize: 11.5, color: 'var(--text-3)', margin: '8px 0 0' }}>
