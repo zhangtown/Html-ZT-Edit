@@ -615,33 +615,33 @@ async function ensureBrowserSource(sceneName, url, width, height, scale) {
       inputSettings: settings,
       setVisible: true,
     })
-    return true
-  }
-
-  // 输入已存在：确保它在本场景里（删场景后可能已不在）
-  let inScene = false
-  try {
-    const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
-    inScene = si && si.sceneItemId != null
-  } catch (e) { inScene = false }
-  if (!inScene) {
+  } else {
+    // 输入已存在：确保它在本场景里（删场景后可能已不在）
+    let inScene = false
     try {
-      await o.call('CreateSceneItem', { sceneName, sourceName: BROWSER_SOURCE, setVisible: true })
-    } catch (e) { /* 已存在则忽略 */ }
+      const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
+      inScene = si && si.sceneItemId != null
+    } catch (e) { inScene = false }
+    if (!inScene) {
+      try {
+        await o.call('CreateSceneItem', { sceneName, sourceName: BROWSER_SOURCE, setVisible: true })
+      } catch (e) { /* 已存在则忽略 */ }
+    }
+    // 仅在设置真正变化时才回写 SetInputSettings——该调用会让 OBS 重载浏览器源，
+    // 重载会重新触发页面 load → 引擎 startPlayback 再播一次（配合「场景激活时刷新」就可能播两遍）。
+    // url 没变就跳过，避免一次录制里出现两次播放。
+    let changed = false
+    try {
+      const cur = await o.call('GetInputSettings', { inputName: BROWSER_SOURCE })
+      const cs = (cur && cur.inputSettings) || {}
+      if (cs.url !== settings.url || cs.width !== settings.width || cs.height !== settings.height || cs.control_audio_via_os !== true) changed = true
+    } catch (e) { changed = true }
+    if (changed) await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
   }
-  // 仅在设置真正变化时才回写 SetInputSettings——该调用会让 OBS 重载浏览器源，
-  // 重载会重新触发页面 load → 引擎 startPlayback 再播一次（配合「场景激活时刷新」就可能播两遍）。
-  // url 没变就跳过，避免一次录制里出现两次播放。
-  let changed = false
-  try {
-    const cur = await o.call('GetInputSettings', { inputName: BROWSER_SOURCE })
-    const cs = (cur && cur.inputSettings) || {}
-    if (cs.url !== settings.url || cs.width !== settings.width || cs.height !== settings.height || cs.control_audio_via_os !== true) changed = true
-  } catch (e) { changed = true }
-  if (changed) await o.call('SetInputSettings', { inputName: BROWSER_SOURCE, inputSettings: settings })
-  // 复位的变换：源视口=画布时 scale=1（像素级 1:1）；px适配时 scale=画布/源（整幅等比放大）。
-  // 复用旧源可能带着上次（或用户在 OBS 里手工拖动/缩放）留下的 transform，每次都强制归位，
-  // 否则表现为"发糊""内容少一截"。
+  // 场景项变换归位——两条路径都必须执行：px适配时 scale=画布/源视口（≠1）。
+  // 此前 CreateInput 分支提前 return 跳过了归位，而 stop 后 OBS 被强杀不落盘场景集合，
+  // 下次起录 zt-html 输入必然不存在 → 每次都走 CreateInput → 源以设计视口原尺寸
+  // 缩在画布一角（v2 首录 15-46-13.mp4 复现）。源视口=画布时 sc=1，等同原 1:1 复位语义。
   try {
     const si = await o.call('GetSceneItemId', { sceneName, sourceName: BROWSER_SOURCE })
     if (si && si.sceneItemId != null) {
@@ -654,7 +654,7 @@ async function ensureBrowserSource(sceneName, url, width, height, scale) {
         },
       })
     }
-  } catch (e) { /* 读不到/设不动就算了，源本身已按视口设置 */ }
+  } catch (e) { /* 读不到/设不动就算了，下次起录还会再归位 */ }
   return true
 }
 
