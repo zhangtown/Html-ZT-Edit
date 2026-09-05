@@ -40,7 +40,10 @@ export async function loadDraft() {
     let settled = false
     const done = (fn, v) => () => { if (!settled) { settled = true; fn(v) } }
     const r = tx.objectStore(STORE).get(KEY)
-    tx.oncomplete = done(resolve, r.result || null)
+    // r.result 必须在请求自身的 onsuccess 里读：在 tx.oncomplete 挂载处写
+    // done(resolve, r.result || null) 会对尚未完成的请求同步读 result，
+    // 抛 InvalidStateError，草稿恢复从未生效（挂载处空 catch 吞掉）
+    r.onsuccess = () => { if (!settled) { settled = true; resolve(r.result || null) } }
     tx.onabort = done(reject, tx.error || new Error('草稿读取事务被中止'))
     tx.onerror = done(reject, tx.error || new Error('草稿读取失败'))
   })
