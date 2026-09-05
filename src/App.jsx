@@ -60,7 +60,6 @@ import {
   restoreAndWrap,
   stripEditorParts,
   injectAudioStartDelay,
-  injectRecordFitScale,
 } from './htmlProcess.js'
 import { saveDraft, loadDraft, clearDraft } from './draftStore.js'
 import { ANIM_EFFECTS, ANIM_ENGINE_PARTS, animEngineBootstrap } from './animEffects.js'
@@ -471,25 +470,29 @@ export default function App() {
       return
     }
     const [rw, rh] = recRes.split('x').map(Number)
-    // px适配：设计视口取编辑画布的布局尺寸（clientWidth 不受 transform 缩放影响，即「页面设计档位」）。
-    // 自适应页面档位自身就会铺满，此开关只该对固定 px 页面开（见 injectRecordFitScale 注释）。
-    let fitNote = ''
-    if (recFitPx && iframeRef.current) {
-      const dw = iframeRef.current.clientWidth
-      const dh = iframeRef.current.clientHeight
-      const scale = Math.min(rw / dw, rh / dh)
-      const fitted = injectRecordFitScale(finalHtml, rw, rh, dw, dh)
-      if (fitted !== finalHtml) fitNote = ` · px适配 ×${+scale.toFixed(2)}`
-      finalHtml = fitted
-    }
-    const r = await window.ztRecSession.startOBS({
+    // px适配：OBS 浏览器源视口按编辑画布（页面设计档位）建，排版与预览完全一致，
+    // 由 OBS 场景变换等比放大到录制档位。clientWidth 不受 transform 缩放影响，量的是布局尺寸。
+    // （v1 曾往录屏源.html 注入 html{zoom}，vw/% 与 px 混排的页面会因两套单位错位而画面凌乱，已弃。）
+    const startArgs = {
       outdir,
       html: finalHtml,
       captureMode: OBS_CAPTURE_MODE,
       interactDelaySec: obsInteractDelay,
-      width: rw, // 录制输出分辨率：OBS 画布与浏览器源按此建（main.cjs 已支持 a.width/height 透传）
+      width: rw, // 录制输出分辨率：OBS 画布按此建（main.cjs 已支持 a.width/height 透传）
       height: rh,
-    })
+    }
+    let fitNote = ''
+    if (recFitPx && iframeRef.current) {
+      const dw = iframeRef.current.clientWidth
+      const dh = iframeRef.current.clientHeight
+      const s = Math.min(rw / dw, rh / dh)
+      if (dw > 0 && dh > 0 && Math.abs(s - 1) >= 0.01) {
+        startArgs.sourceWidth = dw
+        startArgs.sourceHeight = dh
+        fitNote = ` · px适配 ×${+s.toFixed(2)}`
+      }
+    }
+    const r = await window.ztRecSession.startOBS(startArgs)
     if (r && r.ok) {
       const noAudio = r.audio && r.audio.indexOf('failed') === 0
       // 画布对齐是内部必做动作（档位用户自选，改画布即按档位建），不回显；
@@ -1168,7 +1171,7 @@ export default function App() {
               aria-pressed={recFitPx}
               onClick={() => setRecFitPx((v) => !v)}
               disabled={obsRec.recording}
-              title="固定 px 页面适配：页面用绝对 px 排版（非 vw/% 自适应）时开启，录制按 编辑画布→录制档位 等比放大铺满画面，避免 4K 成片里内容缩在角落。自适应页面请勿开启（会双重放大）。"
+              title="固定 px 页面适配：录制时 OBS 浏览器源视口按编辑画布（设计档位）建立，页面版式与你现在预览的完全一致，再由场景等比放大到录制档位——vw/%/px 混排也不会乱。放大倍数大时成片文字略软。自适应页面无需开启。"
             >
               <ArrowsOutSimple size={13} />
               px适配

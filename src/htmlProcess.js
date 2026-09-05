@@ -226,23 +226,6 @@ export function restoreAndWrap(iframeHtml, relMap, scripts, mapValue) {
   return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML
 }
 
-// 录制专用（只作用于 录屏源.html；导出/草稿不经过这里）：
-// 固定 px 页面等比适配录制档位。页面按小视口（如 1536×864）用绝对 px 排版时，
-// OBS 浏览器源按 4K 建 3840×2160 CSS 视口，内容原尺寸缩在左上角——成片里「图片显得很小」。
-// 注入 html{zoom:s}，s=min(录制宽/设计宽, 录制高/设计高)。CSS zoom 是布局级缩放，
-// 文字矢量重排，4K 下依旧锐利（区别于 OBS 场景 transform 的位图放大）。
-// 自适应（vw/%/rem）页面档位自身就会铺满，误开此开关会双重放大——入口有开关（recFitPx），默认关。
-export function injectRecordFitScale(html, recW, recH, designW, designH) {
-  if (!html || !(recW > 0) || !(recH > 0) || !(designW > 0) || !(designH > 0)) return html
-  const scale = Math.min(recW / designW, recH / designH)
-  // 量不出设计尺寸（异常 0/NaN）或与档位基本一致（差 <1%）：不注入，保持现状
-  if (!(scale > 0.01) || Math.abs(scale - 1) < 0.01) return html
-  const doc = new DOMParser().parseFromString(html, 'text/html')
-  const head = doc.head || doc.documentElement
-  head.insertAdjacentHTML('afterbegin', '<style id="zt-rec-fit">html{zoom:' + +scale.toFixed(4) + '}</style>')
-  return '<!DOCTYPE html>\n' + doc.documentElement.outerHTML
-}
-
 function generatePlaybackScript(scripts, iframeHtml) {
   // 从原脚本中提取 slideTimings
   let slideTimingsStr = ''
