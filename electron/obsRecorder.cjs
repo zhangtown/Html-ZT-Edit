@@ -64,6 +64,21 @@ const ENCODER_LABELS = {
 }
 const encoderLabel = (id) => ENCODER_LABELS[id] || (id ? '编码器 ' + id : '')
 
+// 编码器选择的跨会话记忆（同 OBS_EXE 的 setx 固化思路）：只记「编码器自检确认可用」的结果。
+// 若不记忆，ztEdit 重启后冷启动会重新探测，探测结果一旦与本机 OBS 实际清单有出入，
+// 就会触发「杀掉刚拉起的 OBS → 重启修复」循环（用户看到 OBS 关闭再重启）。
+function persistedEncoder() {
+  const id = process.env.OBS_REC_ENCODER
+  if (!id) return null
+  const vendor =
+    Object.keys(ENCODER_IDS_BY_VENDOR).find((v) => (ENCODER_IDS_BY_VENDOR[v] || []).indexOf(id) >= 0) || 'cpu'
+  return { id, vendor, name: encoderLabel(id) }
+}
+function persistObsEncoder(id) {
+  process.env.OBS_REC_ENCODER = id // 当前进程立即可读；setx 供下次启动的 ztEdit 读到
+  try { spawnSync('setx', ['OBS_REC_ENCODER', id], { windowsHide: true }) } catch (e) {}
+}
+
 let obs = null            // OBSWebSocket 实例（单例）
 let connected = false
 let lastOutputPath = ''   // 起录时 OBS 回传的准确输出路径（stop 时优先用它，比扫目录可靠）
@@ -457,8 +472,13 @@ async function ensureOBSRunning({ timeoutMs = 30000, pollMs = 1000, forceEncoder
     try { const r = ensureObsWebsocketEnabled(); if (r && r.note) console.log('[obsRecorder] WebSocket：', r.note) } catch (e) {}
     // 选定录制硬件编码器（NVENC/AMF/QSV，回退 x264）：自检修复重拉时用 forceEncoder 强制指定已确认可用的 ID。
     // RecEncoder 与编码器质控参数（recordEncoder.json）都必须在 OBS 启动前写好，OBS 一起动即读到。
+    // 优先复用上次自检确认可用的编码器（lastEncoderId）：若每次冷启动都重新探测，探测结果一旦与
+    // 本机 OBS 实际清单有出入，ensureRecEncoderWorks 会杀掉刚拉起的 OBS 重启修复——
+    // 而 stop 后 OBS 本就会被关闭，结果就是「每次录制 OBS 都关闭再重启一次」。
     try {
-      const enc = forceEncoder || await detectEncoderId()
+      const enc = forceEncoder || (lastEncoderId
+        ? { id: lastEncoderId, vendor: lastVendor, name: lastEncoder }
+        : (persistedEncoder() || await detectEncoderId()))
       lastEncoderId = enc.id
       lastVendor = enc.vendor
       lastEncoder = enc.name
@@ -848,7 +868,11 @@ async function ensureRecEncoderWorks() {
     // 只有「not found 的编码器 == 我们写的 RecEncoder」才需要修（避免误伤用户流编码器配置）
     const profileVals = recEncoderValuesInProfiles()
     const badOnes = parsed.missing.filter((id) => profileVals.indexOf(id) >= 0)
-    if (!badOnes.length) return { ok: true, note: '录制编码器在当前 OBS 可用' }
+    if (!badOnes.length) {
+      // 当前写的 RecEncoder 在本机 OBS 里确认可用 → 记住它，之后冷启动不再重新探测
+      if (lastEncoderId) persistObsEncoder(lastEncoderId)
+      return { ok: true, note: '录制编码器在当前 OBS 可用' }
+    }
     if (!parsed.ids.length) return { ok: true, note: '日志里没有编码器清单，交给 StartRecord 原样报错' }
     // 从真实清单里挑：本机显卡厂商的硬件编码器优先（按新旧 ID 序），其它厂商次之，x264 兑底
     let vendor = lastVendor
@@ -875,6 +899,7 @@ async function ensureRecEncoderWorks() {
     lastEncoderId = pick
     lastVendor = vendor
     lastEncoder = encoderLabel(pick)
+    persistObsEncoder(pick) // 记住修好的结果：之后冷启动直接用，不再进入修复重启
     await killOBS() // 优雅退出（带 /F 兜底），确保旧实例释放配置后再拉新的
     await wait(300)
     const rr = await ensureOBSRunning({ forceEncoder: { id: pick, name: encoderLabel(pick), vendor } })
@@ -905,6 +930,8 @@ async function start(opts) {
   // 检测到就把配置改成当前实例真实可用的编码器并重启 OBS，一切自动，不让用户在 OBS 里手工配。
   const chk = await ensureRecEncoderWorks()
   if (!chk.ok) return chk
+  // 自检做过「改编码器 + 重启 OBS」的修复时，回传给编辑器显示（否则用户只看到 OBS 闪退重启、一头雾水）
+  const repairNote = chk.repaired ? '录制编码器自检修正为 ' + encoderLabel(chk.repaired) : ''
   const o = getObs()
 
   const outdir = a.outdir ? path.resolve(a.outdir) : ''
@@ -1004,6 +1031,7 @@ async function start(opts) {
       audio,
       health,
       quality: qualityNotes,
+      repair: repairNote,
       warn: (audio && audio.indexOf && audio.indexOf('failed') === 0) ? '⚠自动补音频源失败，成片可能无声' : '',
     }
   } catch (e) {

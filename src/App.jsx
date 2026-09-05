@@ -481,10 +481,11 @@ export default function App() {
       // 画布对齐是内部必做动作（档位用户自选，改画布即按档位建），不回显；
       // 编码器兜底只出现在真被抬档时（主进程 changed 才回传），未改动不提示。
       const qual = Array.isArray(r.quality) && r.quality.length ? ` · 编码器已抬至高清档（${r.quality.join('；')}）` : ''
+      const repair = r.repair ? ` · ${r.repair}（OBS 自动重启过一次，属正常）` : ''
       const modeLabel = 'OBS 浏览器源 · ' + recLabelOf(recRes)
       setObsRec({
         recording: true,
-        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + qual + fitNote + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
+        msg: (noAudio ? '录制中（⚠可能无声，检查桌面音频）' : `录制中（${modeLabel}）`) + qual + repair + (obsInteractDelay ? ` · 音频延迟 ${Math.round(obsInteractDelay * 1000)}ms` : ''),
         filePath: r.tempFile || '',
       })
     } else setObsRec({ recording: false, msg: String((r && r.error) || '启动失败').slice(0, 140), filePath: '' })
